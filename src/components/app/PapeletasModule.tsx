@@ -96,29 +96,51 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const [formFecha, setFormFecha] = useState(new Date().toISOString().split('T')[0]);
   const [formHoraSalida, setFormHoraSalida] = useState('10:00');
   const [formHoraRetorno, setFormHoraRetorno] = useState('12:30');
+  const [formSinRetorno, setFormSinRetorno] = useState(false);
 
   // DIGITAL SIGNATURE CANVAS STATE
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Selected Employee object
+  // Selected Employee object & Active user employee object
   const currentEmployee = employees.find((e) => e.id === formEmployeeId) || employees[0];
+  const activeUserEmployee = employees.find((e) => e.dni === activeUserDni) || employees[0];
 
   // AUTOMATIC APPROVER DETERMINATION based on DRAC Organizational Unit
   const autoSupervisorName = currentEmployee?.supervisor_name || 'Director Regional de Agricultura';
   const autoSupervisorId = currentEmployee?.supervisor_id || 'boss-default';
 
-  // Filter list by role scope
+  // Scope-based Filtering for DRAC Roles
   const scopedPapeletas = papeletas.filter((p) => {
-    if (activeRole === 'EMPLOYEE') {
+    // 1. Trabajador base -> Solo ve sus propias papeletas
+    if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') {
       return p.employee_dni === activeUserDni;
     }
-    if (activeRole === 'SECURITY_GUARD') {
-      // Security Guard sees APPROVED, IN_OUTING, COMPLETED for today
+
+    // 2. Vigilancia / Seguridad Garita -> Solo ve autorizadas, en salida real o completadas
+    if (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD') {
       return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
     }
-    return true; // Supervisor and HR see all relevant
+
+    // 3. Jefe / Director de Área u Órgano -> Ámbito organizacional restringido
+    if (activeRole === 'JEFE' || activeRole === 'SUPERVISOR') {
+      if (p.employee_dni === activeUserDni) return true; // Su propia papeleta
+      if (!activeUserEmployee) return true;
+
+      const requester = employees.find((e) => e.dni === p.employee_dni);
+      if (!requester) return true;
+
+      // Verificar si pertenece a la misma Dirección/Órgano o Dependencia
+      const sameDireccion = requester.direccion_organo_id && requester.direccion_organo_id === activeUserEmployee.direccion_organo_id;
+      const sameDependencia = requester.dependencia_id && requester.dependencia_id === activeUserEmployee.dependencia_id;
+      const directSubordinate = requester.supervisor_id === activeUserEmployee.id;
+
+      return Boolean(sameDireccion || sameDependencia || directSubordinate);
+    }
+
+    // 4. Director General, Jefe de RRHH, Control Asistencia y Admin General -> Ver todas las papeletas
+    return true;
   });
 
   // CANVAS SIGNATURE DRAWING HANDLERS
@@ -194,7 +216,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       destino: formDestino,
       fecha: formFecha,
       hora_estimada_salida: formHoraSalida,
-      hora_estimada_retorno: formHoraRetorno,
+      hora_estimada_retorno: formSinRetorno ? 'Sin retorno' : formHoraRetorno,
+      sin_retorno: formSinRetorno,
       status: 'PENDING_BOSS',
       digital_signature_data: signatureData || undefined,
       signed_at: new Date().toISOString(),
@@ -202,6 +225,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 
     setShowCreateModal(false);
     setFormDescripcion('');
+    setFormSinRetorno(false);
     setSignatureData(null);
   };
 
@@ -349,9 +373,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                         </button>
 
                         {/* VoBo Boss Step */}
-                        {p.status === 'PENDING_BOSS' && (activeRole === 'SUPERVISOR' || activeRole === 'HR_ADMIN') && (
+                        {p.status === 'PENDING_BOSS' && (activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
                           <button
-                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_BOSS', 'VoBo Aprobado por Jefe/Director')}
+                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_BOSS', 'VoBo Aprobado por Jefe/Director Responsable')}
                             className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold flex items-center gap-1"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -360,9 +384,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                         )}
 
                         {/* VoBo HR Step */}
-                        {p.status === 'PENDING_HR' && activeRole === 'HR_ADMIN' && (
+                        {p.status === 'PENDING_HR' && (activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'CONTROL_ASISTENCIA') && (
                           <button
-                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_HR', 'Papeleta Autorizada por RRHH')}
+                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_HR', 'Papeleta Autorizada Institucionalmente por RRHH')}
                             className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold flex items-center gap-1"
                           >
                             <ShieldCheck className="w-3.5 h-3.5" />
@@ -371,7 +395,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                         )}
 
                         {/* Reject Option */}
-                        {(p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR') && (activeRole === 'SUPERVISOR' || activeRole === 'HR_ADMIN') && (
+                        {(p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR') && (activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN') && (
                           <button
                             onClick={() => {
                               setConfirmModalConfig({
@@ -398,21 +422,25 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                         )}
 
                         {/* Vigilancia Garita Output */}
-                        {p.status === 'APPROVED' && (activeRole === 'SECURITY_GUARD' || activeRole === 'HR_ADMIN') && (
+                        {p.status === 'APPROVED' && (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
                           <button
                             onClick={() => {
                               const realTime = new Date().toTimeString().substring(0, 5);
-                              onUpdatePapeletaStatus(p.id, 'MARK_OUTING_REAL', 'Salida registrada por Garita de Vigilancia', realTime);
+                              if (p.sin_retorno) {
+                                onUpdatePapeletaStatus(p.id, 'MARK_COMPLETED_REAL', 'Salida sin retorno registrada por Garita de Vigilancia', realTime);
+                              } else {
+                                onUpdatePapeletaStatus(p.id, 'MARK_OUTING_REAL', 'Salida registrada por Garita de Vigilancia', realTime);
+                              }
                             }}
                             className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1"
                           >
                             <Shield className="w-3.5 h-3.5" />
-                            <span>Registrar Salida</span>
+                            <span>{p.sin_retorno ? 'Registrar Salida (Sin Retorno)' : 'Registrar Salida'}</span>
                           </button>
                         )}
 
                         {/* Vigilancia Garita Return */}
-                        {p.status === 'IN_OUTING' && (activeRole === 'SECURITY_GUARD' || activeRole === 'HR_ADMIN') && (
+                        {p.status === 'IN_OUTING' && (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
                           <button
                             onClick={() => {
                               const realTime = new Date().toTimeString().substring(0, 5);
@@ -554,13 +582,34 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                   <label className="block text-[11px] font-bold text-slate-300 mb-1">Hora Estimada Retorno</label>
                   <input
                     type="time"
-                    value={formHoraRetorno}
+                    disabled={formSinRetorno}
+                    value={formSinRetorno ? '' : formHoraRetorno}
                     onChange={(e) => setFormHoraRetorno(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
-                    required
+                    className={`w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white ${
+                      formSinRetorno ? 'opacity-40 cursor-not-allowed' : ''
+                    }`}
+                    required={!formSinRetorno}
                   />
                 </div>
               </div>
+
+              {/* SALIDA SIN RETORNO CHECKBOX */}
+              <label className="flex items-start gap-2.5 p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer hover:bg-slate-800/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formSinRetorno}
+                  onChange={(e) => setFormSinRetorno(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-800 border-slate-700 shrink-0"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-200">
+                    ☐ Salida sin retorno (Comisión final de jornada / No regresa a la entidad hoy)
+                  </span>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Al marcar esta casilla, Garita de Vigilancia registrará la salida real y finalizará la papeleta sin exigir un marcado de retorno.
+                  </p>
+                </div>
+              </label>
 
               {/* DIGITAL SIGNATURE CANVAS */}
               <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">

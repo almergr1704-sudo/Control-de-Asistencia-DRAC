@@ -3,7 +3,18 @@
  * Dirección Regional de Agricultura Cajamarca (DRAC)
  */
 
-export type RoleType = 'EMPLOYEE' | 'SUPERVISOR' | 'HR_ADMIN' | 'SECURITY_GUARD';
+export type RoleType =
+  | 'ADMIN_GENERAL'
+  | 'TRABAJADOR'
+  | 'JEFE'
+  | 'JEFE_RRHH'
+  | 'VIGILANCIA'
+  | 'DIRECTOR_GENERAL'
+  | 'CONTROL_ASISTENCIA'
+  | 'EMPLOYEE'
+  | 'SUPERVISOR'
+  | 'HR_ADMIN'
+  | 'SECURITY_GUARD';
 
 export type DependenciaType = 'SEDE_CENTRAL' | 'AGENCIA_AGRARIA' | 'OFICINA_AGRARIA';
 
@@ -306,6 +317,7 @@ export interface PapeletaSalida {
   hora_estimada_retorno: string; // "12:00"
   hora_real_salida?: string | null; // Guarded by Vigilancia
   hora_real_retorno?: string | null; // Guarded by Vigilancia
+  sin_retorno?: boolean; // Salida sin retorno (Comisión final de jornada, etc.)
   status: PapeletaStatus;
   
   digital_signature_data?: string; // Digital signature image / vector

@@ -101,21 +101,13 @@ export const VIEW_TO_GROUP: Record<string, string> = {
 };
 
 export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
-  if (role === 'HR_ADMIN') return true;
-
-  if (role === 'SUPERVISOR') {
-    return !viewId.startsWith('admin_') && viewId !== 'config_system';
+  // 1. ADMINISTRADOR GENERAL
+  if (role === 'ADMIN_GENERAL' || role === 'HR_ADMIN') {
+    return true; // Access to all modules
   }
 
-  if (role === 'SECURITY_GUARD') {
-    return (
-      viewId === 'dash_overview' ||
-      viewId.startsWith('security_') ||
-      viewId === 'attendance_list'
-    );
-  }
-
-  if (role === 'EMPLOYEE') {
+  // 2. TRABAJADOR
+  if (role === 'TRABAJADOR' || role === 'EMPLOYEE') {
     return (
       viewId === 'dash_overview' ||
       viewId === 'attendance_list' ||
@@ -125,6 +117,54 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
       viewId === 'papeletas_new' ||
       viewId === 'papeletas_my' ||
       viewId === 'papeletas_history'
+    );
+  }
+
+  // 3. JEFE / RESPONSABLE DE DIRECCIÓN U ÓRGANO
+  if (role === 'JEFE' || role === 'SUPERVISOR') {
+    return (
+      !viewId.startsWith('admin_') &&
+      viewId !== 'config_system' &&
+      !viewId.startsWith('shifts_') &&
+      !viewId.startsWith('devices_')
+    );
+  }
+
+  // 4. JEFE DE RECURSOS HUMANOS (RRHH)
+  if (role === 'JEFE_RRHH') {
+    return (
+      !viewId.startsWith('admin_') &&
+      viewId !== 'config_system' &&
+      !viewId.startsWith('devices_')
+    );
+  }
+
+  // 5. SEGURIDAD / VIGILANCIA
+  if (role === 'VIGILANCIA' || role === 'SECURITY_GUARD') {
+    return (
+      viewId === 'dash_overview' ||
+      viewId.startsWith('security_') ||
+      viewId === 'attendance_list'
+    );
+  }
+
+  // 6. DIRECTOR GENERAL
+  if (role === 'DIRECTOR_GENERAL') {
+    return (
+      !viewId.startsWith('admin_') &&
+      viewId !== 'config_system' &&
+      !viewId.startsWith('shifts_') &&
+      !viewId.startsWith('devices_')
+    );
+  }
+
+  // 7. CONTROL DE ASISTENCIA
+  if (role === 'CONTROL_ASISTENCIA') {
+    return (
+      !viewId.startsWith('admin_') &&
+      viewId !== 'config_system' &&
+      !viewId.startsWith('org_') &&
+      !viewId.startsWith('shifts_')
     );
   }
 

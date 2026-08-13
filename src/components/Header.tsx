@@ -28,18 +28,39 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const handleRoleChange = (role: RoleType) => {
     setActiveRole(role);
-    if (role === 'EMPLOYEE') setActiveUserDni('71234567');
-    if (role === 'SUPERVISOR') setActiveUserDni('45891234');
-    if (role === 'HR_ADMIN') setActiveUserDni('40123987');
-    if (role === 'SECURITY_GUARD') setActiveUserDni('41987654');
+    if (role === 'ADMIN_GENERAL' || role === 'HR_ADMIN') setActiveUserDni('10000001');
+    if (role === 'DIRECTOR_GENERAL') setActiveUserDni('10000002');
+    if (role === 'JEFE' || role === 'SUPERVISOR') setActiveUserDni('10000003');
+    if (role === 'JEFE_RRHH') setActiveUserDni('10000005');
+    if (role === 'CONTROL_ASISTENCIA') setActiveUserDni('10000006');
+    if (role === 'VIGILANCIA' || role === 'SECURITY_GUARD') setActiveUserDni('10000007');
+    if (role === 'TRABAJADOR' || role === 'EMPLOYEE') setActiveUserDni('10000008');
   };
 
-  const roleLabels: Record<RoleType, { label: string; icon: React.ElementType; color: string }> = {
+  const roleLabels: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+    ADMIN_GENERAL: { label: 'Admin General', icon: Shield, color: 'bg-indigo-600' },
+    TRABAJADOR: { label: 'Trabajador', icon: User, color: 'bg-slate-700' },
+    JEFE: { label: 'Jefe / Director', icon: Building, color: 'bg-amber-600' },
+    JEFE_RRHH: { label: 'Jefe RRHH', icon: ShieldCheck, color: 'bg-blue-600' },
+    VIGILANCIA: { label: 'Vigilancia', icon: ShieldCheck, color: 'bg-emerald-600' },
+    DIRECTOR_GENERAL: { label: 'Dir. General', icon: Building, color: 'bg-purple-600' },
+    CONTROL_ASISTENCIA: { label: 'Control Asistencia', icon: UserCheck, color: 'bg-cyan-600' },
+    // Fallback aliases:
     HR_ADMIN: { label: 'Admin RRHH', icon: Shield, color: 'bg-indigo-600' },
     SUPERVISOR: { label: 'Jefe / Director', icon: Building, color: 'bg-amber-600' },
     EMPLOYEE: { label: 'Trabajador', icon: User, color: 'bg-slate-700' },
-    SECURITY_GUARD: { label: 'Vigilancia / Garita', icon: ShieldCheck, color: 'bg-emerald-600' },
+    SECURITY_GUARD: { label: 'Vigilancia', icon: ShieldCheck, color: 'bg-emerald-600' },
   };
+
+  const mainRoles: RoleType[] = [
+    'ADMIN_GENERAL',
+    'TRABAJADOR',
+    'JEFE',
+    'JEFE_RRHH',
+    'VIGILANCIA',
+    'DIRECTOR_GENERAL',
+    'CONTROL_ASISTENCIA',
+  ];
 
   return (
     <header className="bg-[#090A0D] border-b border-slate-800 text-slate-300 sticky top-0 z-30 shadow-md">
@@ -83,10 +104,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden lg:inline">Perfil Activo:</span>
             </div>
 
-            <div className="flex items-center gap-1">
-              {(['HR_ADMIN', 'SUPERVISOR', 'EMPLOYEE', 'SECURITY_GUARD'] as RoleType[]).map((r) => {
-                const conf = roleLabels[r];
-                const isActive = activeRole === r;
+            <div className="flex items-center gap-1 flex-wrap">
+              {mainRoles.map((r) => {
+                const conf = roleLabels[r] || roleLabels.TRABAJADOR;
+                const isActive = activeRole === r || (r === 'ADMIN_GENERAL' && activeRole === 'HR_ADMIN') || (r === 'JEFE' && activeRole === 'SUPERVISOR') || (r === 'TRABAJADOR' && activeRole === 'EMPLOYEE') || (r === 'VIGILANCIA' && activeRole === 'SECURITY_GUARD');
                 return (
                   <button
                     key={r}

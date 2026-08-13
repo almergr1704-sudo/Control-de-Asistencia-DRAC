@@ -103,7 +103,11 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                       <td className="p-3 font-bold text-white">{emp.first_name} {emp.last_name}</td>
                       <td className="p-3 text-slate-400">{emp.area_name || 'Sin Asignar'}</td>
                       <td className="p-3 text-slate-400">{emp.cargo_name || 'Servidor Público'}</td>
-                      <td className="p-3 font-semibold text-emerald-400">{emp.system_role || 'EMPLOYEE'}</td>
+                      <td className="p-3 font-semibold text-indigo-300">
+                        <span className="px-2 py-0.5 text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-bold">
+                          {emp.role}
+                        </span>
+                      </td>
                       <td className="p-3">
                         <span className="px-2 py-0.5 text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 rounded font-semibold">
                           Activo
@@ -120,44 +124,129 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
       {/* ROLES TAB */}
       {activeSubTab === 'ROLES' && (
-        <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-5">
           <div className="border-b border-slate-800 pb-3">
             <h2 className="font-bold text-sm text-white flex items-center gap-2">
               <Lock className="w-4 h-4 text-amber-400" />
-              <span>Matriz de Roles y Permisos Institucionales</span>
+              <span>Matriz General de Roles y Ámbitos Organizacionales (DRAC)</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Políticas de acceso según el perfil del usuario en la DRAC.
+              Políticas institucionales de mínimo privilegio y delimitación de alcance para la Dirección Regional de Agricultura Cajamarca.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-2">
-              <span className="px-2 py-0.5 text-[10px] bg-indigo-600 text-white font-bold rounded">
-                Admin RRHH (HR_ADMIN)
-              </span>
-              <p className="text-xs text-slate-300">Control total sobre áreas, personal, turnos, asistencias y configuraciones.</p>
+          {/* Cards for 7 roles */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-indigo-600 text-white font-bold rounded-lg">
+                  1. Administrador General
+                </span>
+                <span className="text-[10px] text-indigo-400 font-mono font-bold">ADMIN_GENERAL</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                <div><strong className="text-white">Alcance:</strong> Módulos, usuarios, roles, parámetros, biométricos ZKTeco y auditoría.</div>
+                <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ⚠️ Restricción: No modifica marcaciones biométricas crudas ni registros históricos cerrados sin auditoría.
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-2">
-              <span className="px-2 py-0.5 text-[10px] bg-amber-600 text-white font-bold rounded">
-                Jefe de Área (SUPERVISOR)
-              </span>
-              <p className="text-xs text-slate-300">Aprobación de papeletas, vista de asistencia de subordinados y vacacionales.</p>
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-slate-700 text-white font-bold rounded-lg">
+                  2. Trabajador Base
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono font-bold">TRABAJADOR</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Información Personal</div>
+                <div><strong className="text-white">Alcance:</strong> Consulta asistencia propia, solicita papeletas de salida y consulta saldo vacacional.</div>
+                <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ✓ Acceso autoservicio con firma digital.
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-2">
-              <span className="px-2 py-0.5 text-[10px] bg-slate-700 text-white font-bold rounded">
-                Trabajador (EMPLOYEE)
-              </span>
-              <p className="text-xs text-slate-300">Consulta de asistencia personal, solicitud de papeletas y vacaciones.</p>
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-amber-600 text-white font-bold rounded-lg">
+                  3. Jefe / Responsable
+                </span>
+                <span className="text-[10px] text-amber-400 font-mono font-bold">JEFE</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Su Dirección / Área</div>
+                <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel de papeletas del personal de su unidad y consulta asistencia de equipo.</div>
+                <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  🚫 Restricción: No aprueba papeletas de personal de otras Direcciones.
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 space-y-2">
-              <span className="px-2 py-0.5 text-[10px] bg-emerald-600 text-white font-bold rounded">
-                Vigilancia (SECURITY_GUARD)
-              </span>
-              <p className="text-xs text-slate-300">Registro de hora real de salida y retorno en Garita principal DRAC.</p>
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-blue-600 text-white font-bold rounded-lg">
+                  4. Jefe de Recursos Humanos
+                </span>
+                <span className="text-[10px] text-blue-400 font-mono font-bold">JEFE_RRHH</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                <div><strong className="text-white">Alcance:</strong> VoBo 2º nivel de papeletas, gestión global de personal, legajos y aprobaciones.</div>
+                <div className="text-blue-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ✓ Autorización institucional final.
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-emerald-600 text-white font-bold rounded-lg">
+                  5. Vigilancia / Garita
+                </span>
+                <span className="text-[10px] text-emerald-400 font-mono font-bold">VIGILANCIA</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Garita Principal DRAC</div>
+                <div><strong className="text-white">Alcance:</strong> Registro de horas reales de salida y retorno de papeletas autorizadas del día.</div>
+                <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ✓ Soporta "Salida sin retorno" para comisiones finales.
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-purple-600 text-white font-bold rounded-lg">
+                  6. Director General
+                </span>
+                <span className="text-[10px] text-purple-400 font-mono font-bold">DIRECTOR_GENERAL</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad / Directivos</div>
+                <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel a papeletas de Directores Regionales y Jefes de Órganos.</div>
+                <div className="text-purple-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ✓ Nivel de aprobación superior jerárquico.
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="px-2.5 py-1 text-[11px] bg-cyan-600 text-white font-bold rounded-lg">
+                  7. Control de Asistencia
+                </span>
+                <span className="text-[10px] text-cyan-400 font-mono font-bold">CONTROL_ASISTENCIA</span>
+              </div>
+              <div className="text-[11px] text-slate-300 space-y-1">
+                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                <div><strong className="text-white">Alcance:</strong> Monitoreo de tardanzas, faltas, horas trabajadas y asignación de vacaciones.</div>
+                <div className="text-cyan-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                  ✓ Control operativo y regularizaciones.
+                </div>
+              </div>
             </div>
           </div>
         </div>

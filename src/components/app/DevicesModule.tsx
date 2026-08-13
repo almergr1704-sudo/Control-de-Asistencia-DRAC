@@ -20,7 +20,9 @@ import {
   Check,
   AlertCircle,
   HelpCircle,
+  Power,
 } from 'lucide-react';
+import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 
 interface DevicesModuleProps {
   activeView?: string;
@@ -54,6 +56,16 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     if (activeView === 'devices_list' || activeView === 'devices_sync') setActiveTab('DEVICES');
     else if (activeView === 'devices_staging') setActiveTab('RAW_PUNCHES');
   }, [activeView]);
+
+  // DATA POLICY CONFIRMATION MODAL STATE
+  const [confirmModalConfig, setConfirmModalConfig] = useState<DataPolicyConfirmConfig>({
+    isOpen: false,
+    title: '',
+    message: '',
+    actionType: 'DEACTIVATE',
+    onConfirm: () => {},
+    onCancel: () => {},
+  });
 
   // Modal State: Devices
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
@@ -433,14 +445,24 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           </button>
                           <button
                             onClick={() => {
-                              if (confirm(`¿Desea dar de baja el marcador ${d.name}?`)) {
-                                onDeleteDevice(d.id);
-                              }
+                              setConfirmModalConfig({
+                                isOpen: true,
+                                title: 'Desactivar / Dar de Baja Marcador Biométrico',
+                                message: `¿Desea dar de baja el dispositivo "${d.name}" (S/N: ${d.serial_number})? Las marcaciones biométricas históricas transmitidas por este equipo se conservarán intactas para las auditorías de asistencia.`,
+                                actionType: 'DEACTIVATE',
+                                entityName: `S/N: ${d.serial_number} - ${d.name}`,
+                                confirmText: 'Desactivar Dispositivo',
+                                onConfirm: () => {
+                                  onDeleteDevice(d.id);
+                                  setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                                },
+                                onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                              });
                             }}
                             className="p-1 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded transition-colors"
-                            title="Eliminar Dispositivo"
+                            title="Desactivar / Dar de Baja Dispositivo"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Power className="w-3 h-3" />
                           </button>
                         </div>
                       )}
@@ -974,6 +996,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </form>
         </div>
       )}
+
+      {/* DATA POLICY CONFIRMATION MODAL */}
+      <DataPolicyConfirmModal config={confirmModalConfig} />
     </div>
   );
 };

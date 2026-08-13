@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'org',
       label: 'Organización',
       icon: Building2,
-      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'],
       subItems: [
         { id: 'org_deps', label: 'Dependencias' },
         { id: 'org_dirs', label: 'Direcciones / Órganos' },
@@ -114,7 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'personnel',
       label: 'Personal',
       icon: Users,
-      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'personnel_list', label: 'Directorio' },
         { id: 'personnel_new', label: 'Registrar Personal' },
@@ -126,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'shifts',
       label: 'Horarios',
       icon: Clock,
-      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
       subItems: [
         { id: 'shifts_turnos', label: 'Turnos Laborales' },
         { id: 'shifts_horarios', label: 'Horarios Laborales' },
@@ -148,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'devices',
       label: 'Biométricos',
       icon: Cpu,
-      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'devices_list', label: 'Dispositivos ZKTeco' },
         { id: 'devices_sync', label: 'Sincronización PUSH' },
@@ -161,7 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Palmtree,
       subItems: [
         { id: 'vacations_requests', label: 'Solicitudes' },
-        { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
+        { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'CONTROL_ASISTENCIA'] },
         { id: 'vacations_history', label: 'Historial' },
       ],
     },
@@ -172,8 +172,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { id: 'papeletas_new', label: 'Nueva Papeleta' },
         { id: 'papeletas_my', label: 'Mis Papeletas' },
-        { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
-        { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
+        { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
+        { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
         { id: 'papeletas_history', label: 'Historial' },
       ],
     },
@@ -181,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'security',
       label: 'Vigilancia',
       icon: ShieldCheck,
-      allowedRoles: ['HR_ADMIN', 'SECURITY_GUARD', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'VIGILANCIA', 'SECURITY_GUARD', 'JEFE_RRHH'],
       subItems: [
         { id: 'security_papeletas', label: 'Papeletas Autorizadas' },
         { id: 'security_exit', label: 'Registrar Salida Garita' },
@@ -193,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'reports',
       label: 'Reportes',
       icon: BarChart3,
-      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'reports_attendance', label: 'Reporte de Asistencia' },
         { id: 'reports_tardiness', label: 'Reporte de Tardanzas' },
@@ -208,7 +208,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'admin',
       label: 'Administración',
       icon: Lock,
-      allowedRoles: ['HR_ADMIN'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN'],
       subItems: [
         { id: 'admin_users', label: 'Gestión de Usuarios' },
         { id: 'admin_roles', label: 'Roles y Permisos' },
@@ -219,7 +219,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'config',
       label: 'Configuración',
       icon: Settings,
-      allowedRoles: ['HR_ADMIN'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN'],
       subItems: [{ id: 'config_system', label: 'Configuración Institucional' }],
     },
   ];

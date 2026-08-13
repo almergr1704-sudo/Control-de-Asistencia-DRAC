@@ -6,30 +6,72 @@ import { RoleType } from '../types';
 export const RbacMatrix: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<RoleType>('EMPLOYEE');
 
-  const roleDescriptions: Record<RoleType, { title: string; badge: string; desc: string; focus: string }> = {
+  const roleDescriptions: Record<string, { title: string; badge: string; desc: string; focus: string }> = {
+    ADMIN_GENERAL: {
+      title: 'Administrador General',
+      badge: 'Acceso Total a Módulos y Parámetros',
+      desc: 'Acceso global para administración de usuarios, roles, parámetros, biométricos y auditoría. Sin embargo, no modifica directamente marcaciones biométricas crudas ni archivos históricos.',
+      focus: 'Mínimo privilegio sobre registros biométricos crudos e históricos.',
+    },
+    TRABAJADOR: {
+      title: 'Trabajador Base DRAC',
+      badge: 'Read-Only + Solicitud de Papeletas',
+      desc: 'Consulta su información de asistencia, marcaciones y saldo vacacional. Puede crear solicitudes de papeleta con firma digital.',
+      focus: 'Read-Only datos propios + Solicitud de papeleta.',
+    },
+    JEFE: {
+      title: 'Jefe / Responsable de Unidad',
+      badge: 'VoBo Nivel 1 (Ámbito Restringido)',
+      desc: 'Otorga VoBo a papeletas y supervisa la asistencia exclusivamente del personal de su Dirección u Órgano.',
+      focus: 'Restringido a su ámbito organizacional de Dirección / Área.',
+    },
+    JEFE_RRHH: {
+      title: 'Jefe de Recursos Humanos',
+      badge: 'Autorización Institucional Final',
+      desc: 'VoBo Nivel 2 a papeletas a nivel de toda la entidad, gestión global de personal y reportes consolidados.',
+      focus: 'Ámbito Toda la Entidad.',
+    },
+    VIGILANCIA: {
+      title: 'Seguridad / Vigilancia Garita',
+      badge: 'Control Garita Salida y Retorno',
+      desc: 'Visualiza papeletas autorizadas del día y registra horas reales de salida y retorno (incluye Salida sin retorno).',
+      focus: 'Registro real en Garita de Vigilancia.',
+    },
+    DIRECTOR_GENERAL: {
+      title: 'Director General DRAC',
+      badge: 'VoBo Nivel Superior Directivos',
+      desc: 'Otorga VoBo 1º nivel a las papeletas presentadas por los Directores y Jefes de Órgano.',
+      focus: 'Nivel superior de aprobación jerárquica.',
+    },
+    CONTROL_ASISTENCIA: {
+      title: 'Especialista Control de Asistencia',
+      badge: 'Gestión y Monitoreo de Asistencia',
+      desc: 'Monitoreo de marcaciones, tardanzas, faltas y programación de vacaciones para todo el personal DRAC.',
+      focus: 'Control operativo de asistencia y vacacionales.',
+    },
     EMPLOYEE: {
       title: 'Perfil Personal / Empleado Standard',
       badge: 'Read-Only + Excepción Escritura Papeletas',
-      desc: 'El colaborador puede visualizar exclusivamente su propia información de asistencia, turnos y papeletas. No posee acceso a datos de otros colaboradores.',
-      focus: 'REGLA ESTRICTA: Solo Lectura para todas las entidades (Read-Only) salvo 1 Excepción de Escritura: Crear solicitudes de Papeleta de Salida para sí mismo.',
+      desc: 'El colaborador puede visualizar exclusivamente su propia información de asistencia, turnos y papeletas.',
+      focus: 'REGLA ESTRICTA: Solo Lectura para todas las entidades.',
     },
     SUPERVISOR: {
       title: 'Perfil Jefe Inmediato / Supervisor de Área',
       badge: 'Aprobación Nivel 1 (VoBo)',
-      desc: 'Responsable de supervisar la asistencia de su equipo directo y otorgar el Visto Bueno (VoBo) a las solicitudes de papeletas de salida.',
-      focus: 'Lectura de equipo asignado + Escritura en VoBo de papeletas de subordinados.',
+      desc: 'Responsable de supervisar la asistencia de su equipo directo y otorgar el Visto Bueno (VoBo).',
+      focus: 'Lectura de equipo asignado + Escritura en VoBo.',
     },
     HR_ADMIN: {
       title: 'Perfil Personal / RRHH Admin',
       badge: 'Control Global & Aprobación Final',
-      desc: 'Acceso total a la administración de horarios, turnos, asignación de vacaciones, aprobación final de papeletas y reportes ejecutivos.',
-      focus: 'Aprobación final de papeletas + Asignación de Vacaciones Totales/Parciales + ABM de Horarios.',
+      desc: 'Acceso total a la administración de horarios, turnos, asignación de vacaciones y papeletas.',
+      focus: 'Aprobación final de papeletas + ABM de Horarios.',
     },
     SECURITY_GUARD: {
       title: 'Perfil Vigilancia / Control de Garita',
       badge: 'Operación Real Garita Puerta',
-      desc: 'Operador de control de acceso físico en puerta/garita. Consulta únicamente papeletas aprobadas del día.',
-      focus: 'Vista filtrada por fecha actual + Escritura de Hora Real de Salida y Hora Real de Retorno.',
+      desc: 'Operador de control de acceso físico en puerta/garita.',
+      focus: 'Escritura de Hora Real de Salida y Hora Real de Retorno.',
     },
   };
 
