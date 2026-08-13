@@ -1,0 +1,329 @@
+import React, { useState } from 'react';
+import {
+  Home,
+  Building2,
+  Users,
+  Clock,
+  ClipboardList,
+  Cpu,
+  Palmtree,
+  FileText,
+  ShieldCheck,
+  BarChart3,
+  Lock,
+  Settings,
+  ChevronDown,
+  ChevronRight,
+  Menu,
+  X,
+  UserCheck,
+} from 'lucide-react';
+import { RoleType } from '../types';
+
+export interface MenuSubItem {
+  id: string;
+  label: string;
+}
+
+export interface MenuGroup {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  subItems?: MenuSubItem[];
+  allowedRoles?: RoleType[];
+}
+
+interface SidebarProps {
+  activeView: string;
+  setActiveView: (viewId: string) => void;
+  activeRole: RoleType;
+  isOpenMobile: boolean;
+  setIsOpenMobile: (open: boolean) => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  activeView,
+  setActiveView,
+  activeRole,
+  isOpenMobile,
+  setIsOpenMobile,
+}) => {
+  // State for expanded accordion categories
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    org: true,
+    personnel: true,
+    shifts: false,
+    attendance: true,
+    devices: false,
+    vacations: false,
+    papeletas: true,
+    security: activeRole === 'SECURITY_GUARD',
+    reports: false,
+    admin: false,
+  });
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
+
+  const handleSelectView = (viewId: string) => {
+    setActiveView(viewId);
+    setIsOpenMobile(false);
+  };
+
+  // Menu structure matching DRAC institutional requirements
+  const menuGroups: MenuGroup[] = [
+    {
+      id: 'inicio',
+      label: 'Inicio',
+      icon: Home,
+      subItems: [{ id: 'dash_overview', label: 'Dashboard Operativo' }],
+    },
+    {
+      id: 'org',
+      label: 'Organización',
+      icon: Building2,
+      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      subItems: [
+        { id: 'org_deps', label: 'Dependencias DRAC' },
+        { id: 'org_dirs', label: 'Direcciones / Órganos' },
+        { id: 'org_areas', label: 'Áreas / Oficinas' },
+        { id: 'org_cargos', label: 'Cargos Institucionales' },
+        { id: 'org_resps', label: 'Responsables / Jefaturas' },
+      ],
+    },
+    {
+      id: 'personnel',
+      label: 'Personal',
+      icon: Users,
+      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      subItems: [
+        { id: 'personnel_list', label: 'Directorio de Personal' },
+        { id: 'personnel_assign', label: 'Asignaciones Orgánicas' },
+        { id: 'personnel_history', label: 'Historial de Cambios' },
+      ],
+    },
+    {
+      id: 'shifts',
+      label: 'Horarios',
+      icon: Clock,
+      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      subItems: [
+        { id: 'shifts_turnos', label: 'Turnos Laborales' },
+        { id: 'shifts_horarios', label: 'Horarios Laborales' },
+        { id: 'shifts_assign', label: 'Asignación de Horarios' },
+      ],
+    },
+    {
+      id: 'attendance',
+      label: 'Asistencia',
+      icon: ClipboardList,
+      subItems: [
+        { id: 'attendance_list', label: 'Control de Asistencia' },
+        { id: 'attendance_punches', label: 'Marcaciones Biométricas' },
+        { id: 'attendance_incidents', label: 'Incidencias & Ajustes' },
+      ],
+    },
+    {
+      id: 'devices',
+      label: 'Biométricos',
+      icon: Cpu,
+      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      subItems: [
+        { id: 'devices_list', label: 'Dispositivos ZKTeco' },
+        { id: 'devices_sync', label: 'Sincronización PUSH' },
+        { id: 'devices_staging', label: 'Marcaciones Recibidas' },
+      ],
+    },
+    {
+      id: 'vacations',
+      label: 'Vacaciones',
+      icon: Palmtree,
+      subItems: [
+        { id: 'vacations_requests', label: 'Solicitudes' },
+        { id: 'vacations_approvals', label: 'Aprobaciones' },
+        { id: 'vacations_history', label: 'Historial' },
+      ],
+    },
+    {
+      id: 'papeletas',
+      label: 'Papeletas',
+      icon: FileText,
+      subItems: [
+        { id: 'papeletas_new', label: 'Nueva Papeleta' },
+        { id: 'papeletas_pending', label: 'Pendientes de VoBo' },
+        { id: 'papeletas_approved', label: 'Aprobadas' },
+        { id: 'papeletas_history', label: 'Historial' },
+      ],
+    },
+    {
+      id: 'security',
+      label: 'Vigilancia',
+      icon: ShieldCheck,
+      allowedRoles: ['HR_ADMIN', 'SECURITY_GUARD', 'SUPERVISOR'],
+      subItems: [
+        { id: 'security_papeletas', label: 'Papeletas Autorizadas' },
+        { id: 'security_exit', label: 'Registrar Salida Garita' },
+        { id: 'security_return', label: 'Registrar Retorno Garita' },
+        { id: 'security_outside', label: 'Personal Fuera DRAC' },
+      ],
+    },
+    {
+      id: 'reports',
+      label: 'Reportes',
+      icon: BarChart3,
+      allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
+      subItems: [
+        { id: 'reports_attendance', label: 'Reporte de Asistencia' },
+        { id: 'reports_tardiness', label: 'Reporte de Tardanzas' },
+        { id: 'reports_absences', label: 'Reporte de Faltas' },
+        { id: 'reports_overtime', label: 'Reporte de Horas Extras' },
+        { id: 'reports_vacations', label: 'Reporte de Vacaciones' },
+        { id: 'reports_papeletas', label: 'Reporte de Papeletas' },
+        { id: 'reports_exits', label: 'Salidas y Retornos Garita' },
+      ],
+    },
+    {
+      id: 'admin',
+      label: 'Administración',
+      icon: Lock,
+      allowedRoles: ['HR_ADMIN'],
+      subItems: [
+        { id: 'admin_users', label: 'Gestión de Usuarios' },
+        { id: 'admin_roles', label: 'Roles y Permisos' },
+        { id: 'admin_audit', label: 'Auditoría del Sistema' },
+      ],
+    },
+    {
+      id: 'config',
+      label: 'Configuración',
+      icon: Settings,
+      allowedRoles: ['HR_ADMIN'],
+      subItems: [{ id: 'config_system', label: 'Configuración Institucional' }],
+    },
+  ];
+
+  // Filter groups by user role
+  const visibleGroups = menuGroups.filter((g) => {
+    if (!g.allowedRoles) return true;
+    return g.allowedRoles.includes(activeRole);
+  });
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isOpenMobile && (
+        <div
+          className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm"
+          onClick={() => setIsOpenMobile(false)}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <aside
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#090A0D] border-r border-slate-800 text-slate-300 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${
+          isOpenMobile ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Header Branding */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0 bg-[#060709]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-lg flex items-center justify-center text-white font-black text-lg shadow-md shadow-indigo-600/30">
+              🌾
+            </div>
+            <div>
+              <h1 className="font-extrabold text-white text-xs tracking-wider uppercase">
+                DRAC CAJAMARCA
+              </h1>
+              <p className="text-[10px] text-indigo-400 font-medium">Control de Asistencia</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsOpenMobile(false)}
+            className="md:hidden text-slate-400 hover:text-white p-1 rounded"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Navigation Content (Scrollable) */}
+        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 custom-scrollbar">
+          {visibleGroups.map((group) => {
+            const GroupIcon = group.icon;
+            const isExpanded = expandedGroups[group.id] ?? false;
+            const hasSubItems = group.subItems && group.subItems.length > 0;
+
+            // Check if any subitem is active
+            const isGroupActive = group.subItems?.some((sub) => sub.id === activeView);
+
+            return (
+              <div key={group.id} className="space-y-0.5">
+                {/* Group Header Button */}
+                <button
+                  onClick={() => {
+                    if (hasSubItems) {
+                      toggleGroup(group.id);
+                    } else {
+                      handleSelectView(group.id);
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                    isGroupActive
+                      ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500'
+                      : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <GroupIcon className={`w-4 h-4 ${isGroupActive ? 'text-indigo-400' : 'text-slate-400'}`} />
+                    <span>{group.label}</span>
+                  </div>
+                  {hasSubItems && (
+                    <div className="text-slate-500">
+                      {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </div>
+                  )}
+                </button>
+
+                {/* SubMenu Items */}
+                {hasSubItems && isExpanded && (
+                  <div className="pl-7 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4 my-1">
+                    {group.subItems!.map((sub) => {
+                      const isSubActive = activeView === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => handleSelectView(sub.id)}
+                          className={`w-full text-left px-2.5 py-1.5 text-[11px] rounded transition-all flex items-center justify-between ${
+                            isSubActive
+                              ? 'bg-indigo-600/20 text-indigo-300 font-bold border-l-2 border-indigo-400 pl-2'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <span>{sub.label}</span>
+                          {isSubActive && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer Role Badge */}
+        <div className="p-3 border-t border-slate-800/80 bg-[#060709] shrink-0 text-xs">
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">
+              Rol: <strong className="text-white font-medium">{activeRole}</strong>
+            </span>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+};
