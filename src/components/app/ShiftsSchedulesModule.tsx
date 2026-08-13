@@ -4,6 +4,7 @@ import { Clock, Plus, Info, Edit2, Trash2, X, Power, ShieldAlert, CheckCircle2, 
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 
 interface ShiftsSchedulesModuleProps {
+  activeView?: string;
   turnos: Turno[];
   horarios: Horario[];
   activeRole: RoleType;
@@ -58,6 +59,7 @@ export const calculateShiftDuration = (start: string, end: string) => {
 };
 
 export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
+  activeView,
   turnos,
   horarios,
   activeRole,
@@ -69,6 +71,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   onDeleteHorario,
 }) => {
   const [activeTab, setActiveTab] = useState<'HORARIOS' | 'TURNOS'>('HORARIOS');
+
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'shifts_turnos') setActiveTab('TURNOS');
+    else if (activeView === 'shifts_horarios' || activeView === 'shifts_assign') setActiveTab('HORARIOS');
+  }, [activeView]);
 
   // DATA POLICY CONFIRMATION MODAL STATE
   const [confirmModalConfig, setConfirmModalConfig] = useState<DataPolicyConfirmConfig>({

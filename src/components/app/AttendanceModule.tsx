@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 
 interface AttendanceModuleProps {
+  activeView?: string;
   attendanceData: AsistenciaProcesada[];
   activeRole: RoleType;
   activeUserDni: string;
@@ -23,6 +24,7 @@ interface AttendanceModuleProps {
 }
 
 export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
+  activeView,
   attendanceData,
   activeRole,
   activeUserDni,
@@ -31,6 +33,14 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const [selectedDate, setSelectedDate] = useState('2026-08-12');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'attendance_list') setStatusFilter('ALL');
+    else if (activeView === 'attendance_punches') setStatusFilter('ALL');
+    else if (activeView === 'attendance_incidents') setStatusFilter('LATE');
+    else if (activeView === 'attendance_corrections') setStatusFilter('ALL');
+  }, [activeView]);
 
   // Modal State for Manual Adjustment / Regularization
   const [editingRecord, setEditingRecord] = useState<AsistenciaProcesada | null>(null);

@@ -207,10 +207,27 @@ export interface AsistenciaCorrectionLog {
   timestamp: string;
 }
 
+export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'CONFIGURED' | 'ERROR' | 'INACTIVE';
+
+export interface DeviceTestRecord {
+  date: string;
+  result: 'SUCCESS' | 'FAILED';
+  message: string;
+  cause?: string;
+  user: string;
+  latency_ms?: number;
+  ip: string;
+  port: number;
+  model?: string;
+  serial_number?: string;
+}
+
 export interface DispositivoZkTeco {
   id: string;
   serial_number: string;
   name: string;
+  brand?: string; // Default ZKTeco
+  model?: string; // e.g. uFace 800, K40, MB20, iClock 880
   ip_address: string;
   port: number;
   protocol: 'PUSH_ADMS' | 'UDP' | 'TCP';
@@ -220,8 +237,9 @@ export interface DispositivoZkTeco {
   area_name?: string;
   location_detail: string;
   last_activity: string;
-  status: 'ONLINE' | 'OFFLINE' | 'SYNCING';
+  status: DeviceStatus;
   firmware_version?: string;
+  last_test?: DeviceTestRecord;
 }
 
 export interface MarcacionRaw {

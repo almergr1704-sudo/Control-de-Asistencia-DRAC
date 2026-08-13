@@ -1,22 +1,46 @@
 import React, { useState } from 'react';
-import { DispositivoZkTeco, MarcacionRaw, Employee, RoleType } from '../../types';
-import { Cpu, Plus, Wifi, RefreshCw, Send, CheckCircle, AlertTriangle, Edit2, Trash2, X } from 'lucide-react';
+import { DispositivoZkTeco, MarcacionRaw, Employee, RoleType, Dependencia, DeviceStatus, DeviceTestRecord } from '../../types';
+import {
+  Cpu,
+  Plus,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Send,
+  CheckCircle2,
+  AlertTriangle,
+  Edit2,
+  Trash2,
+  X,
+  Plug,
+  Loader2,
+  Building2,
+  Clock,
+  Activity,
+  Check,
+  AlertCircle,
+  HelpCircle,
+} from 'lucide-react';
 
 interface DevicesModuleProps {
+  activeView?: string;
   devices: DispositivoZkTeco[];
   rawPunches: MarcacionRaw[];
   employees: Employee[];
+  dependencias?: Dependencia[];
   activeRole: RoleType;
-  onAddDevice: (newDevice: Omit<DispositivoZkTeco, 'id' | 'last_activity' | 'status'>) => void;
+  onAddDevice: (newDevice: Omit<DispositivoZkTeco, 'id' | 'last_activity'>) => void;
   onEditDevice: (device: DispositivoZkTeco) => void;
   onDeleteDevice: (deviceId: string) => void;
   onSimulatePunch: (newPunch: Omit<MarcacionRaw, 'id' | 'processed' | 'processed_at'>) => void;
 }
 
 export const DevicesModule: React.FC<DevicesModuleProps> = ({
+  activeView,
   devices,
   rawPunches,
   employees,
+  dependencias = [],
   activeRole,
   onAddDevice,
   onEditDevice,
@@ -25,16 +49,43 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'DEVICES' | 'RAW_PUNCHES'>('DEVICES');
 
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'devices_list' || activeView === 'devices_sync') setActiveTab('DEVICES');
+    else if (activeView === 'devices_staging') setActiveTab('RAW_PUNCHES');
+  }, [activeView]);
+
   // Modal State: Devices
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
   const [editingDevice, setEditingDevice] = useState<DispositivoZkTeco | null>(null);
 
-  // Form State: Device
+  // Form State: Device Registration
   const [serialNumber, setSerialNumber] = useState('');
   const [deviceName, setDeviceName] = useState('');
+  const [brand, setBrand] = useState('ZKTeco');
+  const [model, setModel] = useState('uFace 800');
+  const [customModel, setCustomModel] = useState('');
   const [ipAddress, setIpAddress] = useState('192.168.1.100');
   const [port, setPort] = useState(4370);
   const [location, setLocation] = useState('Puerta Principal - Recepción');
+  const [selectedDepId, setSelectedDepId] = useState<string>(dependencias[0]?.id || 'dep-001');
+
+  // Connection Test State inside Modal
+  const [isModalTesting, setIsModalTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    status: string;
+    message: string;
+    cause?: string;
+    latency_ms?: number;
+    ip: string;
+    port: number;
+    timestamp: string;
+  } | null>(null);
+  const [hasPassedTest, setHasPassedTest] = useState(false);
+
+  // Inline connection testing state for device list rows/cards
+  const [testingDeviceId, setTestingDeviceId] = useState<string | null>(null);
 
   // Modal State: Punch Manual Test / Push
   const [showPunchModal, setShowPunchModal] = useState(false);
@@ -43,51 +94,216 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [punchTime, setPunchTime] = useState('08:02:15');
   const [punchType, setPunchType] = useState<0 | 1>(0); // 0: IN, 1: OUT
 
-  // Device Handlers
+  // Open Add Device Modal
   const handleOpenAddDevice = () => {
     setEditingDevice(null);
     setSerialNumber('');
     setDeviceName('');
+    setBrand('ZKTeco');
+    setModel('uFace 800');
+    setCustomModel('');
     setIpAddress('192.168.1.100');
     setPort(4370);
     setLocation('Puerta Principal - Recepción');
+    setSelectedDepId(dependencias[0]?.id || 'dep-001');
+    setTestResult(null);
+    setHasPassedTest(false);
+    setIsModalTesting(false);
     setShowAddDeviceModal(true);
   };
 
+  // Open Edit Device Modal
   const handleOpenEditDevice = (dev: DispositivoZkTeco) => {
     setEditingDevice(dev);
     setSerialNumber(dev.serial_number);
     setDeviceName(dev.name);
+    setBrand(dev.brand || 'ZKTeco');
+    setModel(dev.model || 'uFace 800');
+    setCustomModel('');
     setIpAddress(dev.ip_address);
     setPort(dev.port);
     setLocation(dev.location_detail);
+    setSelectedDepId(dev.dependencia_id || dependencias[0]?.id || 'dep-001');
+    setTestResult(dev.last_test ? {
+      success: dev.last_test.result === 'SUCCESS',
+      status: dev.last_test.result === 'SUCCESS' ? 'ONLINE' : 'OFFLINE',
+      message: dev.last_test.message,
+      cause: dev.last_test.cause,
+      latency_ms: dev.last_test.latency_ms,
+      ip: dev.last_test.ip,
+      port: dev.last_test.port,
+      timestamp: dev.last_test.date,
+    } : null);
+    setHasPassedTest(dev.status === 'ONLINE');
+    setIsModalTesting(false);
     setShowAddDeviceModal(true);
   };
 
-  const handleDeviceSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!serialNumber || !deviceName) return;
+  // Real Connection Test in Modal
+  const handleTestConnectionModal = async () => {
+    if (!ipAddress.trim() || !port) return;
+
+    setIsModalTesting(true);
+    setTestResult(null);
+
+    try {
+      const response = await fetch('/api/zkteco/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: ipAddress.trim(),
+          port: Number(port),
+          timeoutMs: 4000,
+        }),
+      });
+
+      const data = await response.json();
+      setIsModalTesting(false);
+      setTestResult(data);
+
+      if (data.success) {
+        setHasPassedTest(true);
+      } else {
+        setHasPassedTest(false);
+      }
+    } catch (err: any) {
+      setIsModalTesting(false);
+      setTestResult({
+        success: false,
+        status: 'OFFLINE',
+        message: 'Conexión fallida',
+        cause: err.message || 'Error de red al comunicarse con el servidor backend.',
+        ip: ipAddress.trim(),
+        port: Number(port),
+        timestamp: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
+      });
+      setHasPassedTest(false);
+    }
+  };
+
+  // Real Connection Test from List View
+  const handleTestConnectionList = async (dev: DispositivoZkTeco) => {
+    setTestingDeviceId(dev.id);
+
+    try {
+      const response = await fetch('/api/zkteco/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: dev.ip_address,
+          port: dev.port,
+          timeoutMs: 4000,
+        }),
+      });
+
+      const data = await response.json();
+      setTestingDeviceId(null);
+
+      const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+      const testRecord: DeviceTestRecord = {
+        date: nowStr,
+        result: data.success ? 'SUCCESS' : 'FAILED',
+        message: data.message,
+        cause: data.cause,
+        user: 'María Silva (RRHH)',
+        latency_ms: data.latency_ms,
+        ip: dev.ip_address,
+        port: dev.port,
+        model: dev.model,
+        serial_number: dev.serial_number,
+      };
+
+      const updatedDevice: DispositivoZkTeco = {
+        ...dev,
+        status: data.success ? 'ONLINE' : 'OFFLINE',
+        last_activity: nowStr,
+        last_test: testRecord,
+      };
+
+      onEditDevice(updatedDevice);
+    } catch (err: any) {
+      setTestingDeviceId(null);
+      const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+
+      const testRecord: DeviceTestRecord = {
+        date: nowStr,
+        result: 'FAILED',
+        message: 'Conexión fallida',
+        cause: err.message || 'Error al conectar con la API de prueba.',
+        user: 'María Silva (RRHH)',
+        ip: dev.ip_address,
+        port: dev.port,
+        model: dev.model,
+        serial_number: dev.serial_number,
+      };
+
+      onEditDevice({
+        ...dev,
+        status: 'OFFLINE',
+        last_test: testRecord,
+      });
+    }
+  };
+
+  // Form Submission
+  const handleDeviceSubmit = (saveAsActive: boolean) => {
+    if (!serialNumber.trim() || !deviceName.trim()) return;
+
+    const dep = dependencias.find((d) => d.id === selectedDepId);
+    const finalModel = model === 'otro' ? (customModel.trim() || 'Modelo Generico') : model;
+    const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+
+    let finalStatus: DeviceStatus = saveAsActive ? 'ONLINE' : 'CONFIGURED';
+    if (testResult && !testResult.success && !saveAsActive) {
+      finalStatus = 'OFFLINE';
+    }
+
+    let lastTestRecord: DeviceTestRecord | undefined = editingDevice?.last_test;
+    if (testResult) {
+      lastTestRecord = {
+        date: testResult.timestamp || nowStr,
+        result: testResult.success ? 'SUCCESS' : 'FAILED',
+        message: testResult.message,
+        cause: testResult.cause,
+        user: 'María Silva (RRHH)',
+        latency_ms: testResult.latency_ms,
+        ip: ipAddress.trim(),
+        port: Number(port),
+        model: finalModel,
+        serial_number: serialNumber.toUpperCase().trim(),
+      };
+    }
 
     if (editingDevice) {
       onEditDevice({
         ...editingDevice,
         serial_number: serialNumber.toUpperCase().trim(),
         name: deviceName.trim(),
+        brand: brand.trim(),
+        model: finalModel,
         ip_address: ipAddress.trim(),
         port: Number(port),
         location_detail: location.trim(),
+        dependencia_id: dep?.id,
+        dependencia_name: dep?.name,
+        status: finalStatus,
+        last_test: lastTestRecord,
       });
     } else {
       onAddDevice({
         serial_number: serialNumber.toUpperCase().trim(),
         name: deviceName.trim(),
+        brand: brand.trim(),
+        model: finalModel,
         ip_address: ipAddress.trim(),
         port: Number(port),
         protocol: 'PUSH_ADMS',
-        area_id: 'area-1',
-        area_name: 'Operaciones',
+        dependencia_id: dep?.id,
+        dependencia_name: dep?.name,
         location_detail: location.trim(),
-        firmware_version: 'Ver 8.0.4.3-2025',
+        status: finalStatus,
+        firmware_version: 'Ver 8.0.4.3-2026',
+        last_test: lastTestRecord,
       });
     }
 
@@ -119,11 +335,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-indigo-400" />
             <h2 className="text-base font-bold text-white">
-              Gestión de Marcadores Biométricos (ZKTeco ADMS) &amp; Staging Logs
+              Gestión de Marcadores Biométricos (ZKTeco ADMS) &amp; Prueba de Conexión Real
             </h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Recepción e integración de logs en tiempo real vía protocolo ADMS / Push SDK de dispositivos físicos.
+            Sondeo socket TCP en tiempo real. El estado <strong className="text-emerald-400 font-mono">Conectado</strong> solo se establece previa verificación de comunicación física con el equipo.
           </p>
         </div>
 
@@ -175,75 +391,143 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       {/* DEVICES GRID VIEW */}
       {activeTab === 'DEVICES' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {devices.map((d) => (
-            <div
-              key={d.id}
-              className="bg-slate-900/30 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-mono text-xs font-bold text-indigo-400">{d.serial_number}</span>
-                  <div className="flex items-center gap-2">
-                    {d.status === 'ONLINE' ? (
-                      <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded flex items-center gap-1 font-mono">
-                        <Wifi className="w-3 h-3" /> ONLINE
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded flex items-center gap-1 font-mono">
-                        OFFLINE
-                      </span>
-                    )}
+          {devices.map((d) => {
+            const isTestingRow = testingDeviceId === d.id;
 
-                    {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenEditDevice(d)}
-                          className="p-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded"
-                          title="Editar Dispositivo"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`¿Desea dar de baja el marcador ${d.name}?`)) {
-                              onDeleteDevice(d.id);
-                            }
-                          }}
-                          className="p-1 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded"
-                          title="Eliminar Dispositivo"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+            return (
+              <div
+                key={d.id}
+                className="bg-slate-900/30 border border-slate-800 hover:border-slate-700 transition-all rounded-xl p-5 shadow-sm flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-mono text-xs font-bold text-indigo-400">{d.serial_number}</span>
+                    <div className="flex items-center gap-2">
+                      {/* Status Badges */}
+                      {isTestingRow ? (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded flex items-center gap-1 font-mono">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Probando...
+                        </span>
+                      ) : d.status === 'ONLINE' ? (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded flex items-center gap-1 font-mono">
+                          <Wifi className="w-3 h-3 text-emerald-400" /> 🟢 Conectado
+                        </span>
+                      ) : d.status === 'OFFLINE' ? (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded flex items-center gap-1 font-mono">
+                          <WifiOff className="w-3 h-3 text-rose-400" /> 🔴 Sin conexión
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 rounded flex items-center gap-1 font-mono">
+                          <Clock className="w-3 h-3 text-slate-400" /> ⚪ Configurado
+                        </span>
+                      )}
+
+                      {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleOpenEditDevice(d)}
+                            className="p-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
+                            title="Editar Dispositivo"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`¿Desea dar de baja el marcador ${d.name}?`)) {
+                                onDeleteDevice(d.id);
+                              }
+                            }}
+                            className="p-1 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded transition-colors"
+                            title="Eliminar Dispositivo"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <h3 className="font-bold text-sm text-white mb-1">{d.name}</h3>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3">
+                    <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{d.dependencia_name || 'Sede Central DRAC'} — {d.location_detail}</span>
+                  </div>
+
+                  <div className="bg-[#090A0D] p-3 rounded border border-slate-800 space-y-1.5 font-mono text-xs">
+                    <div className="flex justify-between text-slate-400">
+                      <span>Marca / Modelo:</span>
+                      <span className="text-slate-200 font-bold">{d.brand || 'ZKTeco'} {d.model || 'uFace 800'}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                      <span>IP / Puerto TCP:</span>
+                      <span className="text-indigo-400 font-bold">{d.ip_address}:{d.port}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-400">
+                      <span>Protocolo SDK:</span>
+                      <span className="text-slate-300">{d.protocol}</span>
+                    </div>
+                  </div>
+
+                  {/* Última Prueba de Conexión Detail Box */}
+                  {d.last_test ? (
+                    <div className="mt-3 p-2.5 rounded bg-slate-900/60 border border-slate-800/80 space-y-1 text-[11px]">
+                      <div className="flex items-center justify-between font-mono">
+                        <span className="text-slate-400 flex items-center gap-1 font-medium">
+                          <Activity className="w-3 h-3 text-indigo-400" /> Última prueba:
+                        </span>
+                        <span className="text-slate-300 font-bold">{d.last_test.date}</span>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Resultado:</span>
+                        {d.last_test.result === 'SUCCESS' ? (
+                          <span className="text-emerald-400 font-bold flex items-center gap-1 font-mono">
+                            <Check className="w-3 h-3" /> ✓ Conexión exitosa ({d.last_test.latency_ms || 15} ms)
+                          </span>
+                        ) : (
+                          <span className="text-rose-400 font-bold flex items-center gap-1 font-mono">
+                            <X className="w-3 h-3" /> ✕ Conexión fallida
+                          </span>
+                        )}
+                      </div>
+                      {d.last_test.cause && d.last_test.result === 'FAILED' && (
+                        <p className="text-[10px] text-rose-300/80 leading-tight pt-0.5 border-t border-slate-800/60 mt-1">
+                          {d.last_test.cause}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-2 rounded bg-slate-900/40 border border-slate-800/50 text-[10px] text-slate-500 font-mono flex items-center gap-1">
+                      <HelpCircle className="w-3 h-3" /> Sin prueba de conexión previa registrada.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Última sincronización: {d.last_activity}
+                  </span>
+
+                  <button
+                    onClick={() => handleTestConnectionList(d)}
+                    disabled={isTestingRow}
+                    className="px-2.5 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 rounded font-bold text-[11px] transition-colors flex items-center gap-1.5 font-mono disabled:opacity-50"
+                  >
+                    {isTestingRow ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                        <span>Probando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plug className="w-3 h-3" />
+                        <span>Probar conexión</span>
+                      </>
                     )}
-                  </div>
-                </div>
-
-                <h3 className="font-bold text-sm text-white mb-1">{d.name}</h3>
-                <p className="text-xs text-slate-400 mb-4">{d.location_detail}</p>
-
-                <div className="bg-[#090A0D] p-3 rounded border border-slate-800 space-y-1.5 font-mono text-xs">
-                  <div className="flex justify-between text-slate-400">
-                    <span>IP / Puerto:</span>
-                    <span className="text-slate-200">{d.ip_address}:{d.port}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Protocolo SDK:</span>
-                    <span className="text-indigo-400 font-bold">{d.protocol}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Firmware ZK:</span>
-                    <span className="text-slate-300">{d.firmware_version}</span>
-                  </div>
+                  </button>
                 </div>
               </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500">
-                <span>Última Sincronización ADMS:</span>
-                <span className="text-slate-300">{d.last_activity}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -299,7 +583,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       <td className="px-4 py-3 text-right">
                         {punch.processed ? (
                           <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded inline-flex items-center gap-1 font-mono">
-                            <CheckCircle className="w-3 h-3" /> PROCESADO (OK)
+                            <CheckCircle2 className="w-3 h-3" /> PROCESADO (OK)
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded inline-flex items-center gap-1 font-mono">
@@ -316,27 +600,40 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         </div>
       )}
 
-      {/* MODAL: ADD / EDIT DEVICE */}
+      {/* MODAL: ADD / EDIT DEVICE & CONNECTION TESTING */}
       {showAddDeviceModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <form
-            onSubmit={handleDeviceSubmit}
-            className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs"
-          >
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-sm text-white flex items-center gap-2">
                 <Cpu className="w-4 h-4 text-indigo-400" />
                 {editingDevice ? 'Editar Marcador Biométrico ZKTeco' : 'Registrar Nuevo Marcador ZKTeco'}
               </h3>
-              <button type="button" onClick={() => setShowAddDeviceModal(false)} className="text-slate-500 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowAddDeviceModal(false)}
+                className="text-slate-500 hover:text-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3">
+              {/* Device Identification */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Número de Serie (SN)</label>
+                  <label className="block text-slate-400 mb-1 font-medium">Nombre del Marcador *</label>
+                  <input
+                    type="text"
+                    placeholder="Marcador Sede Central 01"
+                    value={deviceName}
+                    onChange={(e) => setDeviceName(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Número de Serie (SN) *</label>
                   <input
                     type="text"
                     placeholder="ZK-99100"
@@ -346,72 +643,238 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                     required
                   />
                 </div>
+              </div>
+
+              {/* Brand and Model */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Nombre Descriptivo</label>
+                  <label className="block text-slate-400 mb-1 font-medium">Marca</label>
                   <input
                     type="text"
-                    placeholder="Biométrico Almacén Norte"
-                    value={deviceName}
-                    onChange={(e) => setDeviceName(e.target.value)}
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none font-bold text-indigo-300"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Modelo ZKTeco</label>
+                  <select
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none font-mono"
+                  >
+                    <option value="uFace 800">uFace 800 (Biométrico Facial + Huella)</option>
+                    <option value="K40 Pro">K40 Pro (Control Asistencia Dactilar)</option>
+                    <option value="MB20">MB20 (Control Acceso Híbrido)</option>
+                    <option value="iClock 880">iClock 880 (Gran Capacidad ADMS)</option>
+                    <option value="SilkFP-101TA">SilkFP-101TA (Sensor SilkID)</option>
+                    <option value="InBio260">InBio260 (Panel Controlador IP)</option>
+                    <option value="otro">Otro Modelo Custom...</option>
+                  </select>
+                  {model === 'otro' && (
+                    <input
+                      type="text"
+                      placeholder="Ingrese nombre del modelo"
+                      value={customModel}
+                      onChange={(e) => setCustomModel(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded mt-1 font-mono"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* IP Address and Port */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Dirección IP *</label>
+                  <input
+                    type="text"
+                    placeholder="192.168.1.100"
+                    value={ipAddress}
+                    onChange={(e) => {
+                      setIpAddress(e.target.value);
+                      setTestResult(null);
+                      setHasPassedTest(false);
+                    }}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Puerto TCP / ADMS *</label>
+                  <input
+                    type="number"
+                    value={port}
+                    onChange={(e) => {
+                      setPort(Number(e.target.value));
+                      setTestResult(null);
+                      setHasPassedTest(false);
+                    }}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Dependencia & Location */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Dependencia DRAC</label>
+                  <select
+                    value={selectedDepId}
+                    onChange={(e) => setSelectedDepId(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none text-xs"
+                  >
+                    {dependencias.map((dep) => (
+                      <option key={dep.id} value={dep.id}>
+                        {dep.name} ({dep.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">Ubicación Física</label>
+                  <input
+                    type="text"
+                    placeholder="Puerta Principal - Recepción Sede"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
                     className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Dirección IP</label>
-                  <input
-                    type="text"
-                    placeholder="192.168.1.105"
-                    value={ipAddress}
-                    onChange={(e) => setIpAddress(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Puerto ADMS</label>
-                  <input
-                    type="number"
-                    value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
-                    required
-                  />
-                </div>
+              {/* ACTION: PROBAR CONEXIÓN BUTTON */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleTestConnectionModal}
+                  disabled={isModalTesting || !ipAddress.trim() || !port}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50 font-mono"
+                >
+                  {isModalTesting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-amber-300" />
+                      <span>🟡 Probando conexión real con {ipAddress}:{port}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plug className="w-4 h-4" />
+                      <span>🔌 Probar Conexión</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">Ubicación Física</label>
-                <input
-                  type="text"
-                  placeholder="Garita Nro 2 - Acceso Peatonal Planta"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-600 focus:outline-none"
-                  required
-                />
-              </div>
+              {/* CONNECTION TEST RESULT BANNER & DETAILS */}
+              {isModalTesting && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs flex items-center gap-2 font-mono animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>Enviando paquete socket TCP a {ipAddress}:{port}... Por favor espere.</span>
+                </div>
+              )}
+
+              {testResult && !isModalTesting && (
+                <div
+                  className={`p-3.5 rounded-lg border text-xs space-y-2 ${
+                    testResult.success
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                      : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    {testResult.success ? (
+                      <>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <span className="text-emerald-400">✓ Conexión exitosa</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                        <span className="text-rose-400">✕ Conexión fallida</span>
+                      </>
+                    )}
+                  </div>
+
+                  <p className="font-medium text-slate-200">
+                    {testResult.message}
+                  </p>
+
+                  {/* Details Breakdown */}
+                  <div className="bg-[#090A0D]/80 p-2.5 rounded border border-slate-800/80 space-y-1 font-mono text-[11px] text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Estado Comunicación:</span>
+                      <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                        {testResult.success ? '🟢 Conectado (ONLINE)' : '🔴 Sin conexión (OFFLINE)'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">IP / Puerto Provisto:</span>
+                      <span>{testResult.ip} : {testResult.port}</span>
+                    </div>
+                    {testResult.success && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Latencia de Red (RTT):</span>
+                        <span className="text-emerald-400 font-bold">{testResult.latency_ms} ms</span>
+                      </div>
+                    )}
+                    {!testResult.success && testResult.cause && (
+                      <div className="pt-1 border-t border-slate-800/60 text-rose-300">
+                        <span className="text-slate-400 block font-sans text-[10px]">Causa diagnosticada:</span>
+                        <span className="font-semibold">{testResult.cause}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[10px] text-slate-400">
+                      <span>Fecha y hora prueba:</span>
+                      <span>{testResult.timestamp}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            {/* Modal Footer Controls */}
+            <div className="flex flex-col sm:flex-row justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={() => setShowAddDeviceModal(false)}
-                className="px-3.5 py-1.5 bg-slate-800 text-slate-300 border border-slate-700 rounded font-semibold"
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-semibold text-xs"
               >
                 Cancelar
               </button>
+
               <button
-                type="submit"
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-semibold transition-colors shadow-sm"
+                type="button"
+                onClick={() => handleDeviceSubmit(false)}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded font-semibold text-xs transition-colors"
+                title="Guardar dispositivo en el sistema sin activarlo de inmediato"
               >
-                {editingDevice ? 'Actualizar Marcador' : 'Guardar Dispositivo'}
+                Guardar como Configurado (Pendiente)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!hasPassedTest) {
+                    alert('⚠️ ATENCIÓN: No se puede activar el marcador como "Conectado" sin haber realizado primero una prueba de conexión exitosa.\n\nPor favor presione "🔌 Probar Conexión" para verificar el equipo en vivo o elija "Guardar como Configurado".');
+                    return;
+                  }
+                  handleDeviceSubmit(true);
+                }}
+                disabled={!hasPassedTest}
+                className={`px-4 py-1.5 font-bold text-xs rounded transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                  hasPassedTest
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
+                    : 'bg-emerald-950/40 text-emerald-600/50 border border-emerald-900/40 cursor-not-allowed'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Guardar y Activar (Conectado)</span>
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
@@ -427,7 +890,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 <Send className="w-4 h-4 text-indigo-400" />
                 Transmitir Marcación ADMS en Vivo
               </h3>
-              <button type="button" onClick={() => setShowPunchModal(false)} className="text-slate-500 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowPunchModal(false)}
+                className="text-slate-500 hover:text-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>

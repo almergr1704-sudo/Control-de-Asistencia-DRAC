@@ -3,6 +3,7 @@ import { Vacacion, VacacionTipo, Employee, RoleType } from '../../types';
 import { CalendarDays, Plus, CheckCircle2, User, Info, Edit2, Trash2, X } from 'lucide-react';
 
 interface VacationsModuleProps {
+  activeView?: string;
   vacaciones: Vacacion[];
   employees: Employee[];
   activeRole: RoleType;
@@ -12,6 +13,7 @@ interface VacationsModuleProps {
 }
 
 export const VacationsModule: React.FC<VacationsModuleProps> = ({
+  activeView,
   vacaciones,
   employees,
   activeRole,
@@ -21,6 +23,15 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
 }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingVacation, setEditingVacation] = useState<Vacacion | null>(null);
+
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'vacations_requests') {
+      setShowModal(true);
+    } else {
+      setShowModal(false);
+    }
+  }, [activeView]);
 
   const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '71234567');
   const [tipo, setTipo] = useState<VacacionTipo>('PARCIAL');

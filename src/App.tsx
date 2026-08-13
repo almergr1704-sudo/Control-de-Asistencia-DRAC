@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { OperationalDashboard } from './components/app/OperationalDashboard';
@@ -11,6 +11,7 @@ import { OrgPersonnelModule } from './components/app/OrgPersonnelModule';
 import { ReportsModule } from './components/app/ReportsModule';
 import { AdminModule } from './components/app/AdminModule';
 import { ConfigModule } from './components/app/ConfigModule';
+import { getViewFromHash, VIEW_TO_HASH, isViewAllowedForRole } from './utils/router';
 
 import {
   INITIAL_DEPENDENCIAS,
@@ -53,12 +54,46 @@ import {
 } from './types';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<string>('dash_overview');
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
 
   // Active User / Role - Default to HR_ADMIN for full operational access
   const [activeRole, setActiveRole] = useState<RoleType>('HR_ADMIN');
   const [activeUserDni, setActiveUserDni] = useState<string>('40123987'); // María Silva (RRHH)
+
+  const [activeView, setActiveView] = useState<string>(() => getViewFromHash(window.location.hash, 'HR_ADMIN'));
+
+  const handleNavigate = (viewId: string) => {
+    if (!isViewAllowedForRole(viewId, activeRole)) return;
+    setActiveView(viewId);
+    const targetHash = VIEW_TO_HASH[viewId] || '#/dashboard';
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+  };
+
+  const handleRoleChange = (role: RoleType) => {
+    setActiveRole(role);
+    const allowedView = getViewFromHash(window.location.hash, role);
+    setActiveView(allowedView);
+    window.location.hash = VIEW_TO_HASH[allowedView] || '#/dashboard';
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const view = getViewFromHash(window.location.hash, activeRole);
+      setActiveView(view);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    
+    if (!window.location.hash || window.location.hash === '#/') {
+      window.location.hash = VIEW_TO_HASH[activeView] || '#/dashboard';
+    }
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [activeRole]);
 
   // State Entities - DRAC Structure
   const [dependencias, setDependencias] = useState<Dependencia[]>(INITIAL_DEPENDENCIAS);
@@ -270,15 +305,14 @@ export default function App() {
   };
 
   // DEVICE HANDLERS
-  const handleAddDevice = (newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity' | 'status'>) => {
+  const handleAddDevice = (newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity'>) => {
     const created: DispositivoZkTeco = {
       ...newDev,
       id: `dev-${Date.now()}`,
-      status: 'ONLINE',
-      last_activity: new Date().toISOString(),
+      last_activity: new Date().toLocaleString('es-PE'),
     };
     setDevices((prev) => [...prev, created]);
-    addAuditLog('BIOMETRICOS', 'REGISTRAR_DISPOSITIVO', created.id, `Nuevo Biométrico: ${created.name} (${created.serial_number})`);
+    addAuditLog('BIOMETRICOS', 'REGISTRAR_DISPOSITIVO', created.id, `Nuevo Biométrico: ${created.name} (${created.serial_number}) - Estado: ${created.status}`);
   };
 
   const handleEditDevice = (updatedDev: DispositivoZkTeco) => {
@@ -395,7 +429,7 @@ export default function App() {
       {/* 1. Left Vertical Navigation Menu */}
       <Sidebar
         activeView={activeView}
-        setActiveView={setActiveView}
+        setActiveView={handleNavigate}
         activeRole={activeRole}
         isOpenMobile={isOpenMobile}
         setIsOpenMobile={setIsOpenMobile}
@@ -406,7 +440,7 @@ export default function App() {
         {/* Top Header */}
         <Header
           activeRole={activeRole}
-          setActiveRole={setActiveRole}
+          setActiveRole={handleRoleChange}
           activeUserDni={activeUserDni}
           setActiveUserDni={setActiveUserDni}
           onResetData={handleResetAllData}
@@ -423,13 +457,14 @@ export default function App() {
               papeletas={papeletas}
               vacaciones={vacaciones}
               activeRole={activeRole}
-              onNavigate={setActiveView}
+              onNavigate={handleNavigate}
             />
           )}
 
           {/* ORGANIZACIÓN & PERSONAL */}
           {(activeView.startsWith('org_') || activeView.startsWith('personnel_')) && (
             <OrgPersonnelModule
+              activeView={activeView}
               dependencias={dependencias}
               direccionesOrganos={direccionesOrganos}
               areas={areas}
@@ -463,6 +498,7 @@ export default function App() {
           {/* TURNOS & HORARIOS */}
           {activeView.startsWith('shifts_') && (
             <ShiftsSchedulesModule
+              activeView={activeView}
               turnos={turnos}
               horarios={horarios}
               activeRole={activeRole}
@@ -478,6 +514,7 @@ export default function App() {
           {/* ASISTENCIA */}
           {activeView.startsWith('attendance_') && (
             <AttendanceModule
+              activeView={activeView}
               attendanceData={attendance}
               activeRole={activeRole}
               activeUserDni={activeUserDni}
@@ -488,9 +525,11 @@ export default function App() {
           {/* BIOMÉTRICOS ZKTECO */}
           {activeView.startsWith('devices_') && (
             <DevicesModule
+              activeView={activeView}
               devices={devices}
               rawPunches={rawPunches}
               employees={employees}
+              dependencias={dependencias}
               activeRole={activeRole}
               onAddDevice={handleAddDevice}
               onEditDevice={handleEditDevice}
@@ -502,6 +541,7 @@ export default function App() {
           {/* VACACIONES */}
           {activeView.startsWith('vacations_') && (
             <VacationsModule
+              activeView={activeView}
               vacaciones={vacaciones}
               employees={employees}
               activeRole={activeRole}
@@ -514,6 +554,7 @@ export default function App() {
           {/* PAPELETAS & VIGILANCIA / GARITA */}
           {(activeView.startsWith('papeletas_') || activeView.startsWith('security_')) && (
             <PapeletasModule
+              activeView={activeView}
               papeletas={papeletas}
               papeletaAudits={papeletaAudits}
               employees={employees}

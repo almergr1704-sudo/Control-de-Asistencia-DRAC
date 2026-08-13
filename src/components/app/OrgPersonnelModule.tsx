@@ -46,6 +46,7 @@ import {
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 
 interface OrgPersonnelModuleProps {
+  activeView?: string;
   dependencias: Dependencia[];
   direccionesOrganos: DireccionOrgano[];
   areas: Area[];
@@ -82,6 +83,7 @@ interface OrgPersonnelModuleProps {
 }
 
 export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
+  activeView,
   dependencias,
   direccionesOrganos,
   areas,
@@ -113,6 +115,23 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const [activeTab, setActiveTab] = useState<
     'EMPLOYEES' | 'DEPENDENCIAS' | 'DIRECCIONES' | 'AREAS' | 'CARGOS' | 'RESPONSABLES'
   >('EMPLOYEES');
+
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'org_deps') setActiveTab('DEPENDENCIAS');
+    else if (activeView === 'org_dirs') setActiveTab('DIRECCIONES');
+    else if (activeView === 'org_areas') setActiveTab('AREAS');
+    else if (activeView === 'org_cargos') setActiveTab('CARGOS');
+    else if (activeView === 'org_resps') setActiveTab('RESPONSABLES');
+    else if (activeView === 'personnel_list') setActiveTab('EMPLOYEES');
+    else if (activeView === 'personnel_new') {
+      setActiveTab('EMPLOYEES');
+      setEditingEmp(null);
+      setShowEmpModal(true);
+    } else if (activeView === 'personnel_assign' || activeView === 'personnel_history') {
+      setActiveTab('EMPLOYEES');
+    }
+  }, [activeView]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [dependenciaFilter, setDependenciaFilter] = useState('ALL');
@@ -501,14 +520,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           <div className="flex items-center gap-2">
             <Building2 className="w-5 h-5 text-indigo-400" />
             <h2 className="text-base font-bold text-white">
-              Estructura Organizacional DRAC &amp; Padrón de Personal
+              {activeTab === 'EMPLOYEES' && 'Directorio de Personal DRAC'}
+              {activeTab === 'DEPENDENCIAS' && 'Gestión de Dependencias DRAC'}
+              {activeTab === 'DIRECCIONES' && 'Direcciones y Órganos de Línea'}
+              {activeTab === 'AREAS' && 'Áreas y Oficinas Institucionales'}
+              {activeTab === 'CARGOS' && 'Cargos Institucionales'}
+              {activeTab === 'RESPONSABLES' && 'Jefes y Aprobadores (Responsables)'}
             </h2>
             <span className="px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold">
               CAJAMARCA REGIONAL
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Gestión institucional jerárquica: Sede Central, Agencias Agrarias, Oficinas, Direcciones de Línea, Cargos y Designación de Jefes Aprobadores.
+            Gestión institucional jerárquica de la Dirección Regional de Agricultura Cajamarca.
           </p>
         </div>
 
@@ -519,81 +543,6 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           <ShieldAlert className="w-4 h-4 text-amber-400" />
           <span>Política de Integridad &amp; Trazabilidad</span>
         </button>
-
-        {/* Tab Navigation Controls */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-[#090A0D] p-1.5 rounded-lg border border-slate-800">
-          <button
-            onClick={() => setActiveTab('EMPLOYEES')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'EMPLOYEES'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Personal ({employees.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('DEPENDENCIAS')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'DEPENDENCIAS'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Building className="w-3.5 h-3.5" />
-            <span>Dependencias ({dependencias.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('DIRECCIONES')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'DIRECCIONES'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Direcciones/Órganos ({direccionesOrganos.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('AREAS')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'AREAS'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Áreas/Oficinas ({areas.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('CARGOS')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'CARGOS'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Briefcase className="w-3.5 h-3.5" />
-            <span>Cargos ({cargos.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('RESPONSABLES')}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'RESPONSABLES'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span>Jefes/Aprobadores ({responsables.length})</span>
-          </button>
-        </div>
       </div>
 
       {/* Mandatory Registration Sequence Banner */}

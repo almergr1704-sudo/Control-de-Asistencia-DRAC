@@ -24,6 +24,7 @@ import {
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 
 interface PapeletasModuleProps {
+  activeView?: string;
   papeletas: PapeletaSalida[];
   papeletaAudits: PapeletaAudit[];
   employees: Employee[];
@@ -39,6 +40,7 @@ interface PapeletasModuleProps {
 }
 
 export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
+  activeView,
   papeletas,
   papeletaAudits,
   employees,
@@ -48,6 +50,27 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   onCreatePapeleta,
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  React.useEffect(() => {
+    if (!activeView) return;
+    if (activeView === 'papeletas_new') {
+      setShowCreateModal(true);
+      setStatusFilter('ALL');
+    } else if (activeView === 'papeletas_pending') {
+      setShowCreateModal(false);
+      setStatusFilter('PENDING');
+    } else if (activeView === 'papeletas_approved') {
+      setShowCreateModal(false);
+      setStatusFilter('APPROVED');
+    } else if (activeView === 'papeletas_my') {
+      setShowCreateModal(false);
+      setStatusFilter('MY');
+    } else {
+      setShowCreateModal(false);
+      setStatusFilter('ALL');
+    }
+  }, [activeView]);
   const [selectedPapeleta, setSelectedPapeleta] = useState<PapeletaSalida | null>(null);
   const [commentInput, setCommentInput] = useState('');
   const [horaRealInput, setHoraRealInput] = useState('10:30');

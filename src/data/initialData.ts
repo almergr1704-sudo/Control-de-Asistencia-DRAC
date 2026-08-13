@@ -86,7 +86,62 @@ export const INITIAL_HORARIOS: Horario[] = [
 
 export const INITIAL_EMPLOYEES: Employee[] = [];
 
-export const INITIAL_DEVICES: DispositivoZkTeco[] = [];
+export const INITIAL_DEVICES: DispositivoZkTeco[] = [
+  {
+    id: 'dev-001',
+    serial_number: 'ZK-99100',
+    name: 'Marcador Sede Central 01',
+    brand: 'ZKTeco',
+    model: 'uFace 800',
+    ip_address: '192.168.1.100',
+    port: 4370,
+    protocol: 'PUSH_ADMS',
+    dependencia_id: 'dep-001',
+    dependencia_name: 'Sede Central DRAC',
+    location_detail: 'Puerta Principal - Recepción Sede Central',
+    last_activity: '13/08/2026 08:00:00',
+    status: 'CONFIGURED',
+    firmware_version: 'Ver 8.0.4.3-2025',
+    last_test: {
+      date: '13/08/2026 08:00',
+      result: 'FAILED',
+      message: 'Conexión fallida. Pendiente de prueba en la red local.',
+      cause: 'Sin probar en la red física local.',
+      user: 'María Silva (RRHH)',
+      ip: '192.168.1.100',
+      port: 4370,
+      model: 'uFace 800',
+      serial_number: 'ZK-99100'
+    }
+  },
+  {
+    id: 'dev-002',
+    serial_number: 'ZK-88201',
+    name: 'Marcador Agencia Agraria Jaén',
+    brand: 'ZKTeco',
+    model: 'K40 Pro',
+    ip_address: '192.168.2.50',
+    port: 4370,
+    protocol: 'PUSH_ADMS',
+    dependencia_id: 'dep-002',
+    dependencia_name: 'Agencia Agraria Jaén',
+    location_detail: 'Ingreso Principal - Agencia Jaén',
+    last_activity: '12/08/2026 17:05:12',
+    status: 'CONFIGURED',
+    firmware_version: 'Ver 7.1.2-2024',
+    last_test: {
+      date: '12/08/2026 17:00',
+      result: 'FAILED',
+      message: 'Conexión fallida. Tiempo de espera agotado (Timeout).',
+      cause: 'Tiempo de espera agotado (Timeout 4000ms). Dispositivo apagado o no alcanzable en la red.',
+      user: 'María Silva (RRHH)',
+      ip: '192.168.2.50',
+      port: 4370,
+      model: 'K40 Pro',
+      serial_number: 'ZK-88201'
+    }
+  }
+];
 
 export const INITIAL_RAW_PUNCHES: MarcacionRaw[] = [];
 

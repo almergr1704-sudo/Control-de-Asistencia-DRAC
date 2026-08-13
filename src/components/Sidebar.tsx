@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Building2,
@@ -19,10 +19,12 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { RoleType } from '../types';
+import { VIEW_TO_GROUP, isViewAllowedForRole } from '../utils/router';
 
 export interface MenuSubItem {
   id: string;
   label: string;
+  allowedRoles?: RoleType[];
 }
 
 export interface MenuGroup {
@@ -50,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   // State for expanded accordion categories
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    inicio: true,
     org: true,
     personnel: true,
     shifts: false,
@@ -60,7 +63,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     security: activeRole === 'SECURITY_GUARD',
     reports: false,
     admin: false,
+    config: false,
   });
+
+  // Auto-expand group when activeView changes
+  useEffect(() => {
+    const parentGroup = VIEW_TO_GROUP[activeView];
+    if (parentGroup) {
+      setExpandedGroups((prev) => ({
+        ...prev,
+        [parentGroup]: true,
+      }));
+    }
+  }, [activeView]);
 
   const toggleGroup = (groupId: string) => {
     setExpandedGroups((prev) => ({
@@ -88,11 +103,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Building2,
       allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
       subItems: [
-        { id: 'org_deps', label: 'Dependencias DRAC' },
+        { id: 'org_deps', label: 'Dependencias' },
         { id: 'org_dirs', label: 'Direcciones / Órganos' },
         { id: 'org_areas', label: 'Áreas / Oficinas' },
-        { id: 'org_cargos', label: 'Cargos Institucionales' },
-        { id: 'org_resps', label: 'Responsables / Jefaturas' },
+        { id: 'org_cargos', label: 'Cargos' },
+        { id: 'org_resps', label: 'Jefes / Aprobadores' },
       ],
     },
     {
@@ -101,9 +116,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Users,
       allowedRoles: ['HR_ADMIN', 'SUPERVISOR'],
       subItems: [
-        { id: 'personnel_list', label: 'Directorio de Personal' },
-        { id: 'personnel_assign', label: 'Asignaciones Orgánicas' },
-        { id: 'personnel_history', label: 'Historial de Cambios' },
+        { id: 'personnel_list', label: 'Directorio' },
+        { id: 'personnel_new', label: 'Registrar Personal' },
+        { id: 'personnel_assign', label: 'Asignaciones' },
+        { id: 'personnel_history', label: 'Historial' },
       ],
     },
     {
@@ -125,6 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'attendance_list', label: 'Control de Asistencia' },
         { id: 'attendance_punches', label: 'Marcaciones Biométricas' },
         { id: 'attendance_incidents', label: 'Incidencias & Ajustes' },
+        { id: 'attendance_corrections', label: 'Correcciones / Ajustes' },
       ],
     },
     {
@@ -144,7 +161,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Palmtree,
       subItems: [
         { id: 'vacations_requests', label: 'Solicitudes' },
-        { id: 'vacations_approvals', label: 'Aprobaciones' },
+        { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
         { id: 'vacations_history', label: 'Historial' },
       ],
     },
@@ -154,8 +171,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: FileText,
       subItems: [
         { id: 'papeletas_new', label: 'Nueva Papeleta' },
-        { id: 'papeletas_pending', label: 'Pendientes de VoBo' },
-        { id: 'papeletas_approved', label: 'Aprobadas' },
+        { id: 'papeletas_my', label: 'Mis Papeletas' },
+        { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
+        { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['HR_ADMIN', 'SUPERVISOR'] },
         { id: 'papeletas_history', label: 'Historial' },
       ],
     },
@@ -212,6 +230,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return g.allowedRoles.includes(activeRole);
   });
 
+  const handleGroupHeaderClick = (group: MenuGroup) => {
+    const validSubItems = group.subItems?.filter((sub) => {
+      if (sub.allowedRoles && !sub.allowedRoles.includes(activeRole)) return false;
+      return isViewAllowedForRole(sub.id, activeRole);
+    });
+
+    if (validSubItems && validSubItems.length > 0) {
+      const isExpanded = expandedGroups[group.id] ?? false;
+      const isAnySubActive = validSubItems.some((sub) => sub.id === activeView);
+
+      if (!isExpanded) {
+        setExpandedGroups((prev) => ({ ...prev, [group.id]: true }));
+        if (!isAnySubActive && validSubItems[0]) {
+          handleSelectView(validSubItems[0].id);
+        }
+      } else {
+        if (!isAnySubActive && validSubItems[0]) {
+          handleSelectView(validSubItems[0].id);
+        } else {
+          toggleGroup(group.id);
+        }
+      }
+    } else {
+      handleSelectView(group.id);
+    }
+  };
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -254,25 +299,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {visibleGroups.map((group) => {
             const GroupIcon = group.icon;
             const isExpanded = expandedGroups[group.id] ?? false;
-            const hasSubItems = group.subItems && group.subItems.length > 0;
 
-            // Check if any subitem is active
-            const isGroupActive = group.subItems?.some((sub) => sub.id === activeView);
+            // Filter subItems by role
+            const validSubItems = group.subItems?.filter((sub) => {
+              if (sub.allowedRoles && !sub.allowedRoles.includes(activeRole)) return false;
+              return isViewAllowedForRole(sub.id, activeRole);
+            });
+
+            const hasSubItems = validSubItems && validSubItems.length > 0;
+            const isGroupActive = validSubItems?.some((sub) => sub.id === activeView);
 
             return (
               <div key={group.id} className="space-y-0.5">
                 {/* Group Header Button */}
                 <button
-                  onClick={() => {
-                    if (hasSubItems) {
-                      toggleGroup(group.id);
-                    } else {
-                      handleSelectView(group.id);
-                    }
-                  }}
+                  onClick={() => handleGroupHeaderClick(group)}
                   className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
                     isGroupActive
-                      ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500'
+                      ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500 font-bold'
                       : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                   }`}
                 >
@@ -290,7 +334,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {/* SubMenu Items */}
                 {hasSubItems && isExpanded && (
                   <div className="pl-7 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4 my-1">
-                    {group.subItems!.map((sub) => {
+                    {validSubItems.map((sub) => {
                       const isSubActive = activeView === sub.id;
                       return (
                         <button
@@ -298,12 +342,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onClick={() => handleSelectView(sub.id)}
                           className={`w-full text-left px-2.5 py-1.5 text-[11px] rounded transition-all flex items-center justify-between ${
                             isSubActive
-                              ? 'bg-indigo-600/20 text-indigo-300 font-bold border-l-2 border-indigo-400 pl-2'
+                              ? 'bg-indigo-600/25 text-indigo-300 font-bold border-l-2 border-indigo-400 pl-2'
                               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                           }`}
                         >
-                          <span>{sub.label}</span>
-                          {isSubActive && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />}
+                          <div className="flex items-center gap-1.5">
+                            {isSubActive && <span className="text-indigo-400 font-bold">▸</span>}
+                            <span>{sub.label}</span>
+                          </div>
+                          {isSubActive && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-400" />}
                         </button>
                       );
                     })}
@@ -327,3 +374,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+

@@ -116,13 +116,10 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
         </div>
 
         {/* Papeletas Pendientes */}
-        <div
-          onClick={() => onNavigate('papeletas_pending')}
-          className="bg-slate-900/40 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all rounded-xl p-4 shadow-sm group"
-        >
+        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Papeletas Pendientes</span>
-            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 border border-indigo-500/20 group-hover:scale-105 transition-transform">
+            <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400 border border-indigo-500/20">
               <FileText className="w-4 h-4" />
             </div>
           </div>
@@ -132,18 +129,14 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
           </div>
           <div className="mt-2 text-[10px] text-indigo-400 flex items-center gap-1 font-medium">
             <span>Requieren VoBo Inmediato</span>
-            <ArrowUpRight className="w-3 h-3" />
           </div>
         </div>
 
         {/* Garita - Personal Fuera */}
-        <div
-          onClick={() => onNavigate('security_outside')}
-          className="bg-slate-900/40 border border-slate-800 hover:border-purple-500/50 cursor-pointer transition-all rounded-xl p-4 shadow-sm group"
-        >
+        <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Personal Fuera (Garita)</span>
-            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400 border border-purple-500/20 group-hover:scale-105 transition-transform">
+            <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400 border border-purple-500/20">
               <ShieldCheck className="w-4 h-4" />
             </div>
           </div>
@@ -153,7 +146,6 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
           </div>
           <div className="mt-2 text-[10px] text-purple-300 flex items-center gap-1 font-medium">
             <span>Retornos pendientes: {pendingReturns.length}</span>
-            <ArrowUpRight className="w-3 h-3" />
           </div>
         </div>
       </div>
@@ -167,13 +159,9 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
               <FileText className="w-4 h-4 text-indigo-400" />
               <h2 className="font-bold text-sm text-white">Solicitudes de Papeleta Pendientes</h2>
             </div>
-            <button
-              onClick={() => onNavigate('papeletas_pending')}
-              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold"
-            >
-              <span>Ver Todas</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
+            <span className="text-[11px] font-mono text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded">
+              {pendingPapeletas.length} solicitudes
+            </span>
           </div>
 
           {pendingPapeletas.length === 0 ? (
@@ -212,15 +200,11 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <h2 className="font-bold text-sm text-white">Garita & Control de Salidas DRAC</h2>
+              <h2 className="font-bold text-sm text-white">Garita &amp; Control de Salidas DRAC</h2>
             </div>
-            <button
-              onClick={() => onNavigate('security_outside')}
-              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
-            >
-              <span>Ver Garita</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
+            <span className="text-[11px] font-mono text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded">
+              {outsideGarita.length} fuera
+            </span>
           </div>
 
           {outsideGarita.length === 0 ? (
@@ -249,48 +233,6 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Quick Direct Module Shortcuts */}
-      <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5">
-        <h3 className="font-bold text-xs text-slate-300 uppercase tracking-wider mb-3">Acceso Rápido Operativo</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <button
-            onClick={() => onNavigate('attendance_list')}
-            className="p-3 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-all"
-          >
-            <Users className="w-4 h-4 text-indigo-400 mb-1" />
-            <span className="text-xs font-bold text-white block">Control Asistencia</span>
-            <span className="text-[10px] text-slate-400 block">Marcaciones e incidencias</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('personnel_list')}
-            className="p-3 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-all"
-          >
-            <Building2 className="w-4 h-4 text-emerald-400 mb-1" />
-            <span className="text-xs font-bold text-white block">Directorio Personal</span>
-            <span className="text-[10px] text-slate-400 block">Personal y estructura</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('shifts_turnos')}
-            className="p-3 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-all"
-          >
-            <Clock className="w-4 h-4 text-amber-400 mb-1" />
-            <span className="text-xs font-bold text-white block">Turnos & Horarios</span>
-            <span className="text-[10px] text-slate-400 block">Jornadas y tolerancias</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate('vacations_requests')}
-            className="p-3 bg-slate-900/60 hover:bg-slate-800 border border-slate-800 rounded-lg text-left transition-all"
-          >
-            <Palmtree className="w-4 h-4 text-teal-400 mb-1" />
-            <span className="text-xs font-bold text-white block">Vacaciones</span>
-            <span className="text-[10px] text-slate-400 block">Solicitudes y periodos</span>
-          </button>
         </div>
       </div>
     </div>
