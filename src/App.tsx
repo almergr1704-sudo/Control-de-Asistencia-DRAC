@@ -38,6 +38,7 @@ import {
   Cargo,
   ResponsableDesignation,
   PapeletaSalida,
+  PapeletaStatus,
   PapeletaAudit,
   Vacacion,
   AsistenciaProcesada,
@@ -339,22 +340,49 @@ export default function App() {
   // PAPELETAS HANDLERS
   const handleUpdatePapeletaStatus = (
     papeletaId: string,
-    newStatus: PapeletaSalida['status'],
+    action: PapeletaStatus | 'APPROVE_BOSS' | 'APPROVE_HR' | 'REJECT' | 'MARK_OUTING_REAL' | 'MARK_COMPLETED_REAL',
     comment?: string,
     realExitTime?: string,
     realReturnTime?: string
   ) => {
+    let targetStatus: PapeletaStatus;
+    if (action === 'APPROVE_BOSS') {
+      targetStatus = 'PENDING_HR';
+    } else if (action === 'APPROVE_HR') {
+      targetStatus = 'APPROVED';
+    } else if (action === 'REJECT') {
+      targetStatus = 'REJECTED';
+    } else if (action === 'MARK_OUTING_REAL') {
+      targetStatus = 'IN_OUTING';
+    } else if (action === 'MARK_COMPLETED_REAL') {
+      targetStatus = 'COMPLETED';
+    } else {
+      targetStatus = action as PapeletaStatus;
+    }
+
     setPapeletas((prev) =>
       prev.map((p) => {
         if (p.id !== papeletaId) return p;
+        const now = new Date().toISOString();
         return {
           ...p,
-          status: newStatus,
-          real_exit_time: realExitTime !== undefined ? realExitTime : p.real_exit_time,
-          real_return_time: realReturnTime !== undefined ? realReturnTime : p.real_return_time,
-          updated_at: new Date().toISOString(),
+          status: targetStatus,
+          boss_approved_at: action === 'APPROVE_BOSS' ? now : p.boss_approved_at,
+          boss_comment: action === 'APPROVE_BOSS' ? comment : p.boss_comment,
+          hr_approved_at: action === 'APPROVE_HR' ? now : p.hr_approved_at,
+          hr_comment: action === 'APPROVE_HR' ? comment : p.hr_comment,
+          hora_real_salida: realExitTime !== undefined ? realExitTime : p.hora_real_salida,
+          hora_real_retorno: realReturnTime !== undefined ? realReturnTime : p.hora_real_retorno,
+          updated_at: now,
         };
       })
+    );
+
+    addAuditLog(
+      'PAPELETAS',
+      `STATUS_${action}`,
+      papeletaId,
+      `Papeleta ID ${papeletaId} actualizada a estado: ${targetStatus}${comment ? ` - Obs: ${comment}` : ''}`
     );
   };
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { PapeletaSalida, PapeletaAudit, RoleType, PapeletaMotivo, Employee } from '../../types';
+import { PapeletaSalida, PapeletaStatus, PapeletaAudit, RoleType, PapeletaMotivo, Employee } from '../../types';
 import {
   FileText,
   Plus,
@@ -32,9 +32,10 @@ interface PapeletasModuleProps {
   activeUserDni: string;
   onUpdatePapeletaStatus: (
     papeletaId: string,
-    action: 'APPROVE_BOSS' | 'APPROVE_HR' | 'REJECT' | 'MARK_OUTING_REAL' | 'MARK_COMPLETED_REAL',
+    action: PapeletaStatus | 'APPROVE_BOSS' | 'APPROVE_HR' | 'REJECT' | 'MARK_OUTING_REAL' | 'MARK_COMPLETED_REAL',
     comment?: string,
-    horaReal?: string
+    horaRealSalida?: string,
+    horaRealRetorno?: string
   ) => void;
   onCreatePapeleta: (newPapeleta: Omit<PapeletaSalida, 'id' | 'code' | 'created_at' | 'updated_at'>) => void;
 }
@@ -111,35 +112,78 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const autoSupervisorName = currentEmployee?.supervisor_name || 'Jefe / Director Inmediato';
   const autoSupervisorId = currentEmployee?.supervisor_id || 'boss-default';
 
-  // Scope-based Filtering for DRAC Roles
+  const isSecurityRole = activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD';
+
+  // MODAL FOR VIGILANCIA RECORDING REAL TIME
+  const [vigilanciaModal, setVigilanciaModal] = useState<{
+    isOpen: boolean;
+    papeleta: PapeletaSalida | null;
+    type: 'EXIT' | 'RETURN';
+    hora: string;
+    observacion: string;
+  }>({
+    isOpen: false,
+    papeleta: null,
+    type: 'EXIT',
+    hora: new Date().toTimeString().substring(0, 5),
+    observacion: '',
+  });
+
+  // Scope-based Filtering for DRAC Roles & Sub-views
   const scopedPapeletas = papeletas.filter((p) => {
     // 1. Trabajador base -> Solo ve sus propias papeletas
     if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') {
       return p.employee_dni === activeUserDni;
     }
 
-    // 2. Vigilancia / Seguridad Garita -> Solo ve autorizadas, en salida real o completadas
-    if (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD') {
+    // 2. Vigilancia / Seguridad Garita -> Ve autorizadas (listas para salir), en salida real (para retorno) y completadas
+    if (isSecurityRole) {
+      if (activeView === 'security_exit') {
+        return p.status === 'APPROVED';
+      }
+      if (activeView === 'security_return' || activeView === 'security_outside') {
+        return p.status === 'IN_OUTING';
+      }
+      // security_papeletas or generic view
+      if (statusFilter === 'APPROVED') return p.status === 'APPROVED';
+      if (statusFilter === 'IN_OUTING') return p.status === 'IN_OUTING';
+      if (statusFilter === 'COMPLETED') return p.status === 'COMPLETED';
       return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
     }
 
     // 3. Jefe / Director de Área u Órgano -> Ámbito organizacional restringido
     if (activeRole === 'JEFE' || activeRole === 'SUPERVISOR') {
-      if (p.employee_dni === activeUserDni) return true; // Su propia papeleta
-      if (!activeUserEmployee) return true;
+      let isAllowedByOrg = false;
+      if (p.employee_dni === activeUserDni) {
+        isAllowedByOrg = true; // Su propia papeleta
+      } else if (!activeUserEmployee) {
+        isAllowedByOrg = true;
+      } else {
+        const requester = employees.find((e) => e.dni === p.employee_dni);
+        if (!requester) {
+          isAllowedByOrg = true;
+        } else {
+          // Verificar si pertenece a la misma Dirección/Órgano o Dependencia
+          const sameDireccion = requester.direccion_organo_id && requester.direccion_organo_id === activeUserEmployee.direccion_organo_id;
+          const sameDependencia = requester.dependencia_id && requester.dependencia_id === activeUserEmployee.dependencia_id;
+          const directSubordinate = requester.supervisor_id === activeUserEmployee.id;
+          isAllowedByOrg = Boolean(sameDireccion || sameDependencia || directSubordinate);
+        }
+      }
 
-      const requester = employees.find((e) => e.dni === p.employee_dni);
-      if (!requester) return true;
+      if (!isAllowedByOrg) return false;
 
-      // Verificar si pertenece a la misma Dirección/Órgano o Dependencia
-      const sameDireccion = requester.direccion_organo_id && requester.direccion_organo_id === activeUserEmployee.direccion_organo_id;
-      const sameDependencia = requester.dependencia_id && requester.dependencia_id === activeUserEmployee.dependencia_id;
-      const directSubordinate = requester.supervisor_id === activeUserEmployee.id;
-
-      return Boolean(sameDireccion || sameDependencia || directSubordinate);
+      // Status filters for Jefe
+      if (statusFilter === 'PENDING') return p.status === 'PENDING_BOSS';
+      if (statusFilter === 'APPROVED') return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
+      if (statusFilter === 'MY') return p.employee_dni === activeUserDni;
+      return true;
     }
 
-    // 4. Director General, Jefe de RRHH, Control Asistencia y Admin General -> Ver todas las papeletas
+    // 4. Director General, Jefe de RRHH, Control Asistencia y Admin General -> Ver todas las papeletas con filtros
+    if (statusFilter === 'PENDING') return p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR';
+    if (statusFilter === 'APPROVED') return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
+    if (statusFilter === 'MY') return p.employee_dni === activeUserDni;
     return true;
   });
 
@@ -248,7 +292,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-400" />
             <h2 className="text-base font-bold text-white">
-              Papeletas de Salida DRAC (Permisos Oficiales de Jornada)
+              {isSecurityRole ? 'Papeletas y Control de Garita de Vigilancia DRAC' : 'Papeletas de Salida DRAC (Permisos Oficiales de Jornada)'}
             </h2>
             <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold rounded-full">
               AUTO-APROBADOR DETERMINADO
@@ -260,28 +304,99 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         </div>
 
         {/* Create Papeleta Button */}
-        <button
-          onClick={() => {
-            if (employees.length === 0) {
-              alert('Error: No se puede solicitar papeletas sin personal registrado en el sistema.');
-              return;
-            }
-            setShowCreateModal(true);
-          }}
-          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 self-start md:self-auto shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Solicitar Papeleta de Salida</span>
-        </button>
+        {!isSecurityRole && (
+          <button
+            onClick={() => {
+              if (employees.length === 0) {
+                alert('Error: No se puede solicitar papeletas sin personal registrado en el sistema.');
+                return;
+              }
+              setShowCreateModal(true);
+            }}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 self-start md:self-auto shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Solicitar Papeleta de Salida</span>
+          </button>
+        )}
       </div>
 
-      {/* Role Notice */}
-      {activeRole === 'SECURITY_GUARD' && (
-        <div className="p-3 bg-blue-950/30 border border-blue-800/40 rounded-xl flex items-center gap-3 text-xs text-blue-300">
-          <Shield className="w-5 h-5 text-blue-400 shrink-0" />
-          <div>
-            <span className="font-bold text-white">Modo Vigilancia de Garita DRAC Activo</span>: Visualiza únicamente papeletas autorizadas para registrar las horas reales de salida y retorno del personal.
+      {/* Role Notice for Vigilancia */}
+      {isSecurityRole && (
+        <div className="p-3 bg-blue-950/30 border border-blue-800/40 rounded-xl flex items-center justify-between gap-3 text-xs text-blue-300">
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-blue-400 shrink-0" />
+            <div>
+              <span className="font-bold text-white">Puesto de Vigilancia y Garita DRAC</span>: Visualiza papeletas autorizadas por Jefatura y Personal (RRHH) para sellar la hora exacta de salida y de retorno de los trabajadores.
+            </div>
           </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => setStatusFilter('APPROVED')}
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                statusFilter === 'APPROVED' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Listas p/ Salida ({papeletas.filter((p) => p.status === 'APPROVED').length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('IN_OUTING')}
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                statusFilter === 'IN_OUTING' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Personal Fuera ({papeletas.filter((p) => p.status === 'IN_OUTING').length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('ALL')}
+              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                statusFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              Todas
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* General Filter Tabs (for Non-Security or Administrative Roles) */}
+      {!isSecurityRole && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+          <button
+            onClick={() => setStatusFilter('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+              statusFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
+            }`}
+          >
+            Todas ({papeletas.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter('PENDING')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              statusFilter === 'PENDING' ? 'bg-amber-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Pendientes VoBo ({papeletas.filter((p) => p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR').length})</span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('APPROVED')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              statusFilter === 'APPROVED' ? 'bg-emerald-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Autorizadas Garita ({papeletas.filter((p) => p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED').length})</span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('MY')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              statusFilter === 'MY' ? 'bg-purple-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Mis Solicitudes ({papeletas.filter((p) => p.employee_dni === activeUserDni).length})</span>
+          </button>
         </div>
       )}
 
@@ -426,16 +541,18 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                           <button
                             onClick={() => {
                               const realTime = new Date().toTimeString().substring(0, 5);
-                              if (p.sin_retorno) {
-                                onUpdatePapeletaStatus(p.id, 'MARK_COMPLETED_REAL', 'Salida sin retorno registrada por Garita de Vigilancia', realTime);
-                              } else {
-                                onUpdatePapeletaStatus(p.id, 'MARK_OUTING_REAL', 'Salida registrada por Garita de Vigilancia', realTime);
-                              }
+                              setVigilanciaModal({
+                                isOpen: true,
+                                papeleta: p,
+                                type: 'EXIT',
+                                hora: realTime,
+                                observacion: p.sin_retorno ? 'Salida de comisión sin retorno registrada en Garita' : 'Salida autorizada registrada en Garita',
+                              });
                             }}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1"
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm"
                           >
                             <Shield className="w-3.5 h-3.5" />
-                            <span>{p.sin_retorno ? 'Registrar Salida (Sin Retorno)' : 'Registrar Salida'}</span>
+                            <span>{p.sin_retorno ? 'Registrar Salida (Sin Retorno)' : 'Registrar Salida Garita'}</span>
                           </button>
                         )}
 
@@ -444,12 +561,18 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                           <button
                             onClick={() => {
                               const realTime = new Date().toTimeString().substring(0, 5);
-                              onUpdatePapeletaStatus(p.id, 'MARK_COMPLETED_REAL', 'Retorno registrado por Garita de Vigilancia', realTime);
+                              setVigilanciaModal({
+                                isOpen: true,
+                                papeleta: p,
+                                type: 'RETURN',
+                                hora: realTime,
+                                observacion: 'Retorno registrado conforme en Garita de Vigilancia',
+                              });
                             }}
-                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center gap-1"
+                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Registrar Retorno</span>
+                            <span>Registrar Retorno Garita</span>
                           </button>
                         )}
                       </div>
@@ -463,8 +586,16 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           {scopedPapeletas.length === 0 && (
             <div className="p-12 text-center bg-slate-900/40">
               <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
-              <h4 className="text-sm font-bold text-slate-200">No hay papeletas de salida registradas</h4>
-              <p className="text-xs text-slate-400 mt-1">Haga clic en "Solicitar Papeleta de Salida" para iniciar una nueva solicitud.</p>
+              <h4 className="text-sm font-bold text-slate-200">
+                {isSecurityRole
+                  ? 'No hay papeletas pendientes para control de Garita'
+                  : 'No hay papeletas de salida registradas'}
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                {isSecurityRole
+                  ? 'Las papeletas aparecerán automáticamente en esta vista una vez cuenten con la aprobación del Jefe Inmediato y la autorización de Personal (RRHH).'
+                  : 'Haga clic en "Solicitar Papeleta de Salida" para iniciar una nueva solicitud.'}
+              </p>
             </div>
           )}
         </div>
@@ -729,6 +860,146 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 className="px-4 py-2 bg-slate-800 text-slate-200 text-xs font-bold rounded-lg"
               >
                 Cerrar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GARITA REAL EXIT/RETURN TIME REGISTRATION MODAL */}
+      {vigilanciaModal.isOpen && vigilanciaModal.papeleta && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                {vigilanciaModal.type === 'EXIT' ? (
+                  <Shield className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <RotateCcw className="w-5 h-5 text-purple-400" />
+                )}
+                <div>
+                  <h3 className="font-bold text-sm text-white">
+                    {vigilanciaModal.type === 'EXIT'
+                      ? 'Garita: Registrar Salida Real'
+                      : 'Garita: Registrar Retorno Real'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {vigilanciaModal.papeleta.code} — {vigilanciaModal.papeleta.employee_name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }))}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-1">
+                <div>
+                  <span className="text-slate-400">Destino Autorizado:</span>{' '}
+                  <span className="text-white font-medium">{vigilanciaModal.papeleta.destino}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Horario Estimado:</span>{' '}
+                  <span className="text-indigo-300 font-mono">
+                    {vigilanciaModal.papeleta.hora_estimada_salida} ➔ {vigilanciaModal.papeleta.hora_estimada_retorno}
+                  </span>
+                </div>
+                {vigilanciaModal.type === 'RETURN' && vigilanciaModal.papeleta.hora_real_salida && (
+                  <div>
+                    <span className="text-slate-400">Salida Real Registrada:</span>{' '}
+                    <span className="text-emerald-400 font-mono font-bold">
+                      {vigilanciaModal.papeleta.hora_real_salida}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Hora Exacta Marcada por Garita de Vigilancia (HH:MM):
+                </label>
+                <input
+                  type="time"
+                  value={vigilanciaModal.hora}
+                  onChange={(e) => setVigilanciaModal((prev) => ({ ...prev, hora: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Observación de Garita (Opcional):
+                </label>
+                <input
+                  type="text"
+                  value={vigilanciaModal.observacion}
+                  onChange={(e) => setVigilanciaModal((prev) => ({ ...prev, observacion: e.target.value }))}
+                  placeholder="Ej: Salida conforme con fotocheck institucional..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 flex justify-end gap-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }))}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!vigilanciaModal.papeleta) return;
+                  if (vigilanciaModal.type === 'EXIT') {
+                    if (vigilanciaModal.papeleta.sin_retorno) {
+                      onUpdatePapeletaStatus(
+                        vigilanciaModal.papeleta.id,
+                        'MARK_COMPLETED_REAL',
+                        vigilanciaModal.observacion || 'Salida sin retorno sellada en Garita',
+                        vigilanciaModal.hora
+                      );
+                    } else {
+                      onUpdatePapeletaStatus(
+                        vigilanciaModal.papeleta.id,
+                        'MARK_OUTING_REAL',
+                        vigilanciaModal.observacion || 'Salida sellada en Garita',
+                        vigilanciaModal.hora
+                      );
+                    }
+                  } else {
+                    onUpdatePapeletaStatus(
+                      vigilanciaModal.papeleta.id,
+                      'MARK_COMPLETED_REAL',
+                      vigilanciaModal.observacion || 'Retorno sellado en Garita',
+                      vigilanciaModal.papeleta.hora_real_salida || undefined,
+                      vigilanciaModal.hora
+                    );
+                  }
+                  setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }));
+                }}
+                className={`px-4 py-1.5 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 ${
+                  vigilanciaModal.type === 'EXIT'
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : 'bg-purple-600 hover:bg-purple-500'
+                }`}
+              >
+                {vigilanciaModal.type === 'EXIT' ? (
+                  <>
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Guardar Hora de Salida</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Guardar Hora de Retorno</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
