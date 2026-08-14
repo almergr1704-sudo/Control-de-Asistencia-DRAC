@@ -152,14 +152,11 @@ export const INITIAL_TURNOS: Turno[] = [
     code: 'TUR-001',
     name: 'Turno 001 — Mañana',
     description: 'Turno administrativo matutino DRAC',
-    // 1. Horario del Turno: 08:00 AM a 01:00 PM
     start_time: '08:00',
     end_time: '13:00',
-    // 2. Ventana de Marcación Permitida: 07:00 AM a 01:59 PM
     window_entry_start: '07:00',
     window_exit_limit: '13:59',
     tolerance_minutes: 10,
-    tolerance_exit_minutes: 0,
     is_overnight: false,
     active: true,
     created_at: new Date().toISOString(),
@@ -169,14 +166,11 @@ export const INITIAL_TURNOS: Turno[] = [
     code: 'TUR-002',
     name: 'Turno 002 — Tarde',
     description: 'Turno administrativo vespertino DRAC',
-    // 1. Horario del Turno: 02:00 PM a 05:00 PM
     start_time: '14:00',
     end_time: '17:00',
-    // 2. Ventana de Marcación Permitida: 01:30 PM a 05:59 PM
     window_entry_start: '13:30',
     window_exit_limit: '17:59',
     tolerance_minutes: 10,
-    tolerance_exit_minutes: 0,
     is_overnight: false,
     active: true,
     created_at: new Date().toISOString(),
@@ -186,14 +180,11 @@ export const INITIAL_TURNOS: Turno[] = [
     code: 'TUR-003',
     name: 'Turno Nocturno Garita',
     description: 'Guardia y vigilancia nocturna continua',
-    // 1. Horario del Turno: 10:00 PM a 06:00 AM (+1 día)
     start_time: '22:00',
     end_time: '06:00',
-    // 2. Ventana de Marcación Permitida: 09:00 PM a 06:59 AM
     window_entry_start: '21:00',
     window_exit_limit: '06:59',
     tolerance_minutes: 15,
-    tolerance_exit_minutes: 5,
     is_overnight: true,
     active: true,
     created_at: new Date().toISOString(),

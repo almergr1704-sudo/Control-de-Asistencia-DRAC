@@ -200,7 +200,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
             Regla de Cómputo de Horas Trabajadas (DRAC):
           </div>
           <p className="text-slate-400 leading-relaxed text-[11px]">
-            Las marcaciones dentro de la <strong>Ventana Permitida</strong> comprueban la asistencia. El tiempo efectivo computado se calcula <strong className="text-slate-200">estrictamente a partir del Horario del Turno</strong> (ej: entrada 07:00 en turno de 08:00 computa desde las 08:00 AM; salida 13:59 en turno de 13:00 computa hasta la 01:00 PM).
+            Las marcaciones dentro de la <strong>Ventana Permitida (TIME)</strong> comprueban la asistencia. El tiempo efectivo computado se calcula <strong className="text-slate-200">estrictamente a partir del Horario del Turno (TIME)</strong> con evaluación estricta a la hora de salida (sin tolerancia de salida; salidas anticipadas son descontadas).
           </p>
         </div>
       </div>
@@ -294,10 +294,10 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                     {/* Turno 1 */}
                     <td className="px-4 py-3 font-mono text-[11px]">
                       <div className="text-slate-400">
-                        Turno: <span className="text-white font-semibold">{rec.t1_scheduled_in || '08:00'} - {rec.t1_scheduled_out || '13:00'}</span>
+                        Turno: <span className="text-white font-semibold">{rec.t1_scheduled_in || '--:--'} - {rec.t1_scheduled_out || '--:--'}</span>
                       </div>
                       <div className="text-indigo-400 text-[10px]">
-                        Ventana: {rec.t1_window_entry_start || '07:00'} a {rec.t1_window_exit_limit || '13:59'}
+                        Ventana: {rec.t1_window_entry_start || '--:--'} a {rec.t1_window_exit_limit || '--:--'}
                       </div>
                       <div className="text-emerald-400 font-bold">
                         Real: {rec.t1_real_in || '--:--'} - {rec.t1_real_out || '--:--'}
@@ -317,7 +317,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                             Turno: <span className="text-white font-semibold">{rec.t2_scheduled_in} - {rec.t2_scheduled_out}</span>
                           </div>
                           <div className="text-indigo-400 text-[10px]">
-                            Ventana: {rec.t2_window_entry_start || '13:30'} a {rec.t2_window_exit_limit || '17:59'}
+                            Ventana: {rec.t2_window_entry_start || '--:--'} a {rec.t2_window_exit_limit || '--:--'}
                           </div>
                           <div className="text-emerald-400 font-bold">
                             Real: {rec.t2_real_in || '--:--'} - {rec.t2_real_out || '--:--'}
@@ -424,14 +424,14 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
               {/* Turno 1 Edits & Live Computation */}
               <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
                 <div className="flex items-center justify-between text-slate-300 font-bold text-[11px]">
-                  <span>Turno 1 ({editingRecord.t1_scheduled_in || '08:00'} - {editingRecord.t1_scheduled_out || '13:00'})</span>
+                  <span>Turno 1 ({editingRecord.t1_scheduled_in || '--:--'} - {editingRecord.t1_scheduled_out || '--:--'})</span>
                   <span className="text-indigo-400 font-mono text-[10px]">
-                    Ventana: {editingRecord.t1_window_entry_start || '07:00'} a {editingRecord.t1_window_exit_limit || '13:59'}
+                    Ventana: {editingRecord.t1_window_entry_start || '--:--'} a {editingRecord.t1_window_exit_limit || '--:--'}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-400 mb-1">Entrada Real</label>
+                    <label className="block text-slate-400 mb-1">Entrada Real (TIME)</label>
                     <input
                       type="time"
                       value={editT1Entrada}
@@ -440,7 +440,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 mb-1">Salida Real</label>
+                    <label className="block text-slate-400 mb-1">Salida Real (TIME)</label>
                     <input
                       type="time"
                       value={editT1Salida}
@@ -463,12 +463,12 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                   <div className="flex items-center justify-between text-slate-300 font-bold text-[11px]">
                     <span>Turno 2 ({editingRecord.t2_scheduled_in} - {editingRecord.t2_scheduled_out})</span>
                     <span className="text-indigo-400 font-mono text-[10px]">
-                      Ventana: {editingRecord.t2_window_entry_start || '13:30'} a {editingRecord.t2_window_exit_limit || '17:59'}
+                      Ventana: {editingRecord.t2_window_entry_start || '--:--'} a {editingRecord.t2_window_exit_limit || '--:--'}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-400 mb-1">Entrada Real</label>
+                      <label className="block text-slate-400 mb-1">Entrada Real (TIME)</label>
                       <input
                         type="time"
                         value={editT2Entrada}
@@ -477,7 +477,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-400 mb-1">Salida Real</label>
+                      <label className="block text-slate-400 mb-1">Salida Real (TIME)</label>
                       <input
                         type="time"
                         value={editT2Salida}

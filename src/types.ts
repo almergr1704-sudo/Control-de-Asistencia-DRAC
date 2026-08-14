@@ -163,18 +163,17 @@ export interface Employee {
 export interface Turno {
   id: string;
   code: string;
-  name: string; // Ej: "Turno 001 — Mañana", "Turno 002 — Tarde"
+  name: string;
   description?: string;
   // 1. HORARIO DEL TURNO (Jornada Estándar)
-  start_time: string; // "08:00" (Hora inicio estándar de la jornada)
-  end_time: string; // "13:00" (Hora fin estándar de la jornada)
+  start_time: string; // Hora inicio estándar de la jornada (TIME)
+  end_time: string; // Hora fin estándar de la jornada (TIME) - Evaluación estricta
 
   // 2. VENTANA DE MARCACIÓN (Permitida en Biométrico)
-  window_entry_start?: string; // "07:00" (A partir de qué hora se permite registrar entrada)
-  window_exit_limit?: string; // "13:59" (Hasta qué hora se permite registrar salida)
+  window_entry_start?: string; // Hora inicio marcación de entrada (TIME)
+  window_exit_limit?: string; // Hora límite marcación de salida (TIME)
 
   tolerance_minutes: number; // Tolerancia de entrada (mins)
-  tolerance_exit_minutes?: number; // Tolerancia de salida (mins)
   is_overnight: boolean;
   active?: boolean;
   is_historical?: boolean;

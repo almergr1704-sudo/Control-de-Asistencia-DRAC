@@ -66,13 +66,13 @@ export function formatMinutesToText(totalMins: number): string {
  * Función principal para calcular duración del turno, validar ventana y calcular horas trabajadas efectivas.
  */
 export function calculateShiftAndWorkedHours(params: {
-  startTime: string; // ej: "08:00" (Horario del Turno: Inicio)
-  endTime: string; // ej: "13:00" (Horario del Turno: Fin)
-  windowEntryStart?: string; // ej: "07:00" (Ventana: Inicio marcación entrada)
-  windowExitLimit?: string; // ej: "13:59" (Ventana: Límite marcación salida)
-  realIn?: string | null; // ej: "07:00" o "08:05" (Marcación real biométrica)
-  realOut?: string | null; // ej: "13:59" o "13:00" (Marcación real biométrica)
-  toleranceMinutes?: number; // ej: 10
+  startTime: string; // Horario del Turno: Inicio (TIME)
+  endTime: string; // Horario del Turno: Fin (TIME) - Evaluación estricta
+  windowEntryStart?: string; // Ventana: Inicio marcación entrada (TIME)
+  windowExitLimit?: string; // Ventana: Límite marcación salida (TIME)
+  realIn?: string | null; // Marcación real biométrica entrada (TIME)
+  realOut?: string | null; // Marcación real biométrica salida (TIME)
+  toleranceMinutes?: number; // Tolerancia de entrada en minutos
 }): ShiftCalculationResult {
   const {
     startTime,
@@ -106,7 +106,6 @@ export function calculateShiftAndWorkedHours(params: {
   let winExitMins = timeToMinutes(winExitStr);
 
   if (winEntryMins > sMins && !isOvernight) {
-    // Si la hora de ventana inicio parece mayor en reloj normal (ej: 23:00 para turno 00:00)
     winEntryMins -= 24 * 60;
   }
 
@@ -114,7 +113,7 @@ export function calculateShiftAndWorkedHours(params: {
     winExitMins += 24 * 60;
   }
 
-  // Validación de marcaciones reales (si están presentes)
+  // Validación de marcaciones reales
   let isEntryInWindow = true;
   let isExitInWindow = true;
   let rawTardinessMinutes = 0;
@@ -135,14 +134,13 @@ export function calculateShiftAndWorkedHours(params: {
     isEntryInWindow = rInMins >= winEntryMins && rInMins <= eMins;
 
     // Regla de inicio efectivo:
-    // Si marca dentro de la ventana anticipada (ej: 07:00 para turno de 08:00),
-    // el cálculo empieza estrictamente a la hora de inicio del turno (08:00).
+    // Si marca dentro de la ventana anticipada, el cómputo inicia a la hora de inicio del turno.
     if (rInMins <= sMins) {
       effectiveStartMins = sMins; // Topado al inicio del turno
       rawTardinessMinutes = 0;
       netTardinessMinutes = 0;
     } else {
-      // Marcó después de la hora de inicio (ej: 08:15)
+      // Marcó después de la hora de inicio
       effectiveStartMins = rInMins;
       rawTardinessMinutes = rInMins - sMins;
       if (rawTardinessMinutes <= toleranceMinutes) {
@@ -164,14 +162,13 @@ export function calculateShiftAndWorkedHours(params: {
     // Verificar ventana de salida
     isExitInWindow = rOutMins >= sMins && rOutMins <= winExitMins;
 
-    // Regla de fin efectivo:
-    // Si marca salida después del fin del turno (ej: 13:59 para turno de 13:00),
-    // el tiempo efectivo se topa estrictamente a la hora fin del turno (13:00).
+    // Regla de fin efectivo (Evaluación estricta sin tolerancia de salida):
+    // Si marca salida igual o después del fin del turno, el tiempo efectivo se topa a la hora fin del turno.
     if (rOutMins >= eMins) {
       effectiveEndMins = eMins; // Topado al fin del turno
       earlyExitMinutes = 0;
     } else {
-      // Marcó salida antes de tiempo (ej: 12:45 para turno de 13:00)
+      // Marcó salida antes de la hora final configurada (Salida Anticipada estricta)
       effectiveEndMins = rOutMins;
       earlyExitMinutes = eMins - rOutMins;
     }
@@ -189,12 +186,14 @@ export function calculateShiftAndWorkedHours(params: {
   // Explicación textual de la regla aplicada
   let ruleExplanation = `Jornada estándar: ${startTime} a ${endTime} (${scheduledDurationText}).`;
   if (realIn && realOut) {
-    if (timeToMinutes(realIn) < sMins && timeToMinutes(realOut) > (eMins % 1440)) {
-      ruleExplanation = `Marcó entrada anticipada (${realIn}) y salida extendida (${realOut}) dentro de ventana permitida. Tiempo efectivo contabilizado estrictamente al turno: ${effectiveDurationText} (${startTime} a ${endTime}).`;
+    if (timeToMinutes(realIn) < sMins && timeToMinutes(realOut) >= (eMins % 1440)) {
+      ruleExplanation = `Marcó entrada anticipada (${realIn}) y salida regular/extendida (${realOut}) dentro de ventana permitida. Tiempo efectivo contabilizado estrictamente al turno: ${effectiveDurationText} (${startTime} a ${endTime}).`;
+    } else if (timeToMinutes(realIn) > sMins && timeToMinutes(realOut) < (eMins % 1440)) {
+      ruleExplanation = `Marcó con tardanza (${realIn}) y salida anticipada (${realOut}, -${earlyExitMinutes} min). Inicio efectivo: ${effectiveStart}, Fin efectivo: ${effectiveEnd}. Tiempo efectivo: ${effectiveDurationText}.`;
     } else if (timeToMinutes(realIn) > sMins) {
       ruleExplanation = `Marcó con tardanza (${realIn}). Inicio efectivo: ${effectiveStart}. Tiempo efectivo computado: ${effectiveDurationText}.`;
     } else if (timeToMinutes(realOut) < (eMins % 1440)) {
-      ruleExplanation = `Marcó salida anticipada (${realOut}). Fin efectivo: ${effectiveEnd}. Tiempo efectivo computado: ${effectiveDurationText}.`;
+      ruleExplanation = `Salida anticipada (${realOut}, -${earlyExitMinutes} min de diferencia exacta). Fin efectivo: ${effectiveEnd}. Tiempo efectivo computado: ${effectiveDurationText}.`;
     }
   }
 

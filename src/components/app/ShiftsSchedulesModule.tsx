@@ -130,7 +130,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('13:00');
   const [tolerance, setTolerance] = useState(10);
-  const [toleranceExit, setToleranceExit] = useState(0);
   // 2. Ventana de Marcación Permitida
   const [windowEntryStart, setWindowEntryStart] = useState('07:00');
   const [windowExitLimit, setWindowExitLimit] = useState('13:59');
@@ -176,7 +175,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart('07:00');
     setWindowExitLimit('13:59');
     setTolerance(10);
-    setToleranceExit(0);
     setModalSimIn('07:00');
     setModalSimOut('13:59');
     setTurnoActive(true);
@@ -195,7 +193,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart(t.window_entry_start || '07:00');
     setWindowExitLimit(t.window_exit_limit || '13:59');
     setTolerance(t.tolerance_minutes);
-    setToleranceExit(t.tolerance_exit_minutes || 0);
     setModalSimIn(t.window_entry_start || '07:00');
     setModalSimOut(t.window_exit_limit || '13:59');
     setTurnoActive(t.active !== false);
@@ -215,7 +212,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart(t.window_entry_start || '07:00');
     setWindowExitLimit(t.window_exit_limit || '13:59');
     setTolerance(t.tolerance_minutes);
-    setToleranceExit(t.tolerance_exit_minutes || 0);
     setModalSimIn(t.window_entry_start || '07:00');
     setModalSimOut(t.window_exit_limit || '13:59');
     setTurnoActive(true);
@@ -313,7 +309,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         window_entry_start: windowEntryStart,
         window_exit_limit: windowExitLimit,
         tolerance_minutes: Number(tolerance),
-        tolerance_exit_minutes: Number(toleranceExit),
         is_overnight: dur.isOvernight,
         active: turnoActive,
       });
@@ -327,7 +322,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         window_entry_start: windowEntryStart,
         window_exit_limit: windowExitLimit,
         tolerance_minutes: Number(tolerance),
-        tolerance_exit_minutes: Number(toleranceExit),
         is_overnight: dur.isOvernight,
         active: turnoActive,
       });
@@ -486,7 +480,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             <span>1. Horario del Turno</span>
           </div>
           <p className="text-slate-300 leading-relaxed text-[11px]">
-            Define el inicio y fin de la <strong>jornada laboral estándar</strong> (ej: 08:00 AM a 01:00 PM = 5.0 horas).
+            Define el inicio y fin de la <strong>jornada laboral estándar (TIME)</strong> con evaluación estricta a la hora de salida.
           </p>
         </div>
 
@@ -496,7 +490,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             <span>2. Ventana de Marcación</span>
           </div>
           <p className="text-slate-300 leading-relaxed text-[11px]">
-            Rango permitido en biométrico: <strong>Hora inicio entrada</strong> (ej: 07:00 AM) y <strong>Hora límite salida</strong> (ej: 01:59 PM).
+            Rango permitido en biométrico: <strong>Hora inicio entrada (TIME)</strong> y <strong>Hora límite salida (TIME)</strong>.
           </p>
         </div>
 
@@ -506,7 +500,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             <span>3. Regla de Cómputo Efectivo</span>
           </div>
           <p className="text-slate-300 leading-relaxed text-[11px]">
-            Las marcaciones en ventana son válidas para asistencia; el tiempo efectivo se computa <strong>estrictamente dentro del turno</strong> (08:00 a 13:00 = 5.0h).
+            Las marcaciones en ventana comprueban asistencia; el tiempo efectivo se computa <strong>estrictamente dentro del turno</strong> sin tolerancia de salida.
           </p>
         </div>
       </div>
@@ -565,17 +559,17 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
                 <div className="space-y-2 mt-4">
                   <div className="p-3 bg-[#090A0D] rounded border border-slate-800 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">Turno 1 (Mañana / Principal)</span>
+                    <span className="text-xs text-slate-400">Turno 1 (Principal)</span>
                     <span className="font-mono text-xs text-emerald-400 font-bold">
-                      {h.turno1_name || 'Turno Mañana (08:00 - 13:00)'}
+                      {h.turno1_name || 'Turno Principal'}
                     </span>
                   </div>
 
                   {h.turn_count === 2 && (
                     <div className="p-3 bg-[#090A0D] rounded border border-slate-800 flex items-center justify-between">
-                      <span className="text-xs text-slate-400">Turno 2 (Tarde / Retorno)</span>
+                      <span className="text-xs text-slate-400">Turno 2 (Retorno)</span>
                       <span className="font-mono text-xs text-emerald-400 font-bold">
-                        {h.turno2_name || 'Turno Tarde (14:00 - 17:00)'}
+                        {h.turno2_name || 'Turno Retorno'}
                       </span>
                     </div>
                   )}
@@ -597,8 +591,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
           {turnos.map((t) => {
             const dur = calculateShiftDuration(t.start_time, t.end_time);
             const isAssigned = horarios.some((h) => h.turno1_id === t.id || h.turno2_id === t.id);
-            const winEntry = t.window_entry_start || '07:00';
-            const winExit = t.window_exit_limit || '13:59';
+            const winEntry = t.window_entry_start || '--:--';
+            const winExit = t.window_exit_limit || '--:--';
             const isSimulatorOpen = expandedSimulatorTurnoId === t.id;
 
             // Live computation for this card
@@ -705,7 +699,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                       </div>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1">
                         <span>Tolerancia Entrada: <strong className="text-slate-200">{t.tolerance_minutes} min</strong></span>
-                        <span>Tolerancia Salida: <strong className="text-slate-200">{t.tolerance_exit_minutes || 0} min</strong></span>
+                        <span className="text-amber-400/90 font-semibold">Salida Estricta: Sin Tolerancia</span>
                       </div>
                     </div>
 
@@ -742,7 +736,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                         <span>Regla de Cómputo de Horas:</span>
                       </div>
                       <p className="text-slate-400 leading-relaxed">
-                        Si marca en ventana previa (ej: {winEntry}) y salida posterior (ej: {winExit}), el tiempo efectivo se computa <strong className="text-white">estrictamente a las {dur.text} del turno</strong> ({t.start_time} - {t.end_time}).
+                        Marcación en ventana previa o salida posterior se computa <strong className="text-white">estrictamente a la jornada del turno</strong> ({t.start_time} - {t.end_time}). Retiros previos computan como salida anticipada.
                       </p>
                     </div>
                   </div>
@@ -772,7 +766,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     <div className="mt-2.5 p-3 bg-[#090A0D] border border-indigo-900/50 rounded-lg space-y-2.5 text-xs animate-in fade-in duration-200">
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] text-slate-400 mb-0.5">Entrada Real (ej: {winEntry})</label>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Marcación Entrada (TIME)</label>
                           <input
                             type="time"
                             value={cardSimIn}
@@ -781,7 +775,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] text-slate-400 mb-0.5">Salida Real (ej: {winExit})</label>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Marcación Salida (TIME)</label>
                           <input
                             type="time"
                             value={cardSimOut}
@@ -924,8 +918,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                      <span>Hora de Inicio del Turno *</span>
-                      <span className="text-[10px] text-emerald-400 font-mono">(ej: 08:00 AM)</span>
+                      <span>Hora de Inicio del Turno (TIME) *</span>
                     </label>
                     <input
                       type="time"
@@ -934,12 +927,11 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                       className="w-full px-3 py-2 bg-[#0F1115] text-emerald-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-emerald-500 focus:outline-none"
                       required
                     />
-                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de inicio de jornada</span>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de inicio de jornada laboral</span>
                   </div>
                   <div>
                     <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                      <span>Hora Final del Turno *</span>
-                      <span className="text-[10px] text-amber-400 font-mono">(ej: 01:00 PM / 13:00)</span>
+                      <span>Hora Final del Turno (TIME) *</span>
                     </label>
                     <input
                       type="time"
@@ -948,13 +940,13 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                       className="w-full px-3 py-2 bg-[#0F1115] text-amber-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-amber-500 focus:outline-none"
                       required
                     />
-                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de fin de jornada</span>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de fin (Evaluación estricta sin tolerancia)</span>
                   </div>
                 </div>
 
                 {/* Tolerances */}
-                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
-                  <div>
+                <div className="pt-2 border-t border-slate-800/80">
+                  <div className="max-w-xs">
                     <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Entrada</label>
                     <div className="relative">
                       <input
@@ -969,24 +961,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                       <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
                     </div>
                     <span className="text-[10px] text-slate-500 mt-0.5 block">
-                      Hasta 08:{String(tolerance).padStart(2, '0')} sin tardanza
+                      Minutos de gracia para marcación de ingreso antes de computar tardanza
                     </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Salida</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min={0}
-                        max={120}
-                        value={toleranceExit}
-                        onChange={(e) => setToleranceExit(Math.max(0, Number(e.target.value)))}
-                        className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
-                      />
-                      <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Margen salida previa</span>
                   </div>
                 </div>
               </div>
@@ -1006,8 +982,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                      <span>Hora inicio marcación de entrada *</span>
-                      <span className="text-[10px] text-indigo-400 font-mono">(ej: 07:00 AM)</span>
+                      <span>Hora inicio marcación de entrada (TIME) *</span>
                     </label>
                     <input
                       type="time"
@@ -1024,8 +999,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
                   <div>
                     <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                      <span>Hora límite marcación de salida *</span>
-                      <span className="text-[10px] text-indigo-400 font-mono">(ej: 01:59 PM / 13:59)</span>
+                      <span>Hora límite marcación de salida (TIME) *</span>
                     </label>
                     <input
                       type="time"
@@ -1070,7 +1044,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 {/* Live simulation controllers */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Entrada Real:</label>
+                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Entrada Real (TIME):</label>
                     <input
                       type="time"
                       value={modalSimIn}
@@ -1079,7 +1053,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Salida Real:</label>
+                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Salida Real (TIME):</label>
                     <input
                       type="time"
                       value={modalSimOut}
@@ -1269,7 +1243,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Turno 1 (Principal / Mañana)</label>
+                <label className="block text-slate-400 mb-1 font-medium">Turno 1 (Principal)</label>
                 <select
                   value={turno1Id}
                   onChange={(e) => setTurno1Id(e.target.value)}
@@ -1278,7 +1252,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 >
                   {turnos.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '07:00'} a {t.window_exit_limit || '13:59'}]
+                      {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '--:--'} a {t.window_exit_limit || '--:--'}]
                     </option>
                   ))}
                 </select>
@@ -1286,7 +1260,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
               {turnCount === 2 && (
                 <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Turno 2 (Retorno / Tarde)</label>
+                  <label className="block text-slate-400 mb-1 font-medium">Turno 2 (Retorno)</label>
                   <select
                     value={turno2Id}
                     onChange={(e) => setTurno2Id(e.target.value)}
@@ -1296,7 +1270,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     <option value="">Seleccionar Turno 2...</option>
                     {turnos.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '13:30'} a {t.window_exit_limit || '17:59'}]
+                        {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '--:--'} a {t.window_exit_limit || '--:--'}]
                       </option>
                     ))}
                   </select>
