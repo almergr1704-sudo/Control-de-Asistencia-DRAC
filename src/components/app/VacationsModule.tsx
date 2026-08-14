@@ -33,21 +33,22 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     }
   }, [activeView]);
 
-  const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '71234567');
+  const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '');
   const [tipo, setTipo] = useState<VacacionTipo>('PARCIAL');
-  const [startDate, setStartDate] = useState('2026-08-25');
-  const [endDate, setEndDate] = useState('2026-08-27');
-  const [totalDays, setTotalDays] = useState(3);
-  const [comments, setComments] = useState('Permiso de vacación fraccionada autorizada por RRHH.');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [totalDays, setTotalDays] = useState(1);
+  const [comments, setComments] = useState('');
 
   const handleOpenAdd = () => {
     setEditingVacation(null);
-    setSelectedEmpDni(employees[0]?.dni || '71234567');
+    setSelectedEmpDni(employees[0]?.dni || '');
     setTipo('PARCIAL');
-    setStartDate('2026-08-25');
-    setEndDate('2026-08-27');
-    setTotalDays(3);
-    setComments('Permiso de vacación fraccionada autorizada por RRHH.');
+    const today = new Date().toISOString().split('T')[0];
+    setStartDate(today);
+    setEndDate(today);
+    setTotalDays(1);
+    setComments('');
     setShowModal(true);
   };
 
@@ -151,65 +152,75 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-sans">
-              {vacaciones.map((v) => (
-                <tr key={v.id} className="hover:bg-slate-800/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-white flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>{v.employee_name}</span>
-                    </div>
-                    <div className="text-[10px] font-mono text-slate-500">DNI: {v.employee_dni}</div>
+              {vacaciones.length === 0 ? (
+                <tr>
+                  <td colSpan={activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' ? 7 : 6} className="px-4 py-12 text-center text-slate-500">
+                    <CalendarDays className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                    <p className="text-sm font-medium text-slate-400">No existen períodos vacacionales programados</p>
+                    <p className="text-xs text-slate-600 mt-1">Haga clic en &quot;Asignar Vacaciones&quot; para registrar un nuevo período de descanso físico.</p>
                   </td>
-
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
-                      v.tipo === 'TOTAL' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20'
-                    }`}>
-                      {v.tipo === 'TOTAL' ? 'TOTAL (30 DÍAS LEY)' : 'PARCIAL (FRACCIONADA)'}
-                    </span>
-                  </td>
-
-                  <td className="px-4 py-3 font-mono text-[11px] text-slate-300">
-                    {v.start_date} al {v.end_date}
-                  </td>
-
-                  <td className="px-4 py-3 font-mono font-bold text-indigo-400">
-                    {v.total_days} días
-                  </td>
-
-                  <td className="px-4 py-3 text-emerald-500 font-semibold flex items-center gap-1 mt-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{v.approved_by_hr || 'RRHH Admin'}</span>
-                  </td>
-
-                  <td className="px-4 py-3 text-slate-400 text-[11px] max-w-xs truncate">
-                    {v.comments}
-                  </td>
-
-                  {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
-                    <td className="px-4 py-3 text-right space-x-1">
-                      <button
-                        onClick={() => handleOpenEdit(v)}
-                        className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        <span>Editar</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`¿Desea cancelar las vacaciones de ${v.employee_name}?`) && onDeleteVacation) {
-                            onDeleteVacation(v.id);
-                          }
-                        }}
-                        className="px-2 py-1 bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded text-[11px] font-semibold border border-rose-500/20 transition-colors inline-flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>Cancelar</span>
-                      </button>
-                    </td>
-                  )}
                 </tr>
-              ))}
+              ) : (
+                vacaciones.map((v) => (
+                  <tr key={v.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-white flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{v.employee_name}</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-500">DNI: {v.employee_dni}</div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                        v.tipo === 'TOTAL' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-slate-500/10 text-slate-300 border-slate-500/20'
+                      }`}>
+                        {v.tipo === 'TOTAL' ? 'TOTAL (30 DÍAS LEY)' : 'PARCIAL (FRACCIONADA)'}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-300">
+                      {v.start_date} al {v.end_date}
+                    </td>
+
+                    <td className="px-4 py-3 font-mono font-bold text-indigo-400">
+                      {v.total_days} días
+                    </td>
+
+                    <td className="px-4 py-3 text-emerald-500 font-semibold flex items-center gap-1 mt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{v.approved_by_hr || 'RRHH Admin'}</span>
+                    </td>
+
+                    <td className="px-4 py-3 text-slate-400 text-[11px] max-w-xs truncate">
+                      {v.comments}
+                    </td>
+
+                    {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+                      <td className="px-4 py-3 text-right space-x-1">
+                        <button
+                          onClick={() => handleOpenEdit(v)}
+                          className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`¿Desea cancelar las vacaciones de ${v.employee_name}?`) && onDeleteVacation) {
+                              onDeleteVacation(v.id);
+                            }
+                          }}
+                          className="px-2 py-1 bg-rose-600/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded text-[11px] font-semibold border border-rose-500/20 transition-colors inline-flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Cancelar</span>
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

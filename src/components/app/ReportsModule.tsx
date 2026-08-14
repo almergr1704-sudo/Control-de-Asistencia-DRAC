@@ -226,7 +226,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                           <td className="p-3 text-slate-400 font-bold">{a.fecha}</td>
                           <td className="p-3 text-white font-bold font-sans">{a.employee_name}</td>
                           <td className="p-3 text-slate-400 font-sans">{a.area_name}</td>
-                          <td className="p-3 text-slate-400">08:00</td>
+                          <td className="p-3 text-slate-400">{a.t1_scheduled_in || '--:--'}</td>
                           <td className="p-3 text-amber-400 font-bold">{a.t1_real_in}</td>
                           <td className="p-3 text-rose-400 font-bold">{a.net_tardiness_minutes} min</td>
                         </tr>

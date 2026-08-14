@@ -270,112 +270,122 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 font-sans">
-              {filteredRecords.map((rec) => {
-                const badge = statusBadges[rec.status] || statusBadges.PUNCTUAL;
-                const effHours = rec.total_effective_hours !== undefined
-                  ? rec.total_effective_hours
-                  : (rec.t1_effective_hours || 0) + (rec.t2_effective_hours || 0);
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA' ? 9 : 8} className="px-4 py-12 text-center text-slate-500">
+                    <Clock className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                    <p className="text-sm font-medium text-slate-400">No existen registros de asistencia para mostrar</p>
+                    <p className="text-xs text-slate-600 mt-1">Los registros procesados desde marcaciones biométricas o regularizaciones se mostrarán aquí.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredRecords.map((rec) => {
+                  const badge = statusBadges[rec.status] || statusBadges.PUNCTUAL;
+                  const effHours = rec.total_effective_hours !== undefined
+                    ? rec.total_effective_hours
+                    : (rec.t1_effective_hours || 0) + (rec.t2_effective_hours || 0);
 
-                return (
-                  <tr key={rec.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-white flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        <span>{rec.employee_name}</span>
-                      </div>
-                      <div className="text-[10px] font-mono text-slate-500">DNI: {rec.employee_dni}</div>
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-300">
-                      <div className="font-medium text-slate-200">{rec.area_name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{rec.fecha}</div>
-                    </td>
-
-                    {/* Turno 1 */}
-                    <td className="px-4 py-3 font-mono text-[11px]">
-                      <div className="text-slate-400">
-                        Turno: <span className="text-white font-semibold">{rec.t1_scheduled_in || '--:--'} - {rec.t1_scheduled_out || '--:--'}</span>
-                      </div>
-                      <div className="text-indigo-400 text-[10px]">
-                        Ventana: {rec.t1_window_entry_start || '--:--'} a {rec.t1_window_exit_limit || '--:--'}
-                      </div>
-                      <div className="text-emerald-400 font-bold">
-                        Real: {rec.t1_real_in || '--:--'} - {rec.t1_real_out || '--:--'}
-                      </div>
-                      {rec.t1_effective_hours !== undefined && (
-                        <div className="text-[10px] text-slate-400">
-                          Cómputo T1: <strong className="text-emerald-300">{rec.t1_effective_hours}h</strong>
+                  return (
+                    <tr key={rec.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span>{rec.employee_name}</span>
                         </div>
-                      )}
-                    </td>
-
-                    {/* Turno 2 */}
-                    <td className="px-4 py-3 font-mono text-[11px]">
-                      {rec.t2_scheduled_in ? (
-                        <>
-                          <div className="text-slate-400">
-                            Turno: <span className="text-white font-semibold">{rec.t2_scheduled_in} - {rec.t2_scheduled_out}</span>
-                          </div>
-                          <div className="text-indigo-400 text-[10px]">
-                            Ventana: {rec.t2_window_entry_start || '--:--'} a {rec.t2_window_exit_limit || '--:--'}
-                          </div>
-                          <div className="text-emerald-400 font-bold">
-                            Real: {rec.t2_real_in || '--:--'} - {rec.t2_real_out || '--:--'}
-                          </div>
-                          {rec.t2_effective_hours !== undefined && (
-                            <div className="text-[10px] text-slate-400">
-                              Cómputo T2: <strong className="text-emerald-300">{rec.t2_effective_hours}h</strong>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-slate-600 text-[10px] italic">Jornada Continua</span>
-                      )}
-                    </td>
-
-                    {/* Horas Efectivas Computadas */}
-                    <td className="px-4 py-3 text-center font-mono">
-                      <div className="text-emerald-400 font-bold text-xs bg-emerald-950/40 border border-emerald-900/60 px-2 py-1 rounded inline-block">
-                        {effHours > 0 ? `${effHours.toFixed(1)} hrs` : '0.0 hrs'}
-                      </div>
-                      <div className="text-[9px] text-slate-500 mt-0.5">Topado a Turno</div>
-                    </td>
-
-                    {/* Tardanza */}
-                    <td className="px-4 py-3 text-center font-mono font-bold">
-                      {rec.total_tardiness_minutes > 0 ? (
-                        <span className="text-amber-500">{rec.total_tardiness_minutes} min</span>
-                      ) : (
-                        <span className="text-slate-600">0 min</span>
-                      )}
-                    </td>
-
-                    {/* Status Badge */}
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-0.5 text-[10px] font-bold border rounded uppercase inline-flex items-center gap-1 font-mono ${badge.bg}`}>
-                        {badge.icon}
-                        <span>{badge.label}</span>
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-slate-400 text-[11px] max-w-xs">
-                      <div className="truncate">{rec.observations || 'Marcación regular en ventana permitida'}</div>
-                    </td>
-
-                    {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => handleOpenEdit(rec)}
-                          className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          <span>Regularizar</span>
-                        </button>
+                        <div className="text-[10px] font-mono text-slate-500">DNI: {rec.employee_dni}</div>
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
+
+                      <td className="px-4 py-3 text-slate-300">
+                        <div className="font-medium text-slate-200">{rec.area_name}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">{rec.fecha}</div>
+                      </td>
+
+                      {/* Turno 1 */}
+                      <td className="px-4 py-3 font-mono text-[11px]">
+                        <div className="text-slate-400">
+                          Turno: <span className="text-white font-semibold">{rec.t1_scheduled_in || '--:--'} - {rec.t1_scheduled_out || '--:--'}</span>
+                        </div>
+                        <div className="text-indigo-400 text-[10px]">
+                          Ventana: {rec.t1_window_entry_start || '--:--'} a {rec.t1_window_exit_limit || '--:--'}
+                        </div>
+                        <div className="text-emerald-400 font-bold">
+                          Real: {rec.t1_real_in || '--:--'} - {rec.t1_real_out || '--:--'}
+                        </div>
+                        {rec.t1_effective_hours !== undefined && (
+                          <div className="text-[10px] text-slate-400">
+                            Cómputo T1: <strong className="text-emerald-300">{rec.t1_effective_hours}h</strong>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Turno 2 */}
+                      <td className="px-4 py-3 font-mono text-[11px]">
+                        {rec.t2_scheduled_in ? (
+                          <>
+                            <div className="text-slate-400">
+                              Turno: <span className="text-white font-semibold">{rec.t2_scheduled_in} - {rec.t2_scheduled_out}</span>
+                            </div>
+                            <div className="text-indigo-400 text-[10px]">
+                              Ventana: {rec.t2_window_entry_start || '--:--'} a {rec.t2_window_exit_limit || '--:--'}
+                            </div>
+                            <div className="text-emerald-400 font-bold">
+                              Real: {rec.t2_real_in || '--:--'} - {rec.t2_real_out || '--:--'}
+                            </div>
+                            {rec.t2_effective_hours !== undefined && (
+                              <div className="text-[10px] text-slate-400">
+                                Cómputo T2: <strong className="text-emerald-300">{rec.t2_effective_hours}h</strong>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-slate-600 text-[10px] italic">Jornada Continua</span>
+                        )}
+                      </td>
+
+                      {/* Horas Efectivas Computadas */}
+                      <td className="px-4 py-3 text-center font-mono">
+                        <div className="text-emerald-400 font-bold text-xs bg-emerald-950/40 border border-emerald-900/60 px-2 py-1 rounded inline-block">
+                          {effHours > 0 ? `${effHours.toFixed(1)} hrs` : '0.0 hrs'}
+                        </div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">Topado a Turno</div>
+                      </td>
+
+                      {/* Tardanza */}
+                      <td className="px-4 py-3 text-center font-mono font-bold">
+                        {rec.total_tardiness_minutes > 0 ? (
+                          <span className="text-amber-500">{rec.total_tardiness_minutes} min</span>
+                        ) : (
+                          <span className="text-slate-600">0 min</span>
+                        )}
+                      </td>
+
+                      {/* Status Badge */}
+                      <td className="px-4 py-3 text-center">
+                        <span className={`px-2 py-0.5 text-[10px] font-bold border rounded uppercase inline-flex items-center gap-1 font-mono ${badge.bg}`}>
+                          {badge.icon}
+                          <span>{badge.label}</span>
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-slate-400 text-[11px] max-w-xs">
+                        <div className="truncate">{rec.observations || 'Marcación regular en ventana permitida'}</div>
+                      </td>
+
+                      {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleOpenEdit(rec)}
+                            className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Regularizar</span>
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

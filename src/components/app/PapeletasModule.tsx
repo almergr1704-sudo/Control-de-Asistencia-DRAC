@@ -91,7 +91,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
     employees.find((e) => e.dni === activeUserDni)?.id || employees[0]?.id || ''
   );
   const [formMotivo, setFormMotivo] = useState<PapeletaMotivo>('COMISION_SERVICIOS');
-  const [formDestino, setFormDestino] = useState('Agencia Agraria Jaén / Terreno de Cultivo');
+  const [formDestino, setFormDestino] = useState('');
   const [formDescripcion, setFormDescripcion] = useState('');
   const [formFecha, setFormFecha] = useState(new Date().toISOString().split('T')[0]);
   const [formHoraSalida, setFormHoraSalida] = useState('10:00');
@@ -108,7 +108,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const activeUserEmployee = employees.find((e) => e.dni === activeUserDni) || employees[0];
 
   // AUTOMATIC APPROVER DETERMINATION based on DRAC Organizational Unit
-  const autoSupervisorName = currentEmployee?.supervisor_name || 'Director Regional de Agricultura';
+  const autoSupervisorName = currentEmployee?.supervisor_name || 'Jefe / Director Inmediato';
   const autoSupervisorId = currentEmployee?.supervisor_id || 'boss-default';
 
   // Scope-based Filtering for DRAC Roles

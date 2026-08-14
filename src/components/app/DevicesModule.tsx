@@ -77,10 +77,10 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [brand, setBrand] = useState('ZKTeco');
   const [model, setModel] = useState('uFace 800');
   const [customModel, setCustomModel] = useState('');
-  const [ipAddress, setIpAddress] = useState('192.168.1.100');
+  const [ipAddress, setIpAddress] = useState('');
   const [port, setPort] = useState(4370);
-  const [location, setLocation] = useState('Puerta Principal - Recepción');
-  const [selectedDepId, setSelectedDepId] = useState<string>(dependencias[0]?.id || 'dep-001');
+  const [location, setLocation] = useState('');
+  const [selectedDepId, setSelectedDepId] = useState<string>(dependencias[0]?.id || '');
 
   // Connection Test State inside Modal
   const [isModalTesting, setIsModalTesting] = useState(false);
@@ -101,9 +101,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   // Modal State: Punch Manual Test / Push
   const [showPunchModal, setShowPunchModal] = useState(false);
-  const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '71234567');
-  const [selectedDeviceSn, setSelectedDeviceSn] = useState(devices[0]?.serial_number || 'ZK-88201');
-  const [punchTime, setPunchTime] = useState('08:02:15');
+  const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '');
+  const [selectedDeviceSn, setSelectedDeviceSn] = useState(devices[0]?.serial_number || '');
+  const [punchTime, setPunchTime] = useState('08:00:00');
   const [punchType, setPunchType] = useState<0 | 1>(0); // 0: IN, 1: OUT
 
   // Open Add Device Modal
@@ -114,10 +114,10 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setBrand('ZKTeco');
     setModel('uFace 800');
     setCustomModel('');
-    setIpAddress('192.168.1.100');
+    setIpAddress('');
     setPort(4370);
-    setLocation('Puerta Principal - Recepción');
-    setSelectedDepId(dependencias[0]?.id || 'dep-001');
+    setLocation('');
+    setSelectedDepId(dependencias[0]?.id || '');
     setTestResult(null);
     setHasPassedTest(false);
     setIsModalTesting(false);
@@ -402,7 +402,26 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       {/* DEVICES GRID VIEW */}
       {activeTab === 'DEVICES' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <>
+          {devices.length === 0 ? (
+            <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-12 text-center">
+              <Cpu className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+              <h3 className="text-sm font-bold text-slate-300">No hay dispositivos biométricos configurados</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                Registre los relojes marcadores ZKTeco instalados en la sede central o agencias agrarias para sincronizar marcaciones vía PUSH ADMS.
+              </p>
+              {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+                <button
+                  onClick={handleOpenAddDevice}
+                  className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Registrar Primer Marcador</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {devices.map((d) => {
             const isTestingRow = testingDeviceId === d.id;
 
@@ -550,7 +569,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               </div>
             );
           })}
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* RAW PUNCHES STAGING TABLE */}
@@ -569,53 +590,63 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 font-sans">
-                {rawPunches.map((punch) => {
-                  const emp = employees.find((e) => e.dni === punch.employee_dni);
-                  return (
-                    <tr key={punch.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3 font-mono font-bold text-indigo-400">
-                        {punch.device_sn}
-                      </td>
+                {rawPunches.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
+                      <Clock className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+                      <p className="text-sm font-medium text-slate-400">No hay registros crudos en el staging</p>
+                      <p className="text-xs text-slate-600 mt-1">Los fichajes recibidos desde marcadores biométricos se encolarán aquí para su validación.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  rawPunches.map((punch) => {
+                    const emp = employees.find((e) => e.dni === punch.employee_dni);
+                    return (
+                      <tr key={punch.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-indigo-400">
+                          {punch.device_sn}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <div className="font-mono text-slate-200 font-bold">{punch.employee_dni}</div>
-                        <div className="text-[10px] text-slate-400">
-                          {emp ? `${emp.first_name} ${emp.last_name}` : 'Empleado Registrado'}
-                        </div>
-                      </td>
+                        <td className="px-4 py-3">
+                          <div className="font-mono text-slate-200 font-bold">{punch.employee_dni}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {emp ? `${emp.first_name} ${emp.last_name}` : 'Empleado Registrado'}
+                          </div>
+                        </td>
 
-                      <td className="px-4 py-3 font-mono text-emerald-400 font-bold">
-                        {punch.timestamp}
-                      </td>
+                        <td className="px-4 py-3 font-mono text-emerald-400 font-bold">
+                          {punch.timestamp}
+                        </td>
 
-                      <td className="px-4 py-3 text-slate-300 font-mono text-[11px]">
-                        {punch.verify_mode === 1 ? 'HUELLA DACTILAR (1)' : 'ROSTRO / FACIAL (15)'}
-                      </td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-[11px]">
+                          {punch.verify_mode === 1 ? 'HUELLA DACTILAR (1)' : 'ROSTRO / FACIAL (15)'}
+                        </td>
 
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded border ${
-                          punch.punch_state === 0
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                        }`}>
-                          {punch.punch_state === 0 ? '0: ENTRADA' : '1: SALIDA'}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-right">
-                        {punch.processed ? (
-                          <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded inline-flex items-center gap-1 font-mono">
-                            <CheckCircle2 className="w-3 h-3" /> PROCESADO (OK)
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded border ${
+                            punch.punch_state === 0
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                          }`}>
+                            {punch.punch_state === 0 ? '0: ENTRADA' : '1: SALIDA'}
                           </span>
-                        ) : (
-                          <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded inline-flex items-center gap-1 font-mono">
-                            PENDIENTE EN STAGING
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+
+                        <td className="px-4 py-3 text-right">
+                          {punch.processed ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded inline-flex items-center gap-1 font-mono">
+                              <CheckCircle2 className="w-3 h-3" /> PROCESADO (OK)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded inline-flex items-center gap-1 font-mono">
+                              PENDIENTE EN STAGING
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
