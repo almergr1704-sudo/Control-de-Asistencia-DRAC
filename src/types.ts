@@ -119,6 +119,17 @@ export interface EmployeeAssignmentHistory {
   created_at: string;
 }
 
+export interface RoleHistoryEntry {
+  id: string;
+  previous_role: RoleType;
+  new_role: RoleType;
+  previous_status?: 'ACTIVE' | 'INACTIVE';
+  new_status?: 'ACTIVE' | 'INACTIVE';
+  changed_at: string;
+  changed_by: string;
+  reason?: string;
+}
+
 export interface Employee {
   id: string;
   codigo_trabajador: string; // Ej: DRAC-2026-001 - NON-EDITABLE after creation
@@ -146,9 +157,17 @@ export interface Employee {
   hr_contact_id?: string | null;
   hr_contact_name?: string;
   
-  role: RoleType;
-  position: string;
-  cargo_id?: string;
+  // Perfil y Cuenta de Acceso al Sistema
+  has_system_access?: boolean; // ¿Tendrá acceso al sistema? Sí / No
+  username?: string; // Nombre de usuario para iniciar sesión
+  account_status?: 'ACTIVE' | 'INACTIVE'; // Estado de la cuenta
+  auth_method?: 'PASSWORD' | 'BIOMETRIC' | 'INSTITUTIONAL'; // Método de acceso
+  role: RoleType; // Perfil del sistema asignado
+  role_history?: RoleHistoryEntry[]; // Historial de cambios de perfil para trazabilidad
+  
+  // Cargo y Datos Laborales
+  position: string; // Nombre del Cargo institucional
+  cargo_id?: string; // ID del catálogo de cargos
   regimen_laboral: RegimenLaboral;
   condicion_laboral: CondicionLaboral;
   is_jefe_director?: boolean;
@@ -174,6 +193,7 @@ export interface Turno {
   window_exit_limit?: string; // Hora límite marcación de salida (TIME)
 
   tolerance_minutes: number; // Tolerancia de entrada (mins)
+  tolerance_exit_minutes?: number; // Tolerancia de salida (mins)
   is_overnight: boolean;
   active?: boolean;
   is_historical?: boolean;
@@ -191,9 +211,11 @@ export interface Horario {
   turno2_name?: string;
   working_days: string[]; // ["MON", "TUE", "WED", "THU", "FRI"]
   active: boolean;
-  effective_start_date?: string; // Vigencia inicio
-  effective_end_date?: string | null; // Vigencia fin
+  effective_start_date?: string; // Vigencia inicio (YYYY-MM-DD)
+  effective_end_date?: string | null; // Vigencia fin (YYYY-MM-DD o null si vigente)
   version?: number;
+  total_hours?: number;
+  total_duration_text?: string;
 }
 
 export interface MarcacionCorrection {

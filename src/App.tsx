@@ -261,8 +261,20 @@ export default function App() {
   };
 
   const handleDeleteEmployee = (empId: string) => {
-    setEmployees((prev) => prev.filter((e) => e.id !== empId));
-    addAuditLog('PERSONAL', 'ELIMINAR_EMPLEADO', empId, `Eliminación de ficha de personal ID ${empId}`);
+    setEmployees((prev) =>
+      prev.map((e) => {
+        if (e.id === empId) {
+          const nextActive = !e.active;
+          return {
+            ...e,
+            active: nextActive,
+            account_status: nextActive ? (e.has_system_access ? 'ACTIVE' : 'INACTIVE') : 'INACTIVE',
+          };
+        }
+        return e;
+      })
+    );
+    addAuditLog('PERSONAL', 'ESTADO_EMPLEADO', empId, `Cambio de estado activo/cuenta de personal ID ${empId}`);
   };
 
   // SHIFTS / HORARIOS HANDLERS

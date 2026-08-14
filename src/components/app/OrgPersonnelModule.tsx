@@ -27,6 +27,14 @@ import {
   Eye,
   ShieldAlert,
   Power,
+  Key,
+  ShieldCheck,
+  UserCog,
+  Check,
+  HelpCircle,
+  Info,
+  Fingerprint,
+  Save,
 } from 'lucide-react';
 import {
   Dependencia,
@@ -36,6 +44,7 @@ import {
   ResponsableDesignation,
   Employee,
   RoleType,
+  RoleHistoryEntry,
   Horario,
   RegimenLaboral,
   CondicionLaboral,
@@ -44,6 +53,134 @@ import {
   EmployeeAssignmentHistory,
 } from '../../types';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
+
+export interface SystemRoleDef {
+  role: RoleType;
+  label: string;
+  badge: string;
+  isDefault: boolean;
+  isSpecial: boolean;
+  color: string;
+  accentColor: string;
+  description: string;
+  scopeRule?: string;
+  permissions: string[];
+}
+
+export const SYSTEM_ROLES_CATALOG: SystemRoleDef[] = [
+  {
+    role: 'TRABAJADOR',
+    label: 'Trabajador',
+    badge: 'Trabajador',
+    isDefault: true,
+    isSpecial: false,
+    color: 'bg-slate-800 text-slate-200 border-slate-700',
+    accentColor: 'text-slate-300',
+    description: 'Perfil base para todo el personal DRAC. Permite consulta de asistencia individual, registro y firma digital de papeletas de salida y consulta de vacaciones.',
+    permissions: [
+      'Ver y descargar reporte de asistencia propia',
+      'Registrar solicitudes de papeletas de salida con firma digital',
+      'Consultar períodos y saldo de vacaciones asignadas',
+      'Registro de marcaciones en relojes biométricos ZKTeco',
+    ],
+  },
+  {
+    role: 'JEFE',
+    label: 'Jefe / Responsable de Unidad',
+    badge: 'Jefe',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    accentColor: 'text-amber-400',
+    description: 'Mando institucional con facultades de supervisión de equipo y otorgamiento de visto bueno (VoBo) a solicitudes de salida.',
+    scopeRule: 'El alcance de aprobación de papeletas y supervisión de asistencia se delimita automáticamente a los colaboradores pertenecientes a su Dependencia, Dirección u Órgano y Área asignadas.',
+    permissions: [
+      'Dar Visto Bueno (VoBo) a papeletas de salida de su ámbito de responsabilidad',
+      'Supervisar marcaciones, puntualidad y tardanzas de su equipo',
+      'Consultar solicitudes de descanso vacacional de sus dependientes',
+      'Todas las funciones base del perfil Trabajador',
+    ],
+  },
+  {
+    role: 'JEFE_RRHH',
+    label: 'Jefe de Recursos Humanos (RRHH)',
+    badge: 'Jefe RRHH',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    accentColor: 'text-blue-400',
+    description: 'Autoridad en talento humano para la aprobación final institucional de salidas, administración de vacaciones y consolidación de nómina.',
+    permissions: [
+      'Autorización final institucional de papeletas de salida para garita',
+      'Aprobación, asignación y programación de vacaciones de toda la DRAC',
+      'Justificación formal de tardanzas, incidencias y olvidos de marcación',
+      'Emisión de reportes ejecutivos consolidados para planilla',
+    ],
+  },
+  {
+    role: 'VIGILANCIA',
+    label: 'Seguridad / Vigilancia (Garita)',
+    badge: 'Seguridad / Vigilancia',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    accentColor: 'text-purple-400',
+    description: 'Personal de garita y portería autorizado para la fiscalización física y sellado en tiempo real de salidas y retornos institucionales.',
+    permissions: [
+      'Visualizar papeletas de salida con autorización vigente del día',
+      'Registrar y sellar la Hora Real de Salida del personal en puerta',
+      'Registrar y sellar la Hora Real de Retorno a la sede',
+      'Monitoreo en vivo de trabajadores fuera de las instalaciones DRAC',
+    ],
+  },
+  {
+    role: 'DIRECTOR_GENERAL',
+    label: 'Director General',
+    badge: 'Director General',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    accentColor: 'text-emerald-400',
+    description: 'Máxima autoridad ejecutiva institucional de la Dirección Regional de Agricultura Cajamarca con supervisión macro.',
+    permissions: [
+      'Supervisión gerencial institucional global de asistencia y operatividad',
+      'Acceso a reportes gerenciales e indicadores de cumplimiento por sede',
+      'Emisión de directivas y visto bueno de comisiones oficiales de alto nivel',
+    ],
+  },
+  {
+    role: 'CONTROL_ASISTENCIA',
+    label: 'Control de Asistencia',
+    badge: 'Control Asistencia',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+    accentColor: 'text-cyan-400',
+    description: 'Operador técnico especializado responsable del monitoreo de dispositivos biométricos ZKTeco y procesamiento de marcaciones.',
+    permissions: [
+      'Monitoreo del estado y sincronización de relojes biométricos ZKTeco',
+      'Procesamiento de marcaciones e ingesta de logs biométricos brutos',
+      'Gestión de tolerancias de turno y justificaciones de asistencia',
+      'Emisión de partes de asistencia diaria y mensual institucional',
+    ],
+  },
+  {
+    role: 'ADMIN_GENERAL',
+    label: 'Administrador General',
+    badge: 'Admin General',
+    isDefault: false,
+    isSpecial: true,
+    color: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    accentColor: 'text-rose-400',
+    description: 'Superadministrador técnico del sistema con privilegios de configuración global, asignación de perfiles y auditoría de seguridad.',
+    permissions: [
+      'Registro de trabajadores y asignación de perfiles y cuentas de acceso',
+      'Configuración de estructura orgánica (Dependencias, Órganos, Áreas, Cargos)',
+      'Configuración de turnos, jornadas y ventanas de marcación biométrica',
+      'Auditoría forense completa de logs, seguridad y trazabilidad de cambios',
+    ],
+  },
+];
 
 interface OrgPersonnelModuleProps {
   activeView?: string;
@@ -220,11 +357,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const [empCargoName, setEmpCargoName] = useState('Especialista Agrario');
   const [empRegimen, setEmpRegimen] = useState<RegimenLaboral>('D.L. 276');
   const [empCondicion, setEmpCondicion] = useState<CondicionLaboral>('NOMBRADO');
-  const [empRole, setEmpRole] = useState<RoleType>('EMPLOYEE');
+  const [empRole, setEmpRole] = useState<RoleType>('TRABAJADOR');
   const [empScheduleId, setEmpScheduleId] = useState('');
   const [empHireDate, setEmpHireDate] = useState(new Date().toISOString().split('T')[0]);
   const [empActive, setEmpActive] = useState(true);
   const [empZkTecoPin, setEmpZkTecoPin] = useState('');
+
+  // FORM STATES: Perfil del Sistema & Cuenta de Acceso
+  const [empHasAccess, setEmpHasAccess] = useState(true);
+  const [empUsername, setEmpUsername] = useState('');
+  const [empAccountStatus, setEmpAccountStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [empAuthMethod, setEmpAuthMethod] = useState<'PASSWORD' | 'BIOMETRIC' | 'INSTITUTIONAL'>('PASSWORD');
+  const [empRoleChangeReason, setEmpRoleChangeReason] = useState('');
+  const [selectedEmpForRoleModal, setSelectedEmpForRoleModal] = useState<Employee | null>(null);
 
   // SUB-DIRECCIONES & AREAS FILTERED FOR EMP FORM
   const filteredDirsForEmp = direccionesOrganos.filter((d) => d.dependencia_id === empDepId);
@@ -233,7 +378,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
   // EMPLOYEES FILTER
   const filteredEmployees = employees.filter((emp) => {
-    const fullSearch = `${emp.first_name} ${emp.last_name} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''} ${emp.dni} ${emp.codigo_trabajador}`.toLowerCase();
+    const fullSearch = `${emp.first_name} ${emp.last_name} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''} ${emp.dni} ${emp.codigo_trabajador} ${emp.position} ${emp.username || ''}`.toLowerCase();
     const matchesSearch = fullSearch.includes(searchTerm.toLowerCase());
     const matchesDep = dependenciaFilter === 'ALL' || emp.dependencia_id === dependenciaFilter;
     return matchesSearch && matchesDep;
@@ -408,9 +553,44 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // Employee submit
   const handleSubmitEmployee = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!empDni || !empFirstName || !empLastNamePaterno || !empDepId || !empAreaId) {
-      alert('Error: Debe completar DNI, Nombres, Apellidos y seleccionar Dependencia y Área válidas.');
+    const cleanDni = empDni.trim();
+    if (!cleanDni || !empFirstName || !empLastNamePaterno || !empDepId || !empAreaId) {
+      alert('⚠️ Error de Validación:\nDebe completar el DNI, Nombres, Apellido Paterno y seleccionar Dependencia y Área válidas.');
       return;
+    }
+
+    if (!/^\d{8}$/.test(cleanDni)) {
+      alert('⚠️ Formato Inválido:\nEl DNI debe contener exactamente 8 dígitos numéricos.');
+      return;
+    }
+
+    // Check duplicate DNI
+    const dniDuplicate = employees.find(
+      (emp) => emp.dni === cleanDni && emp.id !== editingEmp?.id
+    );
+    if (dniDuplicate) {
+      alert(`⚠️ DNI Duplicado:\nYa existe un trabajador registrado con el DNI ${cleanDni} (${dniDuplicate.first_name} ${dniDuplicate.last_name}).`);
+      return;
+    }
+
+    // Auto-generate or validate Username if system access is enabled
+    let finalUsername = empUsername.trim();
+    if (empHasAccess) {
+      if (!finalUsername) {
+        // Generate from names: e.g. jperez
+        finalUsername = `${empFirstName.trim().charAt(0).toLowerCase()}${empLastNamePaterno.trim().toLowerCase()}`.replace(/\s+/g, '');
+      }
+      // Check duplicate Username among employees with system access
+      const usernameDuplicate = employees.find(
+        (emp) =>
+          emp.has_system_access &&
+          emp.username?.toLowerCase() === finalUsername.toLowerCase() &&
+          emp.id !== editingEmp?.id
+      );
+      if (usernameDuplicate) {
+        alert(`⚠️ Usuario de Acceso Duplicado:\nEl nombre de usuario "${finalUsername}" ya se encuentra asignado a ${usernameDuplicate.first_name} ${usernameDuplicate.last_name}. Por favor especifique otro usuario.`);
+        return;
+      }
     }
 
     const selectedDep = dependencias.find((d) => d.id === empDepId);
@@ -444,12 +624,31 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
     const fullLastName = `${empLastNamePaterno.trim()} ${empLastNameMaterno.trim()}`.trim();
     const generatedCode = empCode.trim() || `DRAC-2026-0${employees.length + 1}`;
+    const finalAccountStatus = !empActive ? 'INACTIVE' : (empHasAccess ? empAccountStatus : 'INACTIVE');
 
     if (editingEmp) {
+      // Check for Role or Access changes for audit logging
+      const roleChanged = editingEmp.role !== empRole;
+      const accessChanged = (editingEmp.has_system_access !== empHasAccess) || (editingEmp.account_status !== finalAccountStatus);
+      const updatedRoleHistory: RoleHistoryEntry[] = [...(editingEmp.role_history || [])];
+
+      if (roleChanged || accessChanged) {
+        updatedRoleHistory.push({
+          id: `rh-${Date.now()}`,
+          previous_role: editingEmp.role,
+          new_role: empRole,
+          previous_status: editingEmp.has_system_access ? (editingEmp.account_status || 'ACTIVE') : 'INACTIVE',
+          new_status: finalAccountStatus,
+          changed_at: new Date().toISOString(),
+          changed_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador General',
+          reason: empRoleChangeReason.trim() || (roleChanged ? `Cambio de perfil asignado de ${editingEmp.role} a ${empRole}` : `Actualización del estado de cuenta a ${finalAccountStatus}`),
+        });
+      }
+
       onEditEmployee({
         ...editingEmp,
         codigo_trabajador: generatedCode,
-        dni: empDni.trim(),
+        dni: cleanDni,
         first_name: empFirstName.trim(),
         last_name: fullLastName,
         apellido_paterno: empLastNamePaterno.trim(),
@@ -468,19 +667,39 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         cargo_id: empCargoId || undefined,
         regimen_laboral: empRegimen,
         condicion_laboral: empCondicion,
+        // Perfil y cuenta de acceso
+        has_system_access: empHasAccess,
+        username: empHasAccess ? finalUsername : undefined,
+        account_status: finalAccountStatus,
+        auth_method: empAuthMethod,
         role: empRole,
+        role_history: updatedRoleHistory,
+        // Laboral
         hire_date: empHireDate,
         active: empActive,
         schedule_id: empScheduleId || undefined,
         schedule_name: selectedSchedule ? selectedSchedule.name : 'Jornada Partida DRAC',
-        zkteco_pin: empZkTecoPin.trim() || empDni.trim(),
+        zkteco_pin: empZkTecoPin.trim() || cleanDni,
         supervisor_id: determinedSupervisorId,
         supervisor_name: determinedSupervisorName,
       });
     } else {
+      const initialRoleHistory: RoleHistoryEntry[] = empHasAccess ? [
+        {
+          id: `rh-${Date.now()}`,
+          previous_role: empRole,
+          new_role: empRole,
+          previous_status: 'ACTIVE',
+          new_status: finalAccountStatus,
+          changed_at: new Date().toISOString(),
+          changed_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador General',
+          reason: 'Registro inicial de trabajador y asignación de perfil en la DRAC.',
+        }
+      ] : [];
+
       onAddEmployee({
         codigo_trabajador: generatedCode,
-        dni: empDni.trim(),
+        dni: cleanDni,
         first_name: empFirstName.trim(),
         last_name: fullLastName,
         apellido_paterno: empLastNamePaterno.trim(),
@@ -499,12 +718,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         cargo_id: empCargoId || undefined,
         regimen_laboral: empRegimen,
         condicion_laboral: empCondicion,
+        // Perfil y cuenta de acceso
+        has_system_access: empHasAccess,
+        username: empHasAccess ? finalUsername : undefined,
+        account_status: finalAccountStatus,
+        auth_method: empAuthMethod,
         role: empRole,
+        role_history: initialRoleHistory,
+        // Laboral
         hire_date: empHireDate,
         active: empActive,
         schedule_id: empScheduleId || undefined,
         schedule_name: selectedSchedule ? selectedSchedule.name : 'Jornada Partida DRAC',
-        zkteco_pin: empZkTecoPin.trim() || empDni.trim(),
+        zkteco_pin: empZkTecoPin.trim() || cleanDni,
         supervisor_id: determinedSupervisorId,
         supervisor_name: determinedSupervisorName,
       });
@@ -624,11 +850,17 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   setEmpCargoName('Especialista Agrario');
                   setEmpRegimen('D.L. 276');
                   setEmpCondicion('NOMBRADO');
-                  setEmpRole('EMPLOYEE');
                   setEmpScheduleId(horarios[0]?.id || '');
                   setEmpHireDate(new Date().toISOString().split('T')[0]);
                   setEmpActive(true);
                   setEmpZkTecoPin('');
+                  // Access & Role states (default TRABAJADOR)
+                  setEmpHasAccess(true);
+                  setEmpUsername('');
+                  setEmpRole('TRABAJADOR');
+                  setEmpAccountStatus('ACTIVE');
+                  setEmpAuthMethod('PASSWORD');
+                  setEmpRoleChangeReason('');
                   setShowEmpModal(true);
                 }}
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
@@ -647,145 +879,202 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <tr>
                     <th className="px-4 py-3">Cód. DRAC / Trabajador</th>
                     <th className="px-4 py-3">DNI / PIN ZKTeco</th>
-                    <th className="px-4 py-3">Dependencia &amp; Área DRAC</th>
-                    <th className="px-4 py-3">Cargo &amp; Régimen</th>
-                    <th className="px-4 py-3">Jefe Inmediato Aprobador</th>
+                    <th className="px-4 py-3">Dependencia &amp; Ubicación DRAC</th>
+                    <th className="px-4 py-3">Cargo Institucional (Puesto)</th>
+                    <th className="px-4 py-3">Perfil Sistema &amp; Cuenta</th>
+                    <th className="px-4 py-3">Jefe Inmediato (VoBo)</th>
                     <th className="px-4 py-3">Estado</th>
                     {activeRole === 'HR_ADMIN' && <th className="px-4 py-3 text-right">Acciones</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {filteredEmployees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/20">
-                            {emp.first_name[0]}
-                            {emp.last_name[0]}
-                          </div>
-                          <div>
-                            <div className="font-bold text-white">
-                              {emp.first_name} {emp.last_name}
+                  {filteredEmployees.map((emp) => {
+                    const roleConfig = SYSTEM_ROLES_CATALOG.find((r) => r.role === emp.role) || SYSTEM_ROLES_CATALOG[0];
+                    const hasAccess = emp.has_system_access !== false;
+
+                    return (
+                      <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/20">
+                              {emp.first_name[0]}
+                              {emp.last_name[0]}
                             </div>
-                            <div className="text-[10px] font-mono text-indigo-400">
-                              {emp.codigo_trabajador || 'DRAC-2026'}
+                            <div>
+                              <div className="font-bold text-white">
+                                {emp.first_name} {emp.last_name}
+                              </div>
+                              <div className="text-[10px] font-mono text-indigo-400">
+                                {emp.codigo_trabajador || 'DRAC-2026'}
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3 font-mono">
-                        <div className="text-slate-200 font-bold">{emp.dni}</div>
-                        <div className="text-[10px] text-slate-500">PIN: {emp.zkteco_pin || emp.dni}</div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-slate-200">{emp.dependencia_name}</div>
-                        <div className="text-[10px] text-slate-400">
-                          {emp.direccion_organo_name ? `${emp.direccion_organo_name} ➔ ` : ''}
-                          {emp.area_name}
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="text-slate-200 font-medium">{emp.position}</div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded text-[9px] font-mono border border-slate-700">
-                            {emp.regimen_laboral}
-                          </span>
-                          <span className="text-[9px] text-slate-500">{emp.condicion_laboral}</span>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {emp.supervisor_name ? (
-                          <div className="text-amber-400 font-semibold flex items-center gap-1 text-[11px]">
-                            <Crown className="w-3 h-3 text-amber-400 shrink-0" />
-                            <span>{emp.supervisor_name}</span>
-                          </div>
-                        ) : (
-                          <div className="text-slate-500 italic text-[11px]">Asignación Jerárquica Directa</div>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
-                            emp.active
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                          }`}
-                        >
-                          {emp.active ? 'ACTIVO' : 'INACTIVO'}
-                        </span>
-                      </td>
-
-                      {activeRole === 'HR_ADMIN' && (
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setEditingEmp(emp);
-                                setEmpCode(emp.codigo_trabajador);
-                                setEmpDni(emp.dni);
-                                setEmpFirstName(emp.first_name);
-                                setEmpLastNamePaterno(emp.apellido_paterno || emp.last_name.split(' ')[0] || '');
-                                setEmpLastNameMaterno(emp.apellido_materno || emp.last_name.split(' ')[1] || '');
-                                setEmpEmail(emp.email);
-                                setEmpPhone(emp.phone);
-                                setEmpDepId(emp.dependencia_id);
-                                setEmpDirId(emp.direccion_organo_id || '');
-                                setEmpAreaId(emp.area_id);
-                                setEmpSubareaId(emp.subarea_id || '');
-                                setEmpCargoId(emp.cargo_id || '');
-                                setEmpCargoName(emp.position);
-                                setEmpRegimen(emp.regimen_laboral);
-                                setEmpCondicion(emp.condicion_laboral);
-                                setEmpRole(emp.role);
-                                setEmpScheduleId(emp.schedule_id || '');
-                                setEmpHireDate(emp.hire_date);
-                                setEmpActive(emp.active);
-                                setEmpZkTecoPin(emp.zkteco_pin || emp.dni);
-                                setShowEmpModal(true);
-                              }}
-                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
-                              title="Editar Trabajador"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setSelectedEmpForHistory(emp)}
-                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
-                              title="Ver Historial de Asignaciones Orgánicas"
-                            >
-                              <History className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setConfirmModalConfig({
-                                  isOpen: true,
-                                  title: emp.active ? 'Desactivar Trabajador DRAC' : 'Reactivar Trabajador DRAC',
-                                  message: `¿Desea cambiar el estado del colaborador ${emp.first_name} ${emp.last_name}? Sus marcaciones, papeletas y registros de asistencia permanecerán archivados para auditoría e historial.`,
-                                  actionType: 'DEACTIVATE',
-                                  entityName: `DNI: ${emp.dni} - ${emp.position}`,
-                                  confirmText: emp.active ? 'Desactivar Registro' : 'Reactivar Registro',
-                                  onConfirm: () => {
-                                    onDeleteEmployee(emp.id);
-                                    setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                                  },
-                                  onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                                });
-                              }}
-                              className="p-1.5 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded transition-colors"
-                              title={emp.active ? 'Desactivar Trabajador' : 'Reactivar Trabajador'}
-                            >
-                              <Power className="w-3.5 h-3.5" />
-                            </button>
                           </div>
                         </td>
-                      )}
-                    </tr>
-                  ))}
+
+                        <td className="px-4 py-3 font-mono">
+                          <div className="text-slate-200 font-bold">{emp.dni}</div>
+                          <div className="text-[10px] text-slate-500">PIN: {emp.zkteco_pin || emp.dni}</div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-slate-200">{emp.dependencia_name}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {emp.direccion_organo_name ? `${emp.direccion_organo_name} ➔ ` : ''}
+                            {emp.area_name}
+                          </div>
+                        </td>
+
+                        {/* CARGO INSTITUCIONAL */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5 text-slate-200 font-medium">
+                            <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span>{emp.position}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded text-[9px] font-mono border border-slate-700">
+                              {emp.regimen_laboral}
+                            </span>
+                            <span className="text-[9px] text-slate-500">{emp.condicion_laboral}</span>
+                          </div>
+                        </td>
+
+                        {/* PERFIL DEL SISTEMA & CUENTA */}
+                        <td className="px-4 py-3">
+                          {hasAccess ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border flex items-center gap-1 ${roleConfig.color}`}>
+                                  <Shield className="w-3 h-3" />
+                                  <span>{roleConfig.badge}</span>
+                                </span>
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    emp.account_status === 'INACTIVE' || !emp.active
+                                      ? 'bg-rose-500'
+                                      : 'bg-emerald-400 ring-2 ring-emerald-400/20'
+                                  }`}
+                                  title={emp.account_status === 'INACTIVE' || !emp.active ? 'Cuenta Inactiva' : 'Cuenta Activa'}
+                                />
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                                <UserCog className="w-3 h-3 text-slate-500" />
+                                <span>@{emp.username || emp.dni}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5">
+                              <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60 inline-flex items-center gap-1">
+                                <Lock className="w-3 h-3 text-slate-500" />
+                                <span>Sin Cuenta / Solo Biométrico</span>
+                              </span>
+                              <div className="text-[9px] text-slate-500 italic">No inicia sesión</div>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          {emp.supervisor_name ? (
+                            <div className="text-amber-400 font-semibold flex items-center gap-1 text-[11px]">
+                              <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                              <span>{emp.supervisor_name}</span>
+                            </div>
+                          ) : (
+                            <div className="text-slate-500 italic text-[11px]">Asignación Jerárquica Directa</div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                              emp.active
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}
+                          >
+                            {emp.active ? 'ACTIVO' : 'INACTIVO'}
+                          </span>
+                        </td>
+
+                        {activeRole === 'HR_ADMIN' && (
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingEmp(emp);
+                                  setEmpCode(emp.codigo_trabajador);
+                                  setEmpDni(emp.dni);
+                                  setEmpFirstName(emp.first_name);
+                                  setEmpLastNamePaterno(emp.apellido_paterno || emp.last_name.split(' ')[0] || '');
+                                  setEmpLastNameMaterno(emp.apellido_materno || emp.last_name.split(' ')[1] || '');
+                                  setEmpEmail(emp.email);
+                                  setEmpPhone(emp.phone);
+                                  setEmpDepId(emp.dependencia_id);
+                                  setEmpDirId(emp.direccion_organo_id || '');
+                                  setEmpAreaId(emp.area_id);
+                                  setEmpSubareaId(emp.subarea_id || '');
+                                  setEmpCargoId(emp.cargo_id || '');
+                                  setEmpCargoName(emp.position);
+                                  setEmpRegimen(emp.regimen_laboral);
+                                  setEmpCondicion(emp.condicion_laboral);
+                                  setEmpScheduleId(emp.schedule_id || '');
+                                  setEmpHireDate(emp.hire_date);
+                                  setEmpActive(emp.active);
+                                  setEmpZkTecoPin(emp.zkteco_pin || emp.dni);
+                                  // Access & Role states
+                                  setEmpHasAccess(emp.has_system_access !== false);
+                                  setEmpUsername(emp.username || (emp.first_name ? `${emp.first_name.charAt(0).toLowerCase()}${(emp.apellido_paterno || emp.last_name.split(' ')[0] || '').toLowerCase()}` : emp.dni));
+                                  setEmpRole(emp.role || 'TRABAJADOR');
+                                  setEmpAccountStatus(emp.account_status || (emp.active ? 'ACTIVE' : 'INACTIVE'));
+                                  setEmpAuthMethod(emp.auth_method || 'PASSWORD');
+                                  setEmpRoleChangeReason('');
+                                  setShowEmpModal(true);
+                                }}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
+                                title="Editar Trabajador y Perfil de Acceso"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setSelectedEmpForRoleModal(emp)}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded transition-colors"
+                                title="Ver Perfil de Acceso & Trazabilidad de Roles"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setSelectedEmpForHistory(emp)}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
+                                title="Ver Historial de Asignaciones Orgánicas"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setConfirmModalConfig({
+                                    isOpen: true,
+                                    title: emp.active ? 'Desactivar Trabajador DRAC' : 'Reactivar Trabajador DRAC',
+                                    message: `¿Desea cambiar el estado del colaborador ${emp.first_name} ${emp.last_name}? Al desactivar al trabajador, su cuenta de acceso al sistema pasará automáticamente a INACTIVA y sus registros históricos quedarán resguardados para auditoría.`,
+                                    actionType: 'DEACTIVATE',
+                                    entityName: `DNI: ${emp.dni} - ${emp.position}`,
+                                    confirmText: emp.active ? 'Desactivar Registro' : 'Reactivar Registro',
+                                    onConfirm: () => {
+                                      onDeleteEmployee(emp.id);
+                                      setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                                    },
+                                    onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                                  });
+                                }}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded transition-colors"
+                                title={emp.active ? 'Desactivar Trabajador' : 'Reactivar Trabajador'}
+                              >
+                                <Power className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
@@ -1736,277 +2025,809 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT EMPLOYEE DRAC */}
       {showEmpModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl my-8">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="font-bold text-base text-white">
-                {editingEmp ? 'Editar Personal DRAC' : 'Registrar Nuevo Trabajador DRAC'}
-              </h3>
-              <button onClick={() => setShowEmpModal(false)} className="text-slate-400 hover:text-white">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/20">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    {editingEmp ? 'Editar Ficha y Perfil de Trabajador' : 'Registrar Nuevo Trabajador DRAC'}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Dirección Regional de Agricultura Cajamarca — Gestión de datos laborales y credenciales de acceso
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowEmpModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitEmployee} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">DNI (Único)</label>
-                  <input
-                    type="text"
-                    maxLength={8}
-                    placeholder="71234567"
-                    value={empDni}
-                    onChange={(e) => setEmpDni(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Código Trabajador DRAC</label>
-                  <input
-                    type="text"
-                    placeholder="DRAC-2026-001"
-                    value={empCode}
-                    onChange={(e) => setEmpCode(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Nombres</label>
-                  <input
-                    type="text"
-                    placeholder="Juan Carlos"
-                    value={empFirstName}
-                    onChange={(e) => setEmpFirstName(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Apellido Paterno</label>
-                  <input
-                    type="text"
-                    placeholder="Pérez"
-                    value={empLastNamePaterno}
-                    onChange={(e) => setEmpLastNamePaterno(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Apellido Materno</label>
-                  <input
-                    type="text"
-                    placeholder="Gómez"
-                    value={empLastNameMaterno}
-                    onChange={(e) => setEmpLastNameMaterno(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                  />
-                </div>
-              </div>
-
-              {/* ASIGNACIÓN DE ESTRUCTURA DRAC */}
-              <div className="p-3 bg-indigo-950/20 border border-indigo-800/30 rounded-xl space-y-3">
-                <div className="text-xs font-bold text-indigo-200">Asignación Organizacional DRAC</div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">1. Dependencia</label>
-                    <select
-                      value={empDepId}
-                      onChange={(e) => {
-                        setEmpDepId(e.target.value);
-                        setEmpDirId('');
-                      }}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
-                      required
-                    >
-                      {dependencias.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
+            <form onSubmit={handleSubmitEmployee} className="p-6 space-y-6 max-h-[78vh] overflow-y-auto">
+              
+              {/* ================================================================= */}
+              {/* SECCIÓN 1: DATOS LABORALES & ESTRUCTURA INSTITUCIONAL DRAC        */}
+              {/* ================================================================= */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-indigo-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                      1. Datos del Trabajador &amp; Cargo Institucional
+                    </span>
                   </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">2. Dirección / Órgano</label>
-                    <select
-                      value={empDirId}
-                      onChange={(e) => setEmpDirId(e.target.value)}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
-                    >
-                      <option value="">Seleccionar Dirección...</option>
-                      {filteredDirsForEmp.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <span className="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 text-[10px] font-mono border border-indigo-800/40">
+                    Ficha Laboral DRAC
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">3. Área / Oficina</label>
-                    <select
-                      value={empAreaId}
-                      onChange={(e) => setEmpAreaId(e.target.value)}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
-                      required
-                    >
-                      {filteredAreasForEmp.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Subárea (Si aplica)</label>
-                    <select
-                      value={empSubareaId}
-                      onChange={(e) => setEmpSubareaId(e.target.value)}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
-                    >
-                      <option value="">Ninguna Subárea</option>
-                      {filteredSubareasForEmp.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Cargo / Puesto (Escriba o Seleccione)
-                  </label>
-                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      DNI (Documento Nacional de Identidad) <span className="text-rose-400">*</span>
+                    </label>
                     <input
                       type="text"
-                      placeholder="Ej: Especialista Agrario, Asistente, etc."
-                      value={empCargoName}
-                      onChange={(e) => {
-                        setEmpCargoName(e.target.value);
-                        const matched = cargos.find(
-                          (c) => c.name.toLowerCase() === e.target.value.trim().toLowerCase()
-                        );
-                        if (matched) setEmpCargoId(matched.id);
-                      }}
-                      list="cargos-datalist"
+                      maxLength={8}
+                      placeholder="71234567"
+                      value={empDni}
+                      onChange={(e) => setEmpDni(e.target.value.replace(/\D/g, ''))}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">Exactamente 8 dígitos numéricos</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Código DRAC de Trabajador</label>
+                    <input
+                      type="text"
+                      placeholder="DRAC-2026-001"
+                      value={empCode}
+                      onChange={(e) => setEmpCode(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Nombres <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Juan Carlos"
+                      value={empFirstName}
+                      onChange={(e) => setEmpFirstName(e.target.value)}
                       className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                       required
                     />
-                    <datalist id="cargos-datalist">
-                      {cargos.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name} ({c.code})
-                        </option>
-                      ))}
-                    </datalist>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Apellido Paterno <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Pérez"
+                      value={empLastNamePaterno}
+                      onChange={(e) => setEmpLastNamePaterno(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Apellido Materno</label>
+                    <input
+                      type="text"
+                      placeholder="Gómez"
+                      value={empLastNameMaterno}
+                      onChange={(e) => setEmpLastNameMaterno(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Correo Electrónico Institucional</label>
+                    <input
+                      type="email"
+                      placeholder="ejemplo@regioncajamarca.gob.pe"
+                      value={empEmail}
+                      onChange={(e) => setEmpEmail(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Teléfono / Celular</label>
+                    <input
+                      type="text"
+                      placeholder="+51 976 123 456"
+                      value={empPhone}
+                      onChange={(e) => setEmpPhone(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                {/* ESTRUCTURA ORGANIZACIONAL DRAC */}
+                <div className="p-4 bg-indigo-950/20 border border-indigo-800/30 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-indigo-200 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Ubicación en el Organigrama DRAC</span>
+                    </div>
+                    <span className="text-[10px] text-indigo-400 font-medium">Determina el Jefe Aprobador</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        1. Dependencia <span className="text-rose-400">*</span>
+                      </label>
+                      <select
+                        value={empDepId}
+                        onChange={(e) => {
+                          setEmpDepId(e.target.value);
+                          setEmpDirId('');
+                        }}
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      >
+                        {dependencias.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">2. Dirección / Órgano</label>
+                      <select
+                        value={empDirId}
+                        onChange={(e) => setEmpDirId(e.target.value)}
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="">Seleccionar Dirección / Órgano...</option>
+                        {filteredDirsForEmp.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        3. Área / Oficina <span className="text-rose-400">*</span>
+                      </label>
+                      <select
+                        value={empAreaId}
+                        onChange={(e) => setEmpAreaId(e.target.value)}
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      >
+                        {filteredAreasForEmp.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">Subárea / Unidad (Opcional)</label>
+                      <select
+                        value={empSubareaId}
+                        onChange={(e) => setEmpSubareaId(e.target.value)}
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value="">Ninguna Subárea</option>
+                        {filteredSubareasForEmp.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CARGO INSTITUCIONAL & RÉGIMEN */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Cargo Institucional (Puesto Laboral) <span className="text-rose-400">*</span>
+                    </label>
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        placeholder="Ej: Especialista Agrario, Director, Jefe, etc."
+                        value={empCargoName}
+                        onChange={(e) => {
+                          setEmpCargoName(e.target.value);
+                          const matched = cargos.find(
+                            (c) => c.name.toLowerCase() === e.target.value.trim().toLowerCase()
+                          );
+                          if (matched) setEmpCargoId(matched.id);
+                        }}
+                        list="cargos-datalist"
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
+                      />
+                      <datalist id="cargos-datalist">
+                        {cargos.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name} ({c.code})
+                          </option>
+                        ))}
+                      </datalist>
+                      <select
+                        value={empCargoId}
+                        onChange={(e) => {
+                          setEmpCargoId(e.target.value);
+                          const selected = cargos.find((c) => c.id === e.target.value);
+                          if (selected) setEmpCargoName(selected.name);
+                        }}
+                        className="w-full bg-[#090A0D]/70 border border-slate-800/80 rounded-lg p-1.5 text-[11px] text-slate-300"
+                      >
+                        <option value="">-- O seleccionar del Catálogo de Cargos DRAC --</option>
+                        {cargos.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Régimen Laboral</label>
                     <select
-                      value={empCargoId}
-                      onChange={(e) => {
-                        setEmpCargoId(e.target.value);
-                        const selected = cargos.find((c) => c.id === e.target.value);
-                        if (selected) setEmpCargoName(selected.name);
-                      }}
-                      className="w-full bg-[#090A0D]/70 border border-slate-800/80 rounded-lg p-1.5 text-[11px] text-slate-300"
+                      value={empRegimen}
+                      onChange={(e) => setEmpRegimen(e.target.value as RegimenLaboral)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="">-- O seleccionar del Catálogo de Cargos DRAC --</option>
-                      {cargos.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.code})
-                        </option>
-                      ))}
+                      <option value="D.L. 276">D.L. 276 (Carrera Administrativa)</option>
+                      <option value="D.L. 728">D.L. 728 (Actividad Privada)</option>
+                      <option value="CAS D.L. 1057">CAS D.L. 1057</option>
+                      <option value="LOCACION_SERVICIOS">Locación de Servicios</option>
                     </select>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Régimen Laboral</label>
-                  <select
-                    value={empRegimen}
-                    onChange={(e) => setEmpRegimen(e.target.value as RegimenLaboral)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                  >
-                    <option value="D.L. 276">D.L. 276 (Carrera Administrativa)</option>
-                    <option value="D.L. 728">D.L. 728 (Actividad Privada)</option>
-                    <option value="CAS D.L. 1057">CAS D.L. 1057</option>
-                    <option value="LOCACION_SERVICIOS">Locación de Servicios</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Condición Laboral</label>
+                    <select
+                      value={empCondicion}
+                      onChange={(e) => setEmpCondicion(e.target.value as CondicionLaboral)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="NOMBRADO">Nombrado</option>
+                      <option value="CONTRATADO">Contratado</option>
+                      <option value="INDETERMINADO">Indeterminado</option>
+                      <option value="DESIGNADO">Designado / Funcionario</option>
+                      <option value="PRACTICANTE">Practicante</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Horario Asignado</label>
+                    <select
+                      value={empScheduleId}
+                      onChange={(e) => setEmpScheduleId(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      {horarios.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.name} {h.turn_count === 2 ? '(2 Turnos)' : '(1 Turno)'}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* LIVE PREVIEW OF SELECTED HORARIO TURNS */}
+                    {(() => {
+                      const selectedH = horarios.find((h) => h.id === empScheduleId) || horarios[0];
+                      if (!selectedH) return null;
+                      return (
+                        <div className="mt-2 p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg text-[11px] font-mono space-y-1">
+                          <div className="flex items-center justify-between text-indigo-300 font-bold">
+                            <span>Turno 1: {selectedH.turno1_name || 'Turno Principal'}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-400 border border-indigo-800">
+                              {selectedH.turn_count === 2 ? '2 Turnos' : '1 Turno'}
+                            </span>
+                          </div>
+                          {selectedH.turn_count === 2 && selectedH.turno2_name && (
+                            <div className="text-emerald-300 font-bold">
+                              Turno 2: {selectedH.turno2_name}
+                            </div>
+                          )}
+                          <div className="text-[10px] text-slate-400">
+                            Días: {selectedH.working_days?.join(', ') || 'L-V'} | Duración: {selectedH.total_duration_text || (selectedH.turn_count === 2 ? '8 horas' : '8 horas')}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">PIN Biométrico ZKTeco</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: 71234567"
+                      value={empZkTecoPin}
+                      onChange={(e) => setEmpZkTecoPin(e.target.value)}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Condición Laboral</label>
-                  <select
-                    value={empCondicion}
-                    onChange={(e) => setEmpCondicion(e.target.value as CondicionLaboral)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                  >
-                    <option value="NOMBRADO">Nombrado</option>
-                    <option value="CONTRATADO">Contratado</option>
-                    <option value="INDETERMINADO">Indeterminado</option>
-                    <option value="DESIGNADO">Designado / Funcionario</option>
-                    <option value="PRACTICANTE">Practicante</option>
-                  </select>
+              {/* ================================================================= */}
+              {/* SECCIÓN 2: PERFIL DE ACCESO AL SISTEMA & CUENTA DE USUARIO        */}
+              {/* ================================================================= */}
+              <div className="space-y-4 pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                      2. Perfil del Sistema &amp; Cuenta de Acceso
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 text-[10px] font-mono border border-emerald-800/40">
+                    Seguridad &amp; Roles RBAC
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">Horario Asignado</label>
-                  <select
-                    value={empScheduleId}
-                    onChange={(e) => setEmpScheduleId(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                  >
-                    {horarios.map((h) => (
-                      <option key={h.id} value={h.id}>
-                        {h.name}
-                      </option>
-                    ))}
-                  </select>
+                {/* EXPLANATORY CALLOUT: CARGO INSTITUCIONAL VS PERFIL SISTEMA */}
+                <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-xl flex items-start gap-3">
+                  <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-slate-300 leading-relaxed">
+                    <span className="font-bold text-white">Diferenciación Obligatoria:</span> El{' '}
+                    <span className="text-indigo-300 font-semibold">Cargo Institucional</span> (arriba) es el puesto de trabajo en la DRAC. El{' '}
+                    <span className="text-emerald-300 font-semibold">Perfil del Sistema</span> (abajo) determina exclusivamente los permisos y accesos dentro del software de asistencia.
+                  </div>
                 </div>
+
+                {/* TOGGLE: ¿TENDRÁ ACCESO AL SISTEMA? */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-200 mb-2">
+                    ¿Tendrá cuenta de acceso al sistema de control de asistencia?
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEmpHasAccess(true)}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all ${
+                        empHasAccess
+                          ? 'bg-emerald-950/30 border-emerald-500/60 ring-1 ring-emerald-500/40 text-white'
+                          : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg shrink-0 ${empHasAccess ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">Sí, habilitar cuenta en el sistema</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Tendrá usuario, contraseña y perfil para ingresar a la plataforma web.
+                        </div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEmpHasAccess(false)}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all ${
+                        !empHasAccess
+                          ? 'bg-rose-950/30 border-rose-500/60 ring-1 ring-rose-500/40 text-white'
+                          : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className={`p-1.5 rounded-lg shrink-0 ${!empHasAccess ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-500'}`}>
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">No, solo registro laboral y biométrico</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Solo registrará asistencia por huella/PIN en el reloj físico ZKTeco.
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* IF ACCESS IS DISABLED */}
+                {!empHasAccess && (
+                  <div className="p-3 bg-amber-950/20 border border-amber-800/30 rounded-xl flex items-center gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <p className="text-[11px] text-amber-300">
+                      El trabajador figurará en el padrón laboral de la DRAC y sincronizará con el reloj biométrico, pero <strong>no podrá iniciar sesión en la aplicación web</strong>.
+                    </p>
+                  </div>
+                )}
+
+                {/* IF ACCESS IS ENABLED: SHOW CREDENTIALS AND SYSTEM ROLE SELECTOR */}
+                {empHasAccess && (
+                  <div className="space-y-4 bg-slate-900/40 p-4 border border-slate-800 rounded-xl">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          Nombre de Usuario (Username) <span className="text-rose-400">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="jperez"
+                            value={empUsername}
+                            onChange={(e) => setEmpUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
+                            className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-6 pr-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                            required={empHasAccess}
+                          />
+                          <span className="absolute left-2.5 top-2 text-xs text-slate-500 font-mono">@</span>
+                        </div>
+                        <span className="text-[9px] text-slate-500 mt-0.5 block">Identificador único de inicio de sesión</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">Estado de la Cuenta</label>
+                        <select
+                          value={empAccountStatus}
+                          onChange={(e) => setEmpAccountStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                          className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="ACTIVE">Activa (Permitir Ingreso)</option>
+                          <option value="INACTIVE">Inactiva (Bloqueado Temporalmente)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">Método de Autenticación</label>
+                        <select
+                          value={empAuthMethod}
+                          onChange={(e) => setEmpAuthMethod(e.target.value as any)}
+                          className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        >
+                          <option value="PASSWORD">Contraseña Estándar</option>
+                          <option value="INSTITUTIONAL">Credenciales Institucionales DRAC</option>
+                          <option value="BIOMETRIC">PIN Biométrico ZKTeco</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* SELECTOR DE PERFIL DEL SISTEMA */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-bold text-slate-200">
+                          Selección del Perfil de Acceso del Sistema (Rol) <span className="text-rose-400">*</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400">
+                          Perfil por defecto: <strong className="text-emerald-400">Trabajador</strong>
+                        </span>
+                      </div>
+
+                      <select
+                        value={empRole}
+                        onChange={(e) => setEmpRole(e.target.value as RoleType)}
+                        className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-medium focus:outline-none focus:border-indigo-500"
+                      >
+                        {SYSTEM_ROLES_CATALOG.map((roleItem) => (
+                          <option key={roleItem.role} value={roleItem.role}>
+                            {roleItem.badge} — {roleItem.label} ({roleItem.description})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* ROLE CARDS / DETAILS */}
+                    {(() => {
+                      const selectedRoleInfo = SYSTEM_ROLES_CATALOG.find((r) => r.role === empRole) || SYSTEM_ROLES_CATALOG[0];
+                      const selectedDepObj = dependencias.find((d) => d.id === empDepId);
+                      const selectedDirObj = direccionesOrganos.find((d) => d.id === empDirId);
+                      const selectedAreaObj = areas.find((a) => a.id === empAreaId);
+
+                      return (
+                        <div className="space-y-3 bg-[#090A0D] border border-slate-800 rounded-xl p-3.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 text-xs font-bold rounded-md border flex items-center gap-1 ${selectedRoleInfo.color}`}>
+                                <Shield className="w-3 h-3" />
+                                <span>{selectedRoleInfo.badge}</span>
+                              </span>
+                              <span className="text-xs font-bold text-white">{selectedRoleInfo.label}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">Código: {selectedRoleInfo.role}</span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            {selectedRoleInfo.description}
+                          </p>
+
+                          {/* REGLA DE ÁMBITO PARA JEFE */}
+                          {empRole === 'JEFE' && (
+                            <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-lg space-y-1.5">
+                              <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                                <Crown className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Ámbito Jerárquico de Aprobación Automático</span>
+                              </div>
+                              <p className="text-[10px] text-slate-300 leading-relaxed">
+                                Como <strong>Jefe</strong>, su potestad de dar <strong>Visto Bueno (VoBo)</strong> a papeletas y supervisar asistencias abarcará al personal de su unidad asignada:
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono text-amber-200 bg-black/40 p-2 rounded border border-amber-500/20">
+                                <span>{selectedDepObj?.name || 'Dependencia'}</span>
+                                <span>➔</span>
+                                <span>{selectedDirObj?.name || 'Dirección / Órgano'}</span>
+                                <span>➔</span>
+                                <span className="font-bold text-amber-300">{selectedAreaObj?.name || 'Área / Oficina'}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ALERTA PARA ROLES CON PRIVILEGIOS ELEVADOS */}
+                          {['ADMIN_GENERAL', 'JEFE_RRHH', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'].includes(empRole) && (
+                            <div className="p-2.5 bg-indigo-950/30 border border-indigo-500/30 rounded-lg flex items-center gap-2">
+                              <ShieldAlert className="w-4 h-4 text-indigo-400 shrink-0" />
+                              <div className="text-[10px] text-indigo-200">
+                                <strong>Privilegios Elevados:</strong> Este perfil posee facultades de gestión y administración de datos institucionales.
+                              </div>
+                            </div>
+                          )}
+
+                          {/* PERMISOS INCLUIDOS */}
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                              Facultades otorgadas por este perfil:
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              {selectedRoleInfo.permissions.map((perm, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 text-[10px] text-slate-300">
+                                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                  <span>{perm}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* MOTIVO DE CAMBIO EN CASO DE EDICIÓN */}
+                    {editingEmp && editingEmp.role !== empRole && (
+                      <div className="p-3 bg-amber-950/20 border border-amber-500/40 rounded-xl space-y-1.5">
+                        <label className="block text-[11px] font-bold text-amber-300">
+                          Motivo del cambio de Perfil (Requerido para Bitácora de Auditoría) <span className="text-rose-400">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Designación como Jefe de Unidad mediante Resolución Administrativa..."
+                          value={empRoleChangeReason}
+                          onChange={(e) => setEmpRoleChangeReason(e.target.value)}
+                          className="w-full bg-[#090A0D] border border-amber-500/30 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                          required
+                        />
+                        <span className="text-[9px] text-slate-400 block">
+                          Se registrará en la bitácora: Perfil anterior ({editingEmp.role}) ➔ Nuevo perfil ({empRole}).
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">PIN / ID Biométrico ZKTeco</label>
-                <input
-                  type="text"
-                  placeholder="Ej: 71234567"
-                  value={empZkTecoPin}
-                  onChange={(e) => setEmpZkTecoPin(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-2 border-t border-slate-800">
+              {/* ACTION BUTTONS */}
+              <div className="pt-4 flex justify-end gap-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowEmpModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-lg"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/20"
                 >
-                  Guardar Personal
+                  <Save className="w-4 h-4" />
+                  <span>{editingEmp ? 'Guardar Cambios de Personal' : 'Completar Registro de Trabajador'}</span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* MODAL: VER PERFIL DE ACCESO & BITÁCORA DE AUDITORÍA DE ROLES      */}
+      {/* ================================================================= */}
+      {selectedEmpForRoleModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl my-8">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-cyan-600/20 text-cyan-400 rounded-lg border border-cyan-500/20">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Perfil de Acceso &amp; Bitácora de Auditoría</h3>
+                  <p className="text-xs text-slate-400">
+                    Trazabilidad de seguridad, roles y permisos de {selectedEmpForRoleModal.first_name} {selectedEmpForRoleModal.last_name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedEmpForRoleModal(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
+              {/* RESUMEN DEL COLABORADOR */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">DNI</span>
+                    <span className="font-mono font-bold text-white">{selectedEmpForRoleModal.dni}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Cód. DRAC</span>
+                    <span className="font-mono text-indigo-400 font-bold">{selectedEmpForRoleModal.codigo_trabajador || 'DRAC-2026'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Cargo Laboral</span>
+                    <span className="font-semibold text-slate-200">{selectedEmpForRoleModal.position}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">Dependencia</span>
+                    <span className="text-slate-300">{selectedEmpForRoleModal.dependencia_name}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <div className="text-[11px] text-slate-400">
+                    Área: <span className="text-white font-medium">{selectedEmpForRoleModal.area_name}</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Jefe Aprobador: <span className="text-amber-400 font-medium">{selectedEmpForRoleModal.supervisor_name || 'Asignación Jerárquica'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PERFIL DEL SISTEMA ACTUAL */}
+              {(() => {
+                const currentRoleInfo = SYSTEM_ROLES_CATALOG.find((r) => r.role === selectedEmpForRoleModal.role) || SYSTEM_ROLES_CATALOG[0];
+                const hasAccess = selectedEmpForRoleModal.has_system_access !== false;
+
+                return (
+                  <div className="bg-slate-900/30 border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        Estado de Cuenta y Perfil Vigente
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                          hasAccess && selectedEmpForRoleModal.account_status !== 'INACTIVE'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                        }`}
+                      >
+                        {hasAccess ? (selectedEmpForRoleModal.account_status || 'ACTIVA') : 'SIN ACCESO AL SISTEMA'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className={`px-2.5 py-1 text-xs font-bold rounded-lg border flex items-center gap-1.5 ${currentRoleInfo.color}`}>
+                        <Shield className="w-3.5 h-3.5" />
+                        <span>{currentRoleInfo.badge}</span>
+                      </span>
+                      <div>
+                        <div className="text-xs font-bold text-white">{currentRoleInfo.label}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Usuario: @{selectedEmpForRoleModal.username || selectedEmpForRoleModal.dni} | Auth: {selectedEmpForRoleModal.auth_method || 'PASSWORD'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300">{currentRoleInfo.description}</p>
+
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Permisos activos de este perfil:
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {currentRoleInfo.permissions.map((perm, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 text-[10px] text-slate-300">
+                            <Check className="w-3 h-3 text-cyan-400 shrink-0" />
+                            <span>{perm}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* BITÁCORA DE AUDITORÍA Y TRAZABILIDAD DE ROLES */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-cyan-400" />
+                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                      Bitácora de Trazabilidad y Cambios de Perfil
+                    </h4>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Registros: {selectedEmpForRoleModal.role_history?.length || 1}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {(selectedEmpForRoleModal.role_history && selectedEmpForRoleModal.role_history.length > 0) ? (
+                    selectedEmpForRoleModal.role_history.map((hist, idx) => (
+                      <div key={hist.id || idx} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5 font-mono">
+                            <span className="text-cyan-400 font-bold">Evento #{idx + 1}</span>
+                            <span className="text-slate-500">•</span>
+                            <span className="text-slate-400 text-[10px]">{hist.changed_at}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            Por: <strong className="text-slate-200">{hist.changed_by}</strong>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono text-[10px]">
+                            {hist.previous_role}
+                          </span>
+                          <span className="text-slate-500">➔</span>
+                          <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 font-mono text-[10px] border border-indigo-800">
+                            {hist.new_role}
+                          </span>
+                          <span className="text-slate-500">•</span>
+                          <span className="text-[10px] text-slate-400">
+                            Estado: <strong className="text-emerald-400">{hist.new_status}</strong>
+                          </span>
+                        </div>
+
+                        {hist.reason && (
+                          <div className="text-[11px] text-slate-300 bg-slate-950/80 p-2 rounded-lg border border-slate-800/80 italic">
+                            "{hist.reason}"
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 bg-slate-900/30 border border-slate-800 rounded-xl text-center">
+                      <p className="text-xs text-slate-400">
+                        Perfil asignado al momento de su registro inicial ({selectedEmpForRoleModal.hire_date}). Sin modificaciones posteriores.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex justify-end">
+              <button
+                onClick={() => setSelectedEmpForRoleModal(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg"
+              >
+                Cerrar Auditoría
+              </button>
+            </div>
           </div>
         </div>
       )}
