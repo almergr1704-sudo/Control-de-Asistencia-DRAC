@@ -1,7 +1,29 @@
 import React, { useState } from 'react';
 import { Turno, Horario, RoleType } from '../../types';
-import { Clock, Plus, Info, Edit2, Trash2, X, Power, ShieldAlert, CheckCircle2, Moon, Copy, AlertTriangle } from 'lucide-react';
+import {
+  Clock,
+  Plus,
+  Info,
+  Edit2,
+  Trash2,
+  X,
+  Power,
+  ShieldAlert,
+  CheckCircle2,
+  Moon,
+  Copy,
+  AlertTriangle,
+  PlayCircle,
+  Sliders,
+  Calendar,
+  Check,
+} from 'lucide-react';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
+import {
+  calculateShiftAndWorkedHours,
+  formatMinutesToText,
+  timeToMinutes,
+} from '../../utils/shiftCalculations';
 
 interface ShiftsSchedulesModuleProps {
   activeView?: string;
@@ -71,6 +93,11 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   onDeleteHorario,
 }) => {
   const [activeTab, setActiveTab] = useState<'HORARIOS' | 'TURNOS'>('HORARIOS');
+  const [expandedSimulatorTurnoId, setExpandedSimulatorTurnoId] = useState<string | null>(null);
+
+  // State for card simulator
+  const [cardSimIn, setCardSimIn] = useState('07:00');
+  const [cardSimOut, setCardSimOut] = useState('13:59');
 
   React.useEffect(() => {
     if (!activeView) return;
@@ -99,10 +126,18 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   const [turnoCode, setTurnoCode] = useState('');
   const [turnoName, setTurnoName] = useState('');
   const [turnoDescription, setTurnoDescription] = useState('');
+  // 1. Horario del Turno (Estándar)
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('13:00');
   const [tolerance, setTolerance] = useState(10);
   const [toleranceExit, setToleranceExit] = useState(0);
+  // 2. Ventana de Marcación Permitida
+  const [windowEntryStart, setWindowEntryStart] = useState('07:00');
+  const [windowExitLimit, setWindowExitLimit] = useState('13:59');
+  // 3. Simulador interactivo en modal
+  const [modalSimIn, setModalSimIn] = useState('07:00');
+  const [modalSimOut, setModalSimOut] = useState('13:59');
+
   const [turnoActive, setTurnoActive] = useState(true);
   const [turnoValidationError, setTurnoValidationError] = useState<string | null>(null);
   const [showTurnoConfirmModal, setShowTurnoConfirmModal] = useState(false);
@@ -118,6 +153,17 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   // Calculated duration live
   const currentDuration = calculateShiftDuration(startTime, endTime);
 
+  // Live simulation in modal
+  const modalSimResult = calculateShiftAndWorkedHours({
+    startTime,
+    endTime,
+    windowEntryStart,
+    windowExitLimit,
+    realIn: modalSimIn,
+    realOut: modalSimOut,
+    toleranceMinutes: tolerance,
+  });
+
   // Handlers for Turno
   const handleOpenAddTurno = () => {
     const autoCode = `TUR-${String(turnos.length + 1).padStart(3, '0')}`;
@@ -127,8 +173,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setTurnoDescription('');
     setStartTime('08:00');
     setEndTime('13:00');
+    setWindowEntryStart('07:00');
+    setWindowExitLimit('13:59');
     setTolerance(10);
     setToleranceExit(0);
+    setModalSimIn('07:00');
+    setModalSimOut('13:59');
     setTurnoActive(true);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -142,8 +192,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setTurnoDescription(t.description || '');
     setStartTime(t.start_time);
     setEndTime(t.end_time);
+    setWindowEntryStart(t.window_entry_start || '07:00');
+    setWindowExitLimit(t.window_exit_limit || '13:59');
     setTolerance(t.tolerance_minutes);
     setToleranceExit(t.tolerance_exit_minutes || 0);
+    setModalSimIn(t.window_entry_start || '07:00');
+    setModalSimOut(t.window_exit_limit || '13:59');
     setTurnoActive(t.active !== false);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -158,8 +212,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setTurnoDescription(t.description ? `Copia de ${t.description}` : '');
     setStartTime(t.start_time);
     setEndTime(t.end_time);
+    setWindowEntryStart(t.window_entry_start || '07:00');
+    setWindowExitLimit(t.window_exit_limit || '13:59');
     setTolerance(t.tolerance_minutes);
     setToleranceExit(t.tolerance_exit_minutes || 0);
+    setModalSimIn(t.window_entry_start || '07:00');
+    setModalSimOut(t.window_exit_limit || '13:59');
     setTurnoActive(true);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -177,7 +235,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     }
 
     if (!startTime || !endTime) {
-      setTurnoValidationError('Debe seleccionar la Hora de Inicio y Hora Final del turno.');
+      setTurnoValidationError('Debe seleccionar la Hora de Inicio y Hora Final del turno estándar.');
+      return;
+    }
+
+    if (!windowEntryStart || !windowExitLimit) {
+      setTurnoValidationError('Debe configurar la Ventana de Marcación Permitida (Hora Inicio Entrada y Hora Límite Salida).');
       return;
     }
 
@@ -247,6 +310,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         description: turnoDescription.trim() || undefined,
         start_time: startTime,
         end_time: endTime,
+        window_entry_start: windowEntryStart,
+        window_exit_limit: windowExitLimit,
         tolerance_minutes: Number(tolerance),
         tolerance_exit_minutes: Number(toleranceExit),
         is_overnight: dur.isOvernight,
@@ -259,6 +324,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         description: turnoDescription.trim() || undefined,
         start_time: startTime,
         end_time: endTime,
+        window_entry_start: windowEntryStart,
+        window_exit_limit: windowExitLimit,
         tolerance_minutes: Number(tolerance),
         tolerance_exit_minutes: Number(toleranceExit),
         is_overnight: dur.isOvernight,
@@ -355,11 +422,11 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-indigo-400" />
             <h2 className="text-base font-bold text-white">
-              Gestión de Tiempos: Turnos &amp; Horarios Laborales
+              Gestión de Tiempos: Turnos, Ventanas de Marcación &amp; Horarios
             </h2>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Definición de Turnos continuos (Hora de Inicio → Hora Final) y Horarios (1 ó 2 Turnos diarios) aplicables al personal DRAC.
+            Configuración de Horario del Turno (Jornada estándar), Ventana de Marcación Permitida (Biométricos ZKTeco) y regla de cómputo de horas efectivas para la DRAC.
           </p>
         </div>
 
@@ -383,11 +450,11 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Turnos Laborales ({turnos.length})
+              Turnos &amp; Ventanas ({turnos.length})
             </button>
           </div>
 
-          {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+          {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
             <div>
               {activeTab === 'HORARIOS' ? (
                 <button
@@ -411,13 +478,36 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         </div>
       </div>
 
-      {/* Strict Rule Info Banner */}
-      <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-4 flex items-start gap-3">
-        <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-        <div className="text-xs text-slate-300 leading-relaxed">
-          <strong className="text-white">DIFERENCIACIÓN CONCEPTUAL FUNDAMENTAL:</strong>
-          <br />• <strong className="text-emerald-400">Turno Laboral:</strong> Representa exclusivamente un período de trabajo continuo definido por <strong>Hora de Inicio → Hora Final</strong> (Ej: <i>Turno Mañana 08:00 → 13:00</i> o <i>Turno Nocturno 22:00 → 06:00 (+1 día)</i>).
-          <br />• <strong className="text-indigo-400">Horario Laboral:</strong> Organiza 1 ó 2 Turnos dentro del mismo día laboral (Jornada Continua o Jornada Partida).
+      {/* Regla de Turnos y Ventanas Banner */}
+      <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4.5 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <div className="space-y-1.5 border-b md:border-b-0 md:border-r border-slate-800 pb-3 md:pb-0 md:pr-4">
+          <div className="flex items-center gap-1.5 font-bold text-emerald-400 text-[13px]">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span>1. Horario del Turno</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed text-[11px]">
+            Define el inicio y fin de la <strong>jornada laboral estándar</strong> (ej: 08:00 AM a 01:00 PM = 5.0 horas).
+          </p>
+        </div>
+
+        <div className="space-y-1.5 border-b md:border-b-0 md:border-r border-slate-800 pb-3 md:pb-0 md:pr-4">
+          <div className="flex items-center gap-1.5 font-bold text-indigo-400 text-[13px]">
+            <Sliders className="w-4 h-4 text-indigo-400" />
+            <span>2. Ventana de Marcación</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed text-[11px]">
+            Rango permitido en biométrico: <strong>Hora inicio entrada</strong> (ej: 07:00 AM) y <strong>Hora límite salida</strong> (ej: 01:59 PM).
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5 font-bold text-amber-400 text-[13px]">
+            <CheckCircle2 className="w-4 h-4 text-amber-400" />
+            <span>3. Regla de Cómputo Efectivo</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed text-[11px]">
+            Las marcaciones en ventana son válidas para asistencia; el tiempo efectivo se computa <strong>estrictamente dentro del turno</strong> (08:00 a 13:00 = 5.0h).
+          </p>
         </div>
       </div>
 
@@ -436,7 +526,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
                       {h.turn_count === 2 ? 'JORNADA PARTIDA (2 TURNOS)' : 'JORNADA CONTINUA (1 TURNO)'}
                     </span>
-                    {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+                    {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleOpenEditHorario(h)}
@@ -503,17 +593,31 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
       {/* Turnos View */}
       {activeTab === 'TURNOS' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {turnos.map((t) => {
             const dur = calculateShiftDuration(t.start_time, t.end_time);
             const isAssigned = horarios.some((h) => h.turno1_id === t.id || h.turno2_id === t.id);
+            const winEntry = t.window_entry_start || '07:00';
+            const winExit = t.window_exit_limit || '13:59';
+            const isSimulatorOpen = expandedSimulatorTurnoId === t.id;
+
+            // Live computation for this card
+            const cardCalc = calculateShiftAndWorkedHours({
+              startTime: t.start_time,
+              endTime: t.end_time,
+              windowEntryStart: winEntry,
+              windowExitLimit: winExit,
+              realIn: cardSimIn,
+              realOut: cardSimOut,
+              toleranceMinutes: t.tolerance_minutes,
+            });
 
             return (
               <div
                 key={t.id}
-                className={`bg-slate-900/30 border ${
-                  t.active === false ? 'border-rose-900/30 opacity-70' : 'border-slate-800'
-                } rounded-xl p-5 shadow-sm flex flex-col justify-between`}
+                className={`bg-[#0F1115] border ${
+                  t.active === false ? 'border-rose-900/40 opacity-70' : 'border-slate-800'
+                } rounded-xl p-5 shadow-sm flex flex-col justify-between space-y-4`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -536,12 +640,12 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                         </span>
                       )}
 
-                      {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+                      {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
                         <div className="flex items-center gap-1 ml-1">
                           <button
                             onClick={() => handleOpenEditTurno(t)}
                             className="p-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
-                            title="Editar Turno"
+                            title="Editar Turno & Ventanas"
                           >
                             <Edit2 className="w-3 h-3" />
                           </button>
@@ -581,28 +685,65 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                   <h3 className="font-bold text-sm text-white mb-1">{t.name}</h3>
                   {t.description && <p className="text-xs text-slate-400 mb-3">{t.description}</p>}
 
-                  <div className="bg-[#090A0D] p-3 rounded-lg border border-slate-800/80 space-y-2 text-xs">
-                    <div className="flex items-center justify-between font-mono">
-                      <span className="text-slate-400">Horario definido:</span>
-                      <span className="text-emerald-400 font-bold text-sm">
-                        {t.start_time} → {t.end_time} {dur.isOvernight && <span className="text-purple-400 text-xs">(+1 día)</span>}
-                      </span>
+                  {/* 2 DISTINCT HORARIOS BREAKDOWN */}
+                  <div className="space-y-2 text-xs">
+                    {/* 1. HORARIO DEL TURNO */}
+                    <div className="bg-[#090A0D] p-3 rounded-lg border border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-emerald-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>1. Horario del Turno (Estándar):</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          Duración: <strong className="text-white">{dur.text}</strong>
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between font-mono bg-slate-900/60 p-2 rounded border border-slate-800/80">
+                        <span className="text-slate-300">Inicio: <strong className="text-emerald-300">{t.start_time}</strong></span>
+                        <span className="text-slate-500">→</span>
+                        <span className="text-slate-300">Fin: <strong className="text-amber-300">{t.end_time}</strong> {dur.isOvernight && '(+1d)'}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-1">
+                        <span>Tolerancia Entrada: <strong className="text-slate-200">{t.tolerance_minutes} min</strong></span>
+                        <span>Tolerancia Salida: <strong className="text-slate-200">{t.tolerance_exit_minutes || 0} min</strong></span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 font-mono text-[11px]">
-                      <span className="text-slate-400">Duración Calculada:</span>
-                      <span className="text-indigo-300 font-bold">{dur.text}</span>
+                    {/* 2. VENTANA DE MARCACIÓN PERMITIDA */}
+                    <div className="bg-[#090A0D] p-3 rounded-lg border border-indigo-950 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-indigo-400 flex items-center gap-1">
+                          <Sliders className="w-3 h-3" />
+                          <span>2. Ventana de Marcación Permitida:</span>
+                        </span>
+                        <span className="px-1.5 py-0.2 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded text-[9px] font-mono font-bold">
+                          ZKTeco Biométrico
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
+                        <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block">Inicio entrada:</span>
+                          <span className="text-indigo-300 font-bold">{winEntry}</span>
+                        </div>
+                        <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block">Límite salida:</span>
+                          <span className="text-indigo-300 font-bold">{winExit}</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-tight pt-0.5">
+                        Marcaciones entre <strong>{winEntry}</strong> y <strong>{winExit}</strong> son válidas para asistencia.
+                      </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/60 text-[11px]">
-                      <div>
-                        <span className="text-slate-500 block">Tolerancia Entrada:</span>
-                        <span className="text-white font-semibold">{t.tolerance_minutes} minutos</span>
+                    {/* 3. REGLA DE CÓMPUTO EFFECTIVE RULE */}
+                    <div className="p-2.5 bg-slate-900/50 rounded-lg border border-slate-800/80 text-[10px] text-slate-300 space-y-1">
+                      <div className="flex items-center gap-1 text-amber-400 font-bold">
+                        <Info className="w-3 h-3 shrink-0" />
+                        <span>Regla de Cómputo de Horas:</span>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block">Tolerancia Salida:</span>
-                        <span className="text-white font-semibold">{t.tolerance_exit_minutes || 0} minutos</span>
-                      </div>
+                      <p className="text-slate-400 leading-relaxed">
+                        Si marca en ventana previa (ej: {winEntry}) y salida posterior (ej: {winExit}), el tiempo efectivo se computa <strong className="text-white">estrictamente a las {dur.text} del turno</strong> ({t.start_time} - {t.end_time}).
+                      </p>
                     </div>
                   </div>
 
@@ -613,23 +754,88 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* INTERACTIVE SIMULATOR DRAWER FOR THIS CARD */}
+                <div className="border-t border-slate-800/80 pt-2">
+                  <button
+                    onClick={() => setExpandedSimulatorTurnoId(isSimulatorOpen ? null : t.id)}
+                    className="w-full py-1.5 px-2 bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white rounded text-[11px] font-semibold flex items-center justify-between transition-colors font-mono"
+                  >
+                    <span className="flex items-center gap-1.5 text-indigo-400">
+                      <PlayCircle className="w-3.5 h-3.5" />
+                      <span>Simular Marcación &amp; Cómputo</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">{isSimulatorOpen ? 'Ocultar ▲' : 'Probar ▼'}</span>
+                  </button>
+
+                  {isSimulatorOpen && (
+                    <div className="mt-2.5 p-3 bg-[#090A0D] border border-indigo-900/50 rounded-lg space-y-2.5 text-xs animate-in fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Entrada Real (ej: {winEntry})</label>
+                          <input
+                            type="time"
+                            value={cardSimIn}
+                            onChange={(e) => setCardSimIn(e.target.value)}
+                            className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs text-emerald-400 font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">Salida Real (ej: {winExit})</label>
+                          <input
+                            type="time"
+                            value={cardSimOut}
+                            onChange={(e) => setCardSimOut(e.target.value)}
+                            className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-xs text-amber-400 font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 bg-slate-900 rounded border border-slate-800 space-y-1.5 text-[11px] font-mono">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Ventana Biométrico:</span>
+                          <span className={cardCalc.isValidPunchWindow ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                            {cardCalc.isValidPunchWindow ? '✓ Válida en Ventana' : '⚠️ Fuera de Rango'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Inicio Efectivo:</span>
+                          <span className="text-white font-bold">{cardCalc.effectiveStart} (Turno: {t.start_time})</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Fin Efectivo:</span>
+                          <span className="text-white font-bold">{cardCalc.effectiveEnd} (Turno: {t.end_time})</span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-800 pt-1.5">
+                          <span className="text-indigo-300 font-bold">Tiempo Efectivo:</span>
+                          <span className="text-emerald-400 font-bold text-sm bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                            {cardCalc.effectiveDurationText} ({cardCalc.effectiveHours}h)
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        {cardCalc.ruleExplanation}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* FORM MODAL: REGISTRAR / EDITAR TURNO LABORAL */}
+      {/* FORM MODAL: REGISTRAR / EDITAR TURNO LABORAL & VENTANAS */}
       {showTurnoModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <form
             onSubmit={handlePreSaveTurno}
-            className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs"
+            className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[92vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-sm text-white flex items-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-400" />
-                {editingTurno ? 'Editar Turno Laboral' : 'Registrar Turno Laboral'}
+                {editingTurno ? 'Editar Turno Laboral & Ventanas' : 'Registrar Turno Laboral & Ventanas de Marcación'}
               </h3>
               <button
                 type="button"
@@ -663,9 +869,9 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               </div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Code & Name */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1 font-medium">Código del Turno</label>
                   <input
@@ -676,7 +882,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono uppercase focus:border-indigo-600 focus:outline-none"
                     required
                   />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">Generación automática</span>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">Identificador institucional</span>
                 </div>
                 <div>
                   <label className="block text-slate-400 mb-1 font-medium">Nombre del Turno *</label>
@@ -691,7 +897,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 </div>
               </div>
 
-              {/* Description (Optional) */}
+              {/* Description */}
               <div>
                 <label className="block text-slate-400 mb-1 font-medium">Descripción (Opcional)</label>
                 <input
@@ -703,98 +909,212 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 />
               </div>
 
-              {/* Start & End Times (HH:MM Selector) */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-[#090A0D] border border-slate-800/80 rounded-lg">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                    <span>Hora de Inicio *</span>
-                    <span className="text-[10px] text-indigo-400 font-mono">(HH:MM)</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#0F1115] text-emerald-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-emerald-500 focus:outline-none"
-                    required
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">Ej: 07:30, 08:00, 08:30</span>
-                </div>
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
-                    <span>Hora Final *</span>
-                    <span className="text-[10px] text-indigo-400 font-mono">(HH:MM)</span>
-                  </label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#0F1115] text-amber-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-amber-500 focus:outline-none"
-                    required
-                  />
-                  <span className="text-[10px] text-slate-500 mt-1 block">Ej: 13:00, 17:00, 06:00</span>
-                </div>
-              </div>
-
-              {/* Auto-calculated Duration Panel */}
-              <div className="p-3 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-lg flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-slate-400 block font-medium">Duración Calculada (Automática):</span>
-                  <div className="text-sm font-bold text-white font-mono flex items-center gap-2 mt-0.5">
-                    <span>{currentDuration.text}</span>
-                    {currentDuration.isOvernight && (
-                      <span className="px-1.5 py-0.5 text-[10px] bg-purple-900/60 text-purple-300 border border-purple-600/40 rounded font-sans">
-                        Cruzado Nocturno
-                      </span>
-                    )}
+              {/* SECTION 1: HORARIO DEL TURNO */}
+              <div className="bg-[#090A0D] border border-emerald-900/50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span className="font-bold text-white text-xs">1. Horario del Turno (Jornada Estándar)</span>
                   </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-indigo-300/80 block font-mono">
-                    {startTime} → {endTime}
+                  <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                    Duración: {currentDuration.text}
                   </span>
-                  {currentDuration.isOvernight ? (
-                    <span className="text-[10px] text-purple-400 font-bold block">Finaliza al día siguiente (+1 día)</span>
-                  ) : (
-                    <span className="text-[10px] text-emerald-400 font-bold block">Jornada Mismo Día</span>
-                  )}
                 </div>
-              </div>
 
-              {/* Tolerances */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Entrada</label>
-                  <div className="relative">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
+                      <span>Hora de Inicio del Turno *</span>
+                      <span className="text-[10px] text-emerald-400 font-mono">(ej: 08:00 AM)</span>
+                    </label>
                     <input
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={tolerance}
-                      onChange={(e) => setTolerance(Math.max(0, Number(e.target.value)))}
-                      className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-emerald-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-emerald-500 focus:outline-none"
                       required
                     />
-                    <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
+                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de inicio de jornada</span>
                   </div>
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">
-                    Ej: 08:00 a 08:{String(tolerance).padStart(2, '0')} Puntual
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
+                      <span>Hora Final del Turno *</span>
+                      <span className="text-[10px] text-amber-400 font-mono">(ej: 01:00 PM / 13:00)</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-amber-400 border border-slate-700 rounded font-mono text-sm font-bold focus:border-amber-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">Hora oficial de fin de jornada</span>
+                  </div>
+                </div>
+
+                {/* Tolerances */}
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Entrada</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={tolerance}
+                        onChange={(e) => setTolerance(Math.max(0, Number(e.target.value)))}
+                        className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                        required
+                      />
+                      <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      Hasta 08:{String(tolerance).padStart(2, '0')} sin tardanza
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Salida</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={toleranceExit}
+                        onChange={(e) => setToleranceExit(Math.max(0, Number(e.target.value)))}
+                        className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                      />
+                      <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">Margen salida previa</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: VENTANA DE MARCACIÓN PERMITIDA */}
+              <div className="bg-[#090A0D] border border-indigo-900/50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-indigo-400" />
+                    <span className="font-bold text-white text-xs">2. Ventana de Marcación Permitida (Biométrico ZKTeco)</span>
+                  </div>
+                  <span className="px-2 py-0.5 text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-mono">
+                    Rango Válido
                   </span>
                 </div>
 
-                <div>
-                  <label className="block text-slate-400 mb-1 font-medium">Tolerancia de Salida</label>
-                  <div className="relative">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
+                      <span>Hora inicio marcación de entrada *</span>
+                      <span className="text-[10px] text-indigo-400 font-mono">(ej: 07:00 AM)</span>
+                    </label>
                     <input
-                      type="number"
-                      min={0}
-                      max={120}
-                      value={toleranceExit}
-                      onChange={(e) => setToleranceExit(Math.max(0, Number(e.target.value)))}
-                      className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                      type="time"
+                      value={windowEntryStart}
+                      onChange={(e) => {
+                        setWindowEntryStart(e.target.value);
+                        setModalSimIn(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-indigo-300 border border-slate-700 rounded font-mono text-sm font-bold focus:border-indigo-500 focus:outline-none"
+                      required
                     />
-                    <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
+                    <span className="text-[10px] text-slate-500 mt-1 block">A partir de qué hora se permite registrar entrada</span>
                   </div>
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">Margen de salida anticipada</span>
+
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-bold flex items-center gap-1">
+                      <span>Hora límite marcación de salida *</span>
+                      <span className="text-[10px] text-indigo-400 font-mono">(ej: 01:59 PM / 13:59)</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={windowExitLimit}
+                      onChange={(e) => {
+                        setWindowExitLimit(e.target.value);
+                        setModalSimOut(e.target.value);
+                      }}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-indigo-300 border border-slate-700 rounded font-mono text-sm font-bold focus:border-indigo-500 focus:outline-none"
+                      required
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">Hasta qué hora se permite registrar la salida</span>
+                  </div>
+                </div>
+
+                {/* Range Visual Map */}
+                <div className="bg-[#0F1115] p-2.5 rounded-lg border border-slate-800 text-[11px] font-mono space-y-1">
+                  <div className="text-slate-400 flex items-center justify-between">
+                    <span>Ventana Entrada: <strong className="text-indigo-300">{windowEntryStart}</strong></span>
+                    <span className="text-slate-600">→</span>
+                    <span className="text-emerald-400 font-bold">Turno: {startTime} a {endTime}</span>
+                    <span className="text-slate-600">→</span>
+                    <span>Ventana Salida: <strong className="text-indigo-300">{windowExitLimit}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: REGLA DE CÁLCULO DE HORAS TRABAJADAS & SIMULADOR EN VIVO */}
+              <div className="bg-gradient-to-br from-slate-900 via-[#090A0D] to-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-xs">
+                    <Info className="w-4 h-4 text-amber-400" />
+                    <span>3. Regla de Cálculo de Horas &amp; Simulador en Vivo</span>
+                  </div>
+                  <span className="text-[10px] text-indigo-300 font-mono">Prueba Interactiva</span>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Las marcaciones dentro de la ventana de tiempo (<strong className="text-indigo-300">{windowEntryStart}</strong> a <strong className="text-indigo-300">{windowExitLimit}</strong>) son válidas para comprobar la asistencia. Sin embargo, el cálculo de horas trabajadas se basa estrictamente en el horario del turno (<strong className="text-emerald-400">{startTime} a {endTime}</strong>).
+                </p>
+
+                {/* Live simulation controllers */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Entrada Real:</label>
+                    <input
+                      type="time"
+                      value={modalSimIn}
+                      onChange={(e) => setModalSimIn(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#0F1115] text-emerald-400 border border-slate-700 rounded font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Probar Marcación Salida Real:</label>
+                    <input
+                      type="time"
+                      value={modalSimOut}
+                      onChange={(e) => setModalSimOut(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#0F1115] text-amber-400 border border-slate-700 rounded font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Simulation Output Card */}
+                <div className="bg-[#090A0D] border border-indigo-900/60 rounded-lg p-3 space-y-2 font-mono text-[11px]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Verificación de Ventana:</span>
+                    <span className={modalSimResult.isValidPunchWindow ? 'text-emerald-400 font-bold flex items-center gap-1' : 'text-amber-400 font-bold'}>
+                      <Check className="w-3 h-3" />
+                      <span>{modalSimResult.isValidPunchWindow ? 'Marcación Válida en Ventana' : 'Fuera de Rango'}</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Inicio Efectivo Computado:</span>
+                    <span className="text-white font-bold">{modalSimResult.effectiveStart} (Inicio Turno: {startTime})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Fin Efectivo Computado:</span>
+                    <span className="text-white font-bold">{modalSimResult.effectiveEnd} (Fin Turno: {endTime})</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-800 pt-1.5 text-xs">
+                    <span className="text-indigo-300 font-bold">Tiempo Efectivo Contabilizado:</span>
+                    <span className="text-emerald-400 font-bold bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
+                      {modalSimResult.effectiveDurationText} ({modalSimResult.effectiveHours}h)
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-sans leading-tight pt-1">
+                    {modalSimResult.ruleExplanation}
+                  </div>
                 </div>
               </div>
 
@@ -828,14 +1148,14 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold transition-colors shadow-sm flex items-center gap-1.5"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Guardar Turno</span>
+                <span>Guardar Turno &amp; Ventana</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* CONFIRMATION DIALOG MODAL (REQUIREMENT 10) */}
+      {/* CONFIRMATION DIALOG MODAL */}
       {showTurnoConfirmModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[60] flex items-center justify-center p-4">
           <div className="bg-[#0F1115] border border-indigo-500/40 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-xs">
@@ -845,36 +1165,30 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             </div>
 
             <p className="text-slate-300 font-medium leading-relaxed">
-              ¿Está seguro de registrar este turno laboral en el sistema institucional?
+              ¿Está seguro de registrar este turno laboral y ventana de marcación en el sistema institucional?
             </p>
 
             {/* Shift Summary Card */}
             <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-3 space-y-2 font-mono text-[11px]">
               <div className="flex justify-between">
-                <span className="text-slate-400">Código:</span>
-                <span className="text-indigo-400 font-bold">{turnoCode || 'TUR-001'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Nombre:</span>
-                <span className="text-white font-bold">{turnoName}</span>
+                <span className="text-slate-400">Código / Nombre:</span>
+                <span className="text-white font-bold">{turnoCode} - {turnoName}</span>
               </div>
               <div className="flex justify-between border-t border-slate-800/80 pt-1.5">
-                <span className="text-slate-400">Horario Entrada → Salida:</span>
+                <span className="text-slate-400">Horario del Turno:</span>
                 <span className="text-emerald-400 font-bold">
-                  {startTime} → {endTime} {currentDuration.isOvernight && '(+1 día)'}
+                  {startTime} → {endTime} ({currentDuration.text})
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Duración Calculada:</span>
-                <span className="text-indigo-300 font-bold">{currentDuration.text}</span>
+                <span className="text-slate-400">Ventana de Marcación:</span>
+                <span className="text-indigo-300 font-bold">
+                  {windowEntryStart} a {windowExitLimit}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Tolerancia Entrada:</span>
                 <span className="text-white">{tolerance} minutos</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Tolerancia Salida:</span>
-                <span className="text-white">{toleranceExit} minutos</span>
               </div>
             </div>
 
@@ -964,7 +1278,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 >
                   {turnos.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({t.start_time} - {t.end_time})
+                      {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '07:00'} a {t.window_exit_limit || '13:59'}]
                     </option>
                   ))}
                 </select>
@@ -982,7 +1296,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                     <option value="">Seleccionar Turno 2...</option>
                     {turnos.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name} ({t.start_time} - {t.end_time})
+                        {t.name} ({t.start_time} - {t.end_time}) [Ventana: {t.window_entry_start || '13:30'} a {t.window_exit_limit || '17:59'}]
                       </option>
                     ))}
                   </select>

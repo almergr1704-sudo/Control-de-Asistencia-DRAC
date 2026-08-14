@@ -165,8 +165,14 @@ export interface Turno {
   code: string;
   name: string; // Ej: "Turno 001 — Mañana", "Turno 002 — Tarde"
   description?: string;
-  start_time: string; // "08:00"
-  end_time: string; // "13:00"
+  // 1. HORARIO DEL TURNO (Jornada Estándar)
+  start_time: string; // "08:00" (Hora inicio estándar de la jornada)
+  end_time: string; // "13:00" (Hora fin estándar de la jornada)
+
+  // 2. VENTANA DE MARCACIÓN (Permitida en Biométrico)
+  window_entry_start?: string; // "07:00" (A partir de qué hora se permite registrar entrada)
+  window_exit_limit?: string; // "13:59" (Hasta qué hora se permite registrar salida)
+
   tolerance_minutes: number; // Tolerancia de entrada (mins)
   tolerance_exit_minutes?: number; // Tolerancia de salida (mins)
   is_overnight: boolean;
@@ -372,16 +378,23 @@ export interface AsistenciaProcesada {
   // Turn 1
   t1_scheduled_in?: string;
   t1_scheduled_out?: string;
+  t1_window_entry_start?: string;
+  t1_window_exit_limit?: string;
   t1_real_in?: string;
   t1_real_out?: string;
+  t1_effective_hours?: number; // Horas efectivas computadas según regla del turno
   t1_tardiness_minutes: number;
   // Turn 2 (Dual Turn Shift)
   t2_scheduled_in?: string;
   t2_scheduled_out?: string;
+  t2_window_entry_start?: string;
+  t2_window_exit_limit?: string;
   t2_real_in?: string;
   t2_real_out?: string;
+  t2_effective_hours?: number; // Horas efectivas computadas según regla del turno
   t2_tardiness_minutes: number;
 
+  total_effective_hours?: number; // Total horas efectivas trabajadas computadas
   total_tardiness_minutes: number;
   tolerance_applied_minutes: number;
   net_tardiness_minutes: number;

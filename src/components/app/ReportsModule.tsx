@@ -146,36 +146,50 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                       <th className="p-3">Fecha</th>
                       <th className="p-3">DNI / Personal</th>
                       <th className="p-3">Área</th>
-                      <th className="p-3">E1 Entrada</th>
-                      <th className="p-3">E1 Salida</th>
-                      <th className="p-3">Tardanza (Min)</th>
+                      <th className="p-3">T1 Real (Ent / Sal)</th>
+                      <th className="p-3">T2 Real (Ent / Sal)</th>
+                      <th className="p-3 text-center">Horas Efectivas</th>
+                      <th className="p-3 text-center">Tardanza</th>
                       <th className="p-3">Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 text-slate-300 font-mono text-[11px]">
-                    {attendance.map((a) => (
-                      <tr key={a.id} className="hover:bg-slate-900/40">
-                        <td className="p-3 text-slate-400 font-bold">{a.fecha}</td>
-                        <td className="p-3 text-white font-bold font-sans">{a.employee_name} ({a.employee_dni})</td>
-                        <td className="p-3 text-slate-400 font-sans">{a.area_name}</td>
-                        <td className="p-3 text-emerald-400 font-bold">{a.t1_real_in || '--:--'}</td>
-                        <td className="p-3 text-slate-400">{a.t1_real_out || '--:--'}</td>
-                        <td className="p-3 text-amber-400 font-bold">{a.net_tardiness_minutes || 0} min</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded font-sans text-[10px] font-bold ${
-                              a.status === 'PUNCTUAL'
-                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                                : a.status === 'LATE'
-                                ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                : 'bg-rose-950 text-rose-400 border border-rose-800'
-                            }`}
-                          >
-                            {a.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {attendance.map((a) => {
+                      const eff = a.total_effective_hours !== undefined
+                        ? a.total_effective_hours
+                        : (a.t1_effective_hours || 0) + (a.t2_effective_hours || 0);
+
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-900/40">
+                          <td className="p-3 text-slate-400 font-bold">{a.fecha}</td>
+                          <td className="p-3 text-white font-bold font-sans">{a.employee_name} ({a.employee_dni})</td>
+                          <td className="p-3 text-slate-400 font-sans">{a.area_name}</td>
+                          <td className="p-3 text-emerald-400 font-bold">
+                            {a.t1_real_in || '--:--'} - {a.t1_real_out || '--:--'}
+                          </td>
+                          <td className="p-3 text-emerald-400 font-bold">
+                            {a.t2_scheduled_in ? `${a.t2_real_in || '--:--'} - ${a.t2_real_out || '--:--'}` : '-'}
+                          </td>
+                          <td className="p-3 text-center text-emerald-300 font-bold">
+                            {eff > 0 ? `${eff.toFixed(1)} hrs` : '0.0 hrs'}
+                          </td>
+                          <td className="p-3 text-center text-amber-400 font-bold">{a.total_tardiness_minutes || a.net_tardiness_minutes || 0} min</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded font-sans text-[10px] font-bold ${
+                                a.status === 'PUNCTUAL'
+                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                  : a.status === 'LATE'
+                                  ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                  : 'bg-rose-950 text-rose-400 border border-rose-800'
+                              }`}
+                            >
+                              {a.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
