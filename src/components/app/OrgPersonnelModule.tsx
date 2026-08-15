@@ -353,7 +353,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // FORM STATES: Dirección / Órgano
   const [dirCode, setDirCode] = useState('');
   const [dirName, setDirName] = useState('');
-  const [dirType, setDirType] = useState<OrganoType>('DIRECCION');
+  const [dirType, setDirType] = useState<OrganoType>('OFICINA_AGRARIA');
   const [dirDepId, setDirDepId] = useState('');
 
   // FORM STATES: Area / Oficina
@@ -1265,7 +1265,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
             <div>
               <h3 className="font-bold text-sm text-white">Nivel 2 — Direcciones y Órganos DRAC</h3>
               <p className="text-xs text-slate-400">
-                Clasificación Orgánica: Sede Central, Agencia Agraria, Oficina Agraria, Direcciones y Órganos de Línea/Apoyo.
+                Oficinas Agrarias, Direcciones y Órganos de Línea/Apoyo DRAC.
               </p>
             </div>
 
@@ -1277,10 +1277,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   onChange={(e) => setDirClasificacionFilter(e.target.value)}
                   className="bg-[#090A0D] border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="ALL">Todas las Clasificaciones Orgánicas</option>
-                  <option value="SEDE_CENTRAL">1. Sede Central</option>
-                  <option value="AGENCIA_AGRARIA">2. Agencia Agraria</option>
-                  <option value="OFICINA_AGRARIA">3. Oficina Agraria</option>
+                  <option value="ALL">Todas las Clasificaciones</option>
+                  <option value="OFICINA_AGRARIA">Oficina Agraria</option>
                   <option value="DIRECCION">Dirección</option>
                   <option value="ORGANO_APOYO">Órgano de Apoyo</option>
                   <option value="ORGANO_LINEA">Órgano de Línea</option>
@@ -1299,7 +1297,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     setEditingDir(null);
                     setDirCode('');
                     setDirName('');
-                    setDirType('DIRECCION');
+                    setDirType('OFICINA_AGRARIA');
                     setDirDepId(dependencias[0]?.id || '');
                     setShowDirModal(true);
                   }}
@@ -1792,22 +1790,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Clasificación Orgánica</label>
+                <label className="block text-xs font-bold text-slate-300 mb-1">Clasificación Orgánica *</label>
                 <select
                   value={dirType}
                   onChange={(e) => setDirType(e.target.value as OrganoType)}
                   className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-medium"
                 >
-                  <option value="SEDE_CENTRAL">1. Sede Central</option>
-                  <option value="AGENCIA_AGRARIA">2. Agencia Agraria</option>
-                  <option value="OFICINA_AGRARIA">3. Oficina Agraria</option>
-                  <option value="DIRECCION">Dirección</option>
-                  <option value="ORGANO_APOYO">Órgano de Apoyo</option>
-                  <option value="ORGANO_LINEA">Órgano de Línea</option>
-                  <option value="JEFATURA_AGENCIA">Jefatura de Agencia</option>
+                  <option value="OFICINA_AGRARIA">Oficina Agraria</option>
+                  {dirType && dirType !== 'OFICINA_AGRARIA' && dirType !== 'SEDE_CENTRAL' && dirType !== 'AGENCIA_AGRARIA' && (
+                    <option value={dirType}>{getOrganoTypeLabel(dirType)}</option>
+                  )}
                 </select>
                 <span className="text-[10px] text-slate-500 mt-0.5 block">
-                  Clasificación orgánica de la unidad institucional DRAC (Sede Central, Agencia Agraria, Oficina Agraria, etc.)
+                  Clasificación orgánica correspondiente a este nivel en la estructura DRAC
                 </span>
               </div>
 
