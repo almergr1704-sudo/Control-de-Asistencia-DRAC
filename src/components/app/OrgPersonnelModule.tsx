@@ -67,6 +67,40 @@ export interface SystemRoleDef {
   permissions: string[];
 }
 
+export const getOrganoTypeLabel = (type?: string): string => {
+  if (!type) return 'Sin Clasificación';
+  switch (type) {
+    case 'SEDE_CENTRAL':
+      return 'Sede Central';
+    case 'AGENCIA_AGRARIA':
+      return 'Agencia Agraria';
+    case 'OFICINA_AGRARIA':
+      return 'Oficina Agraria';
+    case 'DIRECCION':
+      return 'Dirección';
+    case 'ORGANO_APOYO':
+      return 'Órgano de Apoyo';
+    case 'ORGANO_LINEA':
+      return 'Órgano de Línea';
+    case 'JEFATURA_AGENCIA':
+      return 'Jefatura de Agencia';
+    default:
+      return type;
+  }
+};
+
+export const getDependenciaTypeLabel = (type?: string): string => {
+  if (!type) return 'Dependencia DRAC';
+  switch (type) {
+    case 'SEDE_CENTRAL':
+      return 'Sede Central DRAC';
+    case 'AGENCIA_AGRARIA':
+      return 'Agencia Agraria';
+    default:
+      return type;
+  }
+};
+
 export const SYSTEM_ROLES_CATALOG: SystemRoleDef[] = [
   {
     role: 'TRABAJADOR',
@@ -272,6 +306,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [dependenciaFilter, setDependenciaFilter] = useState('ALL');
+  const [dirClasificacionFilter, setDirClasificacionFilter] = useState('ALL');
   const [showInactive, setShowInactive] = useState(true);
 
   // DATA POLICY CONFIRM MODAL STATE
@@ -1140,7 +1175,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-mono text-xs font-bold text-indigo-400">{dep.code}</span>
                       <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
-                        {dep.type}
+                        {getDependenciaTypeLabel(dep.type)}
                       </span>
                     </div>
 
@@ -1226,107 +1261,136 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* TAB 3: DIRECCIONES Y ÓRGANOS */}
       {activeTab === 'DIRECCIONES' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-slate-900/30 p-4 border border-slate-800 rounded-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/30 p-4 border border-slate-800 rounded-xl">
             <div>
-              <h3 className="font-bold text-sm text-white">Nivel 2 — Direcciones de Apoyo / Línea DRAC</h3>
-              <p className="text-xs text-slate-400">Dirección de Administración, Dirección de Competitividad Agraria, Dirección de Titulación de Tierras, Jefaturas de Agencia.</p>
+              <h3 className="font-bold text-sm text-white">Nivel 2 — Direcciones y Órganos DRAC</h3>
+              <p className="text-xs text-slate-400">
+                Clasificación Orgánica: Sede Central, Agencia Agraria, Oficina Agraria, Direcciones y Órganos de Línea/Apoyo.
+              </p>
             </div>
-            {activeRole === 'HR_ADMIN' && (
-              <button
-                onClick={() => {
-                  if (dependencias.length === 0) {
-                    alert('Error: Cree primero al menos una Dependencia.');
-                    setActiveTab('DEPENDENCIAS');
-                    return;
-                  }
-                  setEditingDir(null);
-                  setDirCode('');
-                  setDirName('');
-                  setDirType('DIRECCION');
-                  setDirDepId(dependencias[0]?.id || '');
-                  setShowDirModal(true);
-                }}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Agregar Dirección / Órgano</span>
-              </button>
-            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Filter className="w-3.5 h-3.5 text-slate-500" />
+                <select
+                  value={dirClasificacionFilter}
+                  onChange={(e) => setDirClasificacionFilter(e.target.value)}
+                  className="bg-[#090A0D] border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="ALL">Todas las Clasificaciones Orgánicas</option>
+                  <option value="SEDE_CENTRAL">1. Sede Central</option>
+                  <option value="AGENCIA_AGRARIA">2. Agencia Agraria</option>
+                  <option value="OFICINA_AGRARIA">3. Oficina Agraria</option>
+                  <option value="DIRECCION">Dirección</option>
+                  <option value="ORGANO_APOYO">Órgano de Apoyo</option>
+                  <option value="ORGANO_LINEA">Órgano de Línea</option>
+                  <option value="JEFATURA_AGENCIA">Jefatura de Agencia</option>
+                </select>
+              </div>
+
+              {activeRole === 'HR_ADMIN' && (
+                <button
+                  onClick={() => {
+                    if (dependencias.length === 0) {
+                      alert('Error: Cree primero al menos una Dependencia.');
+                      setActiveTab('DEPENDENCIAS');
+                      return;
+                    }
+                    setEditingDir(null);
+                    setDirCode('');
+                    setDirName('');
+                    setDirType('DIRECCION');
+                    setDirDepId(dependencias[0]?.id || '');
+                    setShowDirModal(true);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Agregar Dirección / Órgano</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {direccionesOrganos.map((dir) => {
-              const staffCount = employees.filter((e) => e.direccion_organo_id === dir.id).length;
+            {direccionesOrganos
+              .filter((dir) => dirClasificacionFilter === 'ALL' || dir.type === dirClasificacionFilter)
+              .map((dir) => {
+                const staffCount = employees.filter((e) => e.direccion_organo_id === dir.id).length;
 
-              return (
-                <div key={dir.id} className="bg-slate-900/30 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-indigo-400">{dir.code}</span>
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono">
-                        {dir.type}
-                      </span>
+                return (
+                  <div key={dir.id} className="bg-slate-900/30 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-mono text-xs font-bold text-indigo-400">{dir.code}</span>
+                        <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono">
+                          {getOrganoTypeLabel(dir.type)}
+                        </span>
+                      </div>
+
+                      <h4 className="font-bold text-sm text-white mb-1">{dir.name}</h4>
+                      <div className="text-xs text-slate-400 mb-3">
+                        Dependencia: <span className="text-indigo-300 font-semibold">{dir.dependencia_name}</span>
+                      </div>
+
+                      <div className="bg-[#090A0D] p-2.5 rounded border border-slate-800/80 flex items-center justify-between text-xs text-slate-300">
+                        <div>Personal Asignado: <span className="font-bold text-indigo-400">{staffCount}</span></div>
+                      </div>
                     </div>
 
-                    <h4 className="font-bold text-sm text-white mb-1">{dir.name}</h4>
-                    <div className="text-xs text-slate-400 mb-3">
-                      Dependencia: <span className="text-indigo-300 font-semibold">{dir.dependencia_name}</span>
-                    </div>
-
-                    <div className="bg-[#090A0D] p-2.5 rounded border border-slate-800/80 flex items-center justify-between text-xs text-slate-300">
-                      <div>Personal Asignado: <span className="font-bold text-indigo-400">{staffCount}</span></div>
-                    </div>
+                    {activeRole === 'HR_ADMIN' && (
+                      <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
+                        <button
+                          onClick={() => {
+                            setEditingDir(dir);
+                            setDirCode(dir.code);
+                            setDirName(dir.name);
+                            setDirType(dir.type);
+                            setDirDepId(dir.dependencia_id);
+                            setShowDirModal(true);
+                          }}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-xs rounded flex items-center gap-1"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setConfirmModalConfig({
+                              isOpen: true,
+                              title: 'Desactivar Dirección / Órgano',
+                              message: `¿Desea desactivar la unidad "${dir.name}"? Los registros del personal asignado históricamente no sufrirán pérdida de integridad.`,
+                              actionType: 'DEACTIVATE',
+                              entityName: `Código: ${dir.code} - ${dir.name}`,
+                              confirmText: 'Desactivar Unidad',
+                              onConfirm: () => {
+                                onDeleteDireccionOrgano(dir.id);
+                                setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                              },
+                              onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                            });
+                          }}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-rose-900 text-rose-400 text-xs rounded flex items-center gap-1"
+                        >
+                          <Power className="w-3 h-3" />
+                          <span>Desactivar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-
-                  {activeRole === 'HR_ADMIN' && (
-                    <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
-                      <button
-                        onClick={() => {
-                          setEditingDir(dir);
-                          setDirCode(dir.code);
-                          setDirName(dir.name);
-                          setDirType(dir.type);
-                          setDirDepId(dir.dependencia_id);
-                          setShowDirModal(true);
-                        }}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-400 text-xs rounded flex items-center gap-1"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        <span>Editar</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setConfirmModalConfig({
-                            isOpen: true,
-                            title: 'Desactivar Dirección / Órgano',
-                            message: `¿Desea desactivar la unidad "${dir.name}"? Los registros del personal asignado históricamente no sufrirán pérdida de integridad.`,
-                            actionType: 'DEACTIVATE',
-                            entityName: `Código: ${dir.code} - ${dir.name}`,
-                            confirmText: 'Desactivar Unidad',
-                            onConfirm: () => {
-                              onDeleteDireccionOrgano(dir.id);
-                              setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                            },
-                            onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                          });
-                        }}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-rose-900 text-rose-400 text-xs rounded flex items-center gap-1"
-                      >
-                        <Power className="w-3 h-3" />
-                        <span>Desactivar</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
 
-          {direccionesOrganos.length === 0 && (
+          {direccionesOrganos.filter((dir) => dirClasificacionFilter === 'ALL' || dir.type === dirClasificacionFilter).length === 0 && (
             <div className="p-12 text-center bg-slate-900/30 border border-slate-800 rounded-xl">
               <Layers className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
-              <h4 className="text-sm font-bold text-white">No hay Direcciones / Órganos de Línea registrados</h4>
-              <p className="text-xs text-slate-400 mt-1">Registre Direcciones como Dirección de Administración o Competitividad Agraria.</p>
+              <h4 className="text-sm font-bold text-white">No se encontraron unidades con el filtro seleccionado</h4>
+              <p className="text-xs text-slate-400 mt-1">
+                {dirClasificacionFilter !== 'ALL'
+                  ? `No hay registros con Clasificación Orgánica "${getOrganoTypeLabel(dirClasificacionFilter)}".`
+                  : 'Registre Direcciones, Agencias u Oficinas Agrarias.'}
+              </p>
             </div>
           )}
         </div>
@@ -1636,8 +1700,10 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 >
                   <option value="SEDE_CENTRAL">Sede Central DRAC</option>
                   <option value="AGENCIA_AGRARIA">Agencia Agraria</option>
-                  <option value="OFICINA_AGRARIA">Oficina Agraria</option>
                 </select>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">
+                  Categoría administrativa institucional de la dependencia DRAC
+                </span>
               </div>
 
               <div>
@@ -1695,7 +1761,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 >
                   {dependencias.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {d.name} ({d.type})
+                      {d.name} ({getDependenciaTypeLabel(d.type)})
                     </option>
                   ))}
                 </select>
@@ -1705,7 +1771,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 <label className="block text-xs font-bold text-slate-300 mb-1">Código</label>
                 <input
                   type="text"
-                  placeholder="Ej: DIR-ADM, DIR-AGR"
+                  placeholder="Ej: DIR-ADM, DIR-AGR, OFI-AGR"
                   value={dirCode}
                   onChange={(e) => setDirCode(e.target.value)}
                   className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
@@ -1717,7 +1783,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 <label className="block text-xs font-bold text-slate-300 mb-1">Nombre Dirección / Órgano</label>
                 <input
                   type="text"
-                  placeholder="Ej: Dirección de Administración"
+                  placeholder="Ej: Dirección de Administración, Oficina Agraria Celendín"
                   value={dirName}
                   onChange={(e) => setDirName(e.target.value)}
                   className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
@@ -1730,13 +1796,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 <select
                   value={dirType}
                   onChange={(e) => setDirType(e.target.value as OrganoType)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-medium"
                 >
+                  <option value="SEDE_CENTRAL">1. Sede Central</option>
+                  <option value="AGENCIA_AGRARIA">2. Agencia Agraria</option>
+                  <option value="OFICINA_AGRARIA">3. Oficina Agraria</option>
                   <option value="DIRECCION">Dirección</option>
                   <option value="ORGANO_APOYO">Órgano de Apoyo</option>
                   <option value="ORGANO_LINEA">Órgano de Línea</option>
                   <option value="JEFATURA_AGENCIA">Jefatura de Agencia</option>
                 </select>
+                <span className="text-[10px] text-slate-500 mt-0.5 block">
+                  Clasificación orgánica de la unidad institucional DRAC (Sede Central, Agencia Agraria, Oficina Agraria, etc.)
+                </span>
               </div>
 
               <div className="pt-3 flex justify-end gap-2">
@@ -2183,7 +2255,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       >
                         {dependencias.map((d) => (
                           <option key={d.id} value={d.id}>
-                            {d.name}
+                            {d.name} ({getDependenciaTypeLabel(d.type)})
                           </option>
                         ))}
                       </select>
@@ -2199,7 +2271,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                         <option value="">Seleccionar Dirección / Órgano...</option>
                         {filteredDirsForEmp.map((d) => (
                           <option key={d.id} value={d.id}>
-                            {d.name}
+                            {d.name} ({getOrganoTypeLabel(d.type)})
                           </option>
                         ))}
                       </select>

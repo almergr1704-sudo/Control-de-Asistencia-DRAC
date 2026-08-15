@@ -89,7 +89,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('13:00');
   const [tolerance, setTolerance] = useState(10);
-  const [toleranceExit, setToleranceExit] = useState(0);
   const [windowEntryStart, setWindowEntryStart] = useState('07:00');
   const [windowExitLimit, setWindowExitLimit] = useState('13:30');
   const [turnoActive, setTurnoActive] = useState(true);
@@ -128,7 +127,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart('07:00');
     setWindowExitLimit('13:30');
     setTolerance(10);
-    setToleranceExit(0);
     setTurnoActive(true);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -145,7 +143,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart(t.window_entry_start || '07:00');
     setWindowExitLimit(t.window_exit_limit || '13:30');
     setTolerance(t.tolerance_minutes);
-    setToleranceExit(t.tolerance_exit_minutes || 0);
     setTurnoActive(t.active !== false);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -163,7 +160,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
     setWindowEntryStart(t.window_entry_start || '07:00');
     setWindowExitLimit(t.window_exit_limit || '13:30');
     setTolerance(t.tolerance_minutes);
-    setToleranceExit(t.tolerance_exit_minutes || 0);
     setTurnoActive(true);
     setTurnoValidationError(null);
     setShowTurnoConfirmModal(false);
@@ -217,7 +213,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       window_entry_start: windowEntryStart || undefined,
       window_exit_limit: windowExitLimit || undefined,
       tolerance_minutes: Number(tolerance),
-      tolerance_exit_minutes: Number(toleranceExit),
+      tolerance_exit_minutes: 0,
       is_overnight: dur.isOvernight,
       active: turnoActive,
     };
@@ -446,7 +442,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             <span>1. Turno Laboral (Período Específico)</span>
           </div>
           <p className="text-[11px] text-slate-300 leading-relaxed">
-            Representa un período continuo de trabajo con: <strong>Hora Inicio</strong>, <strong>Hora Final</strong>, <strong>Tolerancia de Entrada</strong>, <strong>Tolerancia de Salida</strong> y ventanas biométricas.
+            Representa un período continuo de trabajo con: <strong>Hora Inicio</strong>, <strong>Hora Final</strong>, <strong>Tolerancia de Entrada</strong> y ventanas biométricas.
           </p>
           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2">
             <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">Ej: Turno Mañana: 08:00 → 13:00 (5h)</span>
@@ -575,7 +571,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                             </div>
                             {t1 && (
                               <div className="text-[10px] text-slate-400 font-mono">
-                                Tolerancia entrada: {t1.tolerance_minutes} min | Tolerancia salida: {t1.tolerance_exit_minutes || 0} min
+                                Tolerancia entrada: {t1.tolerance_minutes} min
                               </div>
                             )}
                           </div>
@@ -602,7 +598,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                                 {t2.name}
                               </div>
                               <div className="text-[10px] text-slate-400 font-mono">
-                                Tolerancia entrada: {t2.tolerance_minutes} min | Tolerancia salida: {t2.tolerance_exit_minutes || 0} min
+                                Tolerancia entrada: {t2.tolerance_minutes} min
                               </div>
                             </div>
                             <div className="text-right">
@@ -757,10 +753,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                         <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
                           <span>Tolerancia de Entrada:</span>
                           <span className="text-white">{t.tolerance_minutes} min</span>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                          <span>Tolerancia de Salida:</span>
-                          <span className="text-white">{t.tolerance_exit_minutes || 0} min</span>
                         </div>
                       </div>
 
@@ -1260,44 +1252,24 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                   </div>
                 </div>
 
-                {/* Tolerancias de Entrada y Salida */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
-                  <div>
-                    <label className="block text-slate-300 mb-1 font-bold">Tolerancia de Entrada</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min={0}
-                        max={120}
-                        value={tolerance}
-                        onChange={(e) => setTolerance(Math.max(0, Number(e.target.value)))}
-                        className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
-                        required
-                      />
-                      <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
-                      Minutos de gracia al ingreso antes de registrar tardanza
-                    </span>
+                {/* Tolerancia de Entrada */}
+                <div className="pt-2 border-t border-slate-800/80">
+                  <label className="block text-slate-300 mb-1 font-bold">Tolerancia de Entrada</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={tolerance}
+                      onChange={(e) => setTolerance(Math.max(0, Number(e.target.value)))}
+                      className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
+                      required
+                    />
+                    <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
                   </div>
-
-                  <div>
-                    <label className="block text-slate-300 mb-1 font-bold">Tolerancia de Salida</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min={0}
-                        max={120}
-                        value={toleranceExit}
-                        onChange={(e) => setToleranceExit(Math.max(0, Number(e.target.value)))}
-                        className="w-full px-3 py-1.5 bg-[#0F1115] text-white border border-slate-800 rounded font-mono focus:border-indigo-600 focus:outline-none"
-                      />
-                      <span className="absolute right-3 top-1.5 text-[10px] text-slate-500">min</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">
-                      Minutos previos permitidos a la hora final sin computar salida anticipada
-                    </span>
-                  </div>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    Minutos de gracia al ingreso antes de registrar tardanza
+                  </span>
                 </div>
               </div>
 
@@ -1404,10 +1376,6 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               <div className="flex justify-between">
                 <span className="text-slate-400">Tolerancia Entrada:</span>
                 <span className="text-white">{tolerance} min</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Tolerancia Salida:</span>
-                <span className="text-white">{toleranceExit} min</span>
               </div>
             </div>
 

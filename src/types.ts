@@ -16,14 +16,16 @@ export type RoleType =
   | 'HR_ADMIN'
   | 'SECURITY_GUARD';
 
-export type DependenciaType = 'SEDE_CENTRAL' | 'AGENCIA_AGRARIA' | 'OFICINA_AGRARIA';
+export type DependenciaType = 'SEDE_CENTRAL' | 'AGENCIA_AGRARIA';
 
 export type OrganoType =
+  | 'SEDE_CENTRAL'
+  | 'AGENCIA_AGRARIA'
+  | 'OFICINA_AGRARIA'
   | 'DIRECCION'
   | 'ORGANO_APOYO'
   | 'ORGANO_LINEA'
-  | 'JEFATURA_AGENCIA'
-  | 'OFICINA_AGRARIA';
+  | 'JEFATURA_AGENCIA';
 
 export type RegimenLaboral =
   | 'D.L. 276'

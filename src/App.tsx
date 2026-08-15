@@ -109,9 +109,16 @@ export default function App() {
   };
 
   // State Entities - DRAC Structure
-  const [dependencias, setDependencias] = useState<Dependencia[]>(() =>
-    loadStored('dependencias', INITIAL_DEPENDENCIAS)
-  );
+  const [dependencias, setDependencias] = useState<Dependencia[]>(() => {
+    const raw = loadStored<Dependencia[]>('dependencias', INITIAL_DEPENDENCIAS);
+    // Migración automática: transformar dependencias con tipo obsoleto OFICINA_AGRARIA a AGENCIA_AGRARIA sin perder datos históricos
+    return (raw || []).map((dep: any) => {
+      if (dep.type === 'OFICINA_AGRARIA') {
+        return { ...dep, type: 'AGENCIA_AGRARIA' as const };
+      }
+      return dep;
+    });
+  });
   const [direccionesOrganos, setDireccionesOrganos] = useState<DireccionOrgano[]>(() =>
     loadStored('direccionesOrganos', INITIAL_DIRECCIONES_ORGANOS)
   );
