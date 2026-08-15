@@ -43,7 +43,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
   // Live operational calculations
   const totalEmployees = employees.length;
 
-  const todayAttendance = attendance.filter((a) => a.fecha === todayStr || a.fecha === '2026-08-12');
+  const todayAttendance = attendance.filter((a) => a.fecha === todayStr);
   const presentCount = todayAttendance.filter((a) => a.status === 'PUNCTUAL' || a.status === 'LATE').length;
   const lateCount = todayAttendance.filter((a) => a.status === 'LATE').length;
   const absentCount = todayAttendance.filter((a) => a.status === 'ABSENT').length;

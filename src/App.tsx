@@ -96,23 +96,100 @@ export default function App() {
     };
   }, [activeRole]);
 
+  // Persistent Storage Helper
+  const loadStored = <T,>(key: string, fallback: T): T => {
+    try {
+      const item = localStorage.getItem(`drac_data_${key}`);
+      if (!item) return fallback;
+      const parsed = JSON.parse(item);
+      return parsed;
+    } catch {
+      return fallback;
+    }
+  };
+
   // State Entities - DRAC Structure
-  const [dependencias, setDependencias] = useState<Dependencia[]>(INITIAL_DEPENDENCIAS);
-  const [direccionesOrganos, setDireccionesOrganos] = useState<DireccionOrgano[]>(INITIAL_DIRECCIONES_ORGANOS);
-  const [areas, setAreas] = useState<Area[]>(INITIAL_AREAS);
-  const [cargos, setCargos] = useState<Cargo[]>(INITIAL_CARGOS);
-  const [responsables, setResponsables] = useState<ResponsableDesignation[]>(INITIAL_RESPONSABLES);
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
-  const [assignmentHistory, setAssignmentHistory] = useState<EmployeeAssignmentHistory[]>([]);
-  const [turnos, setTurnos] = useState<Turno[]>(INITIAL_TURNOS);
-  const [horarios, setHorarios] = useState<Horario[]>(INITIAL_HORARIOS);
-  const [devices, setDevices] = useState<DispositivoZkTeco[]>(INITIAL_DEVICES);
-  const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(INITIAL_RAW_PUNCHES);
-  const [papeletas, setPapeletas] = useState<PapeletaSalida[]>(INITIAL_PAPELETAS);
-  const [papeletaAudits, setPapeletaAudits] = useState<PapeletaAudit[]>(INITIAL_PAPELETA_AUDITS);
-  const [vacaciones, setVacaciones] = useState<Vacacion[]>(INITIAL_VACACIONES);
-  const [attendance, setAttendance] = useState<AsistenciaProcesada[]>(INITIAL_ATTENDANCE);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
+  const [dependencias, setDependencias] = useState<Dependencia[]>(() =>
+    loadStored('dependencias', INITIAL_DEPENDENCIAS)
+  );
+  const [direccionesOrganos, setDireccionesOrganos] = useState<DireccionOrgano[]>(() =>
+    loadStored('direccionesOrganos', INITIAL_DIRECCIONES_ORGANOS)
+  );
+  const [areas, setAreas] = useState<Area[]>(() => loadStored('areas', INITIAL_AREAS));
+  const [cargos, setCargos] = useState<Cargo[]>(() => loadStored('cargos', INITIAL_CARGOS));
+  const [responsables, setResponsables] = useState<ResponsableDesignation[]>(() =>
+    loadStored('responsables', INITIAL_RESPONSABLES)
+  );
+  const [employees, setEmployees] = useState<Employee[]>(() =>
+    loadStored('employees', INITIAL_EMPLOYEES)
+  );
+  const [assignmentHistory, setAssignmentHistory] = useState<EmployeeAssignmentHistory[]>(() =>
+    loadStored('assignmentHistory', [])
+  );
+  const [turnos, setTurnos] = useState<Turno[]>(() => loadStored('turnos', INITIAL_TURNOS));
+  const [horarios, setHorarios] = useState<Horario[]>(() => loadStored('horarios', INITIAL_HORARIOS));
+  const [devices, setDevices] = useState<DispositivoZkTeco[]>(() =>
+    loadStored('devices', INITIAL_DEVICES)
+  );
+  const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() =>
+    loadStored('rawPunches', INITIAL_RAW_PUNCHES)
+  );
+  const [papeletas, setPapeletas] = useState<PapeletaSalida[]>(() =>
+    loadStored('papeletas', INITIAL_PAPELETAS)
+  );
+  const [papeletaAudits, setPapeletaAudits] = useState<PapeletaAudit[]>(() =>
+    loadStored('papeletaAudits', INITIAL_PAPELETA_AUDITS)
+  );
+  const [vacaciones, setVacaciones] = useState<Vacacion[]>(() =>
+    loadStored('vacaciones', INITIAL_VACACIONES)
+  );
+  const [attendance, setAttendance] = useState<AsistenciaProcesada[]>(() =>
+    loadStored('attendance', INITIAL_ATTENDANCE)
+  );
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() =>
+    loadStored('auditLogs', INITIAL_AUDIT_LOGS)
+  );
+
+  // Sync to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('drac_data_dependencias', JSON.stringify(dependencias));
+      localStorage.setItem('drac_data_direccionesOrganos', JSON.stringify(direccionesOrganos));
+      localStorage.setItem('drac_data_areas', JSON.stringify(areas));
+      localStorage.setItem('drac_data_cargos', JSON.stringify(cargos));
+      localStorage.setItem('drac_data_responsables', JSON.stringify(responsables));
+      localStorage.setItem('drac_data_employees', JSON.stringify(employees));
+      localStorage.setItem('drac_data_assignmentHistory', JSON.stringify(assignmentHistory));
+      localStorage.setItem('drac_data_turnos', JSON.stringify(turnos));
+      localStorage.setItem('drac_data_horarios', JSON.stringify(horarios));
+      localStorage.setItem('drac_data_devices', JSON.stringify(devices));
+      localStorage.setItem('drac_data_rawPunches', JSON.stringify(rawPunches));
+      localStorage.setItem('drac_data_papeletas', JSON.stringify(papeletas));
+      localStorage.setItem('drac_data_papeletaAudits', JSON.stringify(papeletaAudits));
+      localStorage.setItem('drac_data_vacaciones', JSON.stringify(vacaciones));
+      localStorage.setItem('drac_data_attendance', JSON.stringify(attendance));
+      localStorage.setItem('drac_data_auditLogs', JSON.stringify(auditLogs));
+    } catch {
+      // Storage limits or private mode
+    }
+  }, [
+    dependencias,
+    direccionesOrganos,
+    areas,
+    cargos,
+    responsables,
+    employees,
+    assignmentHistory,
+    turnos,
+    horarios,
+    devices,
+    rawPunches,
+    papeletas,
+    papeletaAudits,
+    vacaciones,
+    attendance,
+    auditLogs,
+  ]);
 
   // AUDIT LOG HELPER
   const addAuditLog = (module: string, action: string, affectedRecordId: string, details: string) => {
@@ -443,7 +520,7 @@ export default function App() {
   const handleResetAllData = () => {
     if (
       confirm(
-        '⚠️ ATENCIÓN: ¿Está seguro de limpiar TODA la información del sistema DRAC?\n\nEsta acción dejará las listas vacías para comenzar con registros nuevos.'
+        '⚠️ ATENCIÓN: ¿Está seguro de limpiar TODA la información del sistema DRAC?\n\nEsta acción dejará las listas vacías para que pueda cargar sus propios registros personalmente.'
       )
     ) {
       setDependencias([]);
@@ -452,6 +529,7 @@ export default function App() {
       setCargos([]);
       setResponsables([]);
       setEmployees([]);
+      setAssignmentHistory([]);
       setTurnos([]);
       setHorarios([]);
       setDevices([]);
@@ -461,6 +539,30 @@ export default function App() {
       setVacaciones([]);
       setAttendance([]);
       setAuditLogs([]);
+
+      try {
+        const keys = [
+          'dependencias',
+          'direccionesOrganos',
+          'areas',
+          'cargos',
+          'responsables',
+          'employees',
+          'assignmentHistory',
+          'turnos',
+          'horarios',
+          'devices',
+          'rawPunches',
+          'papeletas',
+          'papeletaAudits',
+          'vacaciones',
+          'attendance',
+          'auditLogs',
+        ];
+        keys.forEach((k) => localStorage.removeItem(`drac_data_${k}`));
+      } catch {
+        // ignore
+      }
     }
   };
 

@@ -34,7 +34,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   activeUserDni,
   onEditAttendanceRecord,
 }) => {
-  const [selectedDate, setSelectedDate] = useState('2026-08-12');
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
