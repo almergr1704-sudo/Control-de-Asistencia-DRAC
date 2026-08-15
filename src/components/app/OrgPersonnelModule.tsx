@@ -70,20 +70,14 @@ export interface SystemRoleDef {
 export const getOrganoTypeLabel = (type?: string): string => {
   if (!type) return 'Sin Clasificación';
   switch (type) {
-    case 'SEDE_CENTRAL':
-      return 'Sede Central';
-    case 'AGENCIA_AGRARIA':
-      return 'Agencia Agraria';
-    case 'OFICINA_AGRARIA':
-      return 'Oficina Agraria';
     case 'DIRECCION':
       return 'Dirección';
     case 'ORGANO_APOYO':
-      return 'Órgano de Apoyo';
-    case 'ORGANO_LINEA':
-      return 'Órgano de Línea';
+      return 'Órganos de Apoyo';
     case 'JEFATURA_AGENCIA':
       return 'Jefatura de Agencia';
+    case 'OFICINA_AGRARIA':
+      return 'Oficina Agraria';
     default:
       return type;
   }
@@ -353,7 +347,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // FORM STATES: Dirección / Órgano
   const [dirCode, setDirCode] = useState('');
   const [dirName, setDirName] = useState('');
-  const [dirType, setDirType] = useState<OrganoType>('OFICINA_AGRARIA');
+  const [dirType, setDirType] = useState<OrganoType>('DIRECCION');
   const [dirDepId, setDirDepId] = useState('');
 
   // FORM STATES: Area / Oficina
@@ -1271,20 +1265,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-2">
-                <Filter className="w-3.5 h-3.5 text-slate-500" />
-                <select
-                  value={dirClasificacionFilter}
-                  onChange={(e) => setDirClasificacionFilter(e.target.value)}
-                  className="bg-[#090A0D] border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="ALL">Todas las Clasificaciones</option>
-                  <option value="OFICINA_AGRARIA">Oficina Agraria</option>
-                  <option value="DIRECCION">Dirección</option>
-                  <option value="ORGANO_APOYO">Órgano de Apoyo</option>
-                  <option value="ORGANO_LINEA">Órgano de Línea</option>
-                  <option value="JEFATURA_AGENCIA">Jefatura de Agencia</option>
-                </select>
-              </div>
+                 <Filter className="w-3.5 h-3.5 text-slate-500" />
+                 <select
+                   value={dirClasificacionFilter}
+                   onChange={(e) => setDirClasificacionFilter(e.target.value)}
+                   className="bg-[#090A0D] border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                 >
+                   <option value="ALL">Todas las Clasificaciones Orgánicas</option>
+                   <option value="DIRECCION">DIRECCIÓN</option>
+                   <option value="ORGANO_APOYO">ÓRGANOS DE APOYO</option>
+                   <option value="JEFATURA_AGENCIA">JEFATURA DE AGENCIA</option>
+                   <option value="OFICINA_AGRARIA">OFICINA AGRARIA</option>
+                 </select>
+               </div>
 
               {activeRole === 'HR_ADMIN' && (
                 <button
@@ -1297,7 +1290,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     setEditingDir(null);
                     setDirCode('');
                     setDirName('');
-                    setDirType('OFICINA_AGRARIA');
+                    setDirType('DIRECCION');
                     setDirDepId(dependencias[0]?.id || '');
                     setShowDirModal(true);
                   }}
@@ -1795,14 +1788,15 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   value={dirType}
                   onChange={(e) => setDirType(e.target.value as OrganoType)}
                   className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-medium"
+                  required
                 >
-                  <option value="OFICINA_AGRARIA">Oficina Agraria</option>
-                  {dirType && dirType !== 'OFICINA_AGRARIA' && dirType !== 'SEDE_CENTRAL' && dirType !== 'AGENCIA_AGRARIA' && (
-                    <option value={dirType}>{getOrganoTypeLabel(dirType)}</option>
-                  )}
+                  <option value="DIRECCION">DIRECCIÓN</option>
+                  <option value="ORGANO_APOYO">ÓRGANOS DE APOYO</option>
+                  <option value="JEFATURA_AGENCIA">JEFATURA DE AGENCIA</option>
+                  <option value="OFICINA_AGRARIA">OFICINA AGRARIA</option>
                 </select>
                 <span className="text-[10px] text-slate-500 mt-0.5 block">
-                  Clasificación orgánica correspondiente a este nivel en la estructura DRAC
+                  Clasificación orgánica de la Dirección u Órgano en la estructura DRAC
                 </span>
               </div>
 
