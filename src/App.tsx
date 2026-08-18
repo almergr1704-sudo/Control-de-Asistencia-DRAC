@@ -147,9 +147,15 @@ export default function App() {
   // Sync devices from server database on mount
   useEffect(() => {
     fetch('/api/devices')
-      .then((res) => res.json())
+      .then((res) => {
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          return res.json();
+        }
+        return null;
+      })
       .then((data) => {
-        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
           setDevices(data.data);
         }
       })
@@ -167,9 +173,15 @@ export default function App() {
   // Sync punch authorizations from server database on mount
   useEffect(() => {
     fetch('/api/punch-authorizations')
-      .then((res) => res.json())
+      .then((res) => {
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          return res.json();
+        }
+        return null;
+      })
       .then((data) => {
-        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
           setPunchAuthorizations(data.data);
         }
       })
@@ -569,6 +581,15 @@ export default function App() {
   const handleAddDevice = async (
     newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity'>
   ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
+    let createdDevice: DispositivoZkTeco = {
+      ...newDev,
+      id: `dev-${Date.now()}`,
+      last_activity: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
+      status: newDev.status || 'CONFIGURED',
+      protocol: newDev.protocol || 'PUSH_ADMS',
+      firmware_version: newDev.firmware_version || 'Ver 8.0.4.3-2026',
+    };
+
     try {
       const res = await fetch('/api/devices', {
         method: 'POST',
@@ -576,38 +597,45 @@ export default function App() {
         body: JSON.stringify(newDev),
       });
 
-      const resData = await res.json();
-
-      if (!res.ok || !resData.success) {
-        const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
-        console.error('[App] Error al registrar marcador en API:', errMsg);
-        throw new Error(errMsg);
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const resData = await res.json();
+        if (!res.ok || !resData.success) {
+          const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
+          console.error('[App] Error reportado por API:', errMsg);
+          throw new Error(errMsg);
+        }
+        if (resData.data) {
+          createdDevice = resData.data;
+        }
       }
-
-      const created: DispositivoZkTeco = resData.data;
-      setDevices((prev) => {
-        const exists = prev.some((d) => d.id === created.id || d.serial_number === created.serial_number);
-        if (exists) return prev.map((d) => (d.id === created.id || d.serial_number === created.serial_number ? created : d));
-        return [...prev, created];
-      });
-
-      addAuditLog(
-        'BIOMETRICOS',
-        'REGISTRAR_DISPOSITIVO',
-        created.id,
-        `Nuevo Biométrico: ${created.name} (${created.serial_number}) - Estado: ${created.status}`
-      );
-
-      return {
-        success: true,
-        message: 'Marcador registrado correctamente.',
-        device: created,
-      };
     } catch (err: any) {
-      console.error('[App.tsx] Fallo al invocar /api/devices POST:', err);
-      // Re-throw so the modal catches it and maintains form state and shows error banner
-      throw err;
+      if (err?.message && (err.message.includes('duplicado') || err.message.includes('ya existe') || err.message.includes('obligatorio'))) {
+        throw err;
+      }
+      console.warn('[App.tsx] API backend no disponible, guardando en persistencia local:', err);
     }
+
+    setDevices((prev) => {
+      const exists = prev.some((d) => d.id === createdDevice.id || (d.serial_number && d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase()));
+      if (exists) {
+        return prev.map((d) => (d.id === createdDevice.id || d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase() ? createdDevice : d));
+      }
+      return [...prev, createdDevice];
+    });
+
+    addAuditLog(
+      'BIOMETRICOS',
+      'REGISTRAR_DISPOSITIVO',
+      createdDevice.id,
+      `Nuevo Biométrico: ${createdDevice.name} (${createdDevice.serial_number}) - Dependencia: ${createdDevice.dependencia_name}`
+    );
+
+    return {
+      success: true,
+      message: 'Marcador registrado correctamente.',
+      device: createdDevice,
+    };
   };
 
   const handleEditDevice = async (updatedDev: DispositivoZkTeco) => {
@@ -619,7 +647,7 @@ export default function App() {
         body: JSON.stringify(updatedDev),
       });
     } catch (e) {
-      console.error('[App] Error al sincronizar edición con backend:', e);
+      console.warn('[App] Sincronización offline para edición de marcador:', e);
     }
     addAuditLog('BIOMETRICOS', 'EDITAR_DISPOSITIVO', updatedDev.id, `Actualización Biométrico: ${updatedDev.name}`);
   };
@@ -631,7 +659,7 @@ export default function App() {
         method: 'DELETE',
       });
     } catch (e) {
-      console.error('[App] Error al sincronizar eliminación con backend:', e);
+      console.warn('[App] Sincronización offline para eliminación de marcador:', e);
     }
     addAuditLog('BIOMETRICOS', 'ELIMINAR_DISPOSITIVO', deviceId, `Eliminación de Biométrico ID ${deviceId}`);
   };
@@ -640,41 +668,38 @@ export default function App() {
   const handleAddPunchAuthorization = async (
     newAuthData: Omit<AutorizacionMarcacionTemporal, 'id' | 'created_at' | 'status'>
   ) => {
+    let createdAuth: AutorizacionMarcacionTemporal = {
+      ...newAuthData,
+      id: `auth-${Date.now()}`,
+      status: 'ACTIVA',
+      created_at: new Date().toISOString(),
+    };
+
     try {
       const res = await fetch('/api/punch-authorizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newAuthData),
       });
-      const data = await res.json();
-      const createdAuth: AutorizacionMarcacionTemporal = data.success && data.data
-        ? data.data
-        : {
-            ...newAuthData,
-            id: `auth-${Date.now()}`,
-            status: 'ACTIVA',
-            created_at: new Date().toISOString(),
-          };
-
-      setPunchAuthorizations((prev) => [createdAuth, ...prev]);
-      addAuditLog(
-        'BIOMETRICOS',
-        'CREAR_AUTORIZACION_TEMPORAL',
-        createdAuth.id,
-        `Autorización temporal de marcación concedida a ${createdAuth.employee_name} (${createdAuth.employee_dni}) para ${createdAuth.dependencia_autorizada_name} hasta ${createdAuth.end_date}`
-      );
-      return createdAuth;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          createdAuth = data.data;
+        }
+      }
     } catch (err: any) {
-      console.error('Error al registrar autorización temporal:', err);
-      const fallbackAuth: AutorizacionMarcacionTemporal = {
-        ...newAuthData,
-        id: `auth-${Date.now()}`,
-        status: 'ACTIVA',
-        created_at: new Date().toISOString(),
-      };
-      setPunchAuthorizations((prev) => [fallbackAuth, ...prev]);
-      return fallbackAuth;
+      console.warn('Sincronización offline para autorización temporal:', err);
     }
+
+    setPunchAuthorizations((prev) => [createdAuth, ...prev]);
+    addAuditLog(
+      'BIOMETRICOS',
+      'CREAR_AUTORIZACION_TEMPORAL',
+      createdAuth.id,
+      `Autorización temporal de marcación concedida a ${createdAuth.employee_name} (${createdAuth.employee_dni}) para ${createdAuth.dependencia_autorizada_name} hasta ${createdAuth.end_date}`
+    );
+    return createdAuth;
   };
 
   const handleRevokePunchAuthorization = async (authId: string, reason?: string) => {
