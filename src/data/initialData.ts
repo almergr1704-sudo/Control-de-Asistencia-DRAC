@@ -29,6 +29,16 @@ export const INITIAL_DEPENDENCIAS: Dependencia[] = [
     active: true,
     created_at: '2026-01-01T08:00:00.000Z',
   },
+  {
+    id: 'dep-02',
+    code: '02',
+    name: 'AGENCIA AGRARIA',
+    type: 'AGENCIA_AGRARIA',
+    ubigeo: '060101',
+    address: 'Ámbito de Agencias Agrarias Provinciales DRAC',
+    active: true,
+    created_at: '2026-01-01T08:00:00.000Z',
+  },
 ];
 
 export const INITIAL_DIRECCIONES_ORGANOS: DireccionOrgano[] = [

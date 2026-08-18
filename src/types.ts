@@ -336,8 +336,9 @@ export interface DispositivoZkTeco {
   ip_address: string;
   port: number;
   protocol: 'PUSH_ADMS' | 'UDP' | 'TCP';
-  dependencia_id?: string;
-  dependencia_name?: string;
+  dependencia_tipo: DependenciaType; // SEDE_CENTRAL o AGENCIA_AGRARIA
+  dependencia_id: string;
+  dependencia_name: string;
   area_id?: string;
   area_name?: string;
   location_detail: string;
@@ -347,18 +348,54 @@ export interface DispositivoZkTeco {
   last_test?: DeviceTestRecord;
 }
 
+export type PunchValidationStatus = 'VALIDA' | 'RECHAZADA_DEPENDENCIA' | 'EXCEPCION_AUTORIZADA';
+
 export interface MarcacionRaw {
   id: string;
   device_id: string;
+  device_sn?: string;
   device_name: string;
+  device_dependencia_tipo?: DependenciaType;
+  device_dependencia_name?: string;
   employee_dni: string;
   employee_name?: string;
+  employee_dependencia_tipo?: DependenciaType;
+  employee_dependencia_name?: string;
   timestamp: string; // "2026-08-12 08:03:12"
   punch_type: 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_OUT' | 'BREAK_IN' | 'AUTO';
   verify_mode: 'FINGERPRINT' | 'FACE' | 'PALM' | 'CARD' | 'PASSWORD';
   processed: boolean;
   processed_at?: string;
   raw_payload?: string;
+  validation_status?: PunchValidationStatus;
+  rejection_reason?: string;
+  authorization_id?: string;
+}
+
+export interface AutorizacionMarcacionTemporal {
+  id: string;
+  employee_id: string;
+  employee_dni: string;
+  employee_name: string;
+  employee_cargo?: string;
+  dependencia_origen_tipo: DependenciaType;
+  dependencia_origen_name: string;
+  dependencia_autorizada_tipo: DependenciaType;
+  dependencia_autorizada_name: string;
+  device_id?: string; // ID específico o vacío para todos los marcadores de la dependencia
+  device_name?: string;
+  device_sn?: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  motivo: string; // Ej: "Comisión de Servicios", "Apoyo técnico en Agencia", "Capacitación en Sede Central", "Auditoría en campo"
+  documento_autorizacion: string; // Ej: "Memorando N° 142-2026-GR.CAJ/DRA-RRHH"
+  document_file_name?: string;
+  status: 'ACTIVA' | 'VENCIDA' | 'REVOCADA';
+  created_at: string;
+  created_by: string;
+  revoked_at?: string;
+  revoked_by?: string;
+  revoked_reason?: string;
 }
 
 export type PapeletaStatus =

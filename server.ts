@@ -1,7 +1,46 @@
 import express from "express";
 import path from "path";
+import fs from "fs/promises";
 import net from "node:net";
 import { createServer as createViteServer } from "vite";
+
+const DB_DIR = path.join(process.cwd(), "data");
+const DEVICES_FILE = path.join(DB_DIR, "devices.json");
+const AUTH_FILE = path.join(DB_DIR, "punch-authorizations.json");
+
+// Helper to load devices from persistent storage
+async function getStoredDevices(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(DEVICES_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save devices to persistent storage
+async function saveStoredDevices(devices: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(DEVICES_FILE, JSON.stringify(devices, null, 2), "utf-8");
+}
+
+// Helper to load punch authorizations from persistent storage
+async function getStoredAuthorizations(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(AUTH_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save punch authorizations to persistent storage
+async function saveStoredAuthorizations(auths: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(AUTH_FILE, JSON.stringify(auths, null, 2), "utf-8");
+}
 
 async function startServer() {
   const app = express();
@@ -12,12 +51,340 @@ async function startServer() {
   // CORS & JSON middleware for API
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
     if (req.method === "OPTIONS") {
       return res.status(200).end();
     }
     next();
+  });
+
+  // ==========================================
+  // API ROUTES: ZKTeco Devices CRUD & Storage
+  // ==========================================
+
+  // GET /api/devices - List all devices
+  app.get("/api/devices", async (req, res) => {
+    try {
+      const devices = await getStoredDevices();
+      return res.json({ success: true, data: devices });
+    } catch (err: any) {
+      console.error("Error al obtener dispositivos:", err);
+      return res.status(500).json({ success: false, message: "Error al leer base de datos de biométricos." });
+    }
+  });
+
+  // POST /api/devices - Create / Register new device
+  app.post("/api/devices", async (req, res) => {
+    try {
+      const {
+        name,
+        serial_number,
+        brand = "ZKTeco",
+        model = "G3-id",
+        ip_address,
+        port = 4370,
+        protocol = "PUSH_ADMS",
+        dependencia_id,
+        dependencia_name,
+        dependencia_tipo,
+        location_detail,
+        status = "CONFIGURED",
+        firmware_version = "Ver 8.0.4.3-2026",
+        last_test,
+      } = req.body || {};
+
+      // 1. Mandatory field validations
+      if (!name || !String(name).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "El nombre o identificador del marcador es obligatorio.",
+        });
+      }
+
+      if (!serial_number || !String(serial_number).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "El número de serie (S/N) del marcador es obligatorio.",
+        });
+      }
+
+      // Dependencia validation - Only SEDE_CENTRAL or AGENCIA_AGRARIA
+      const cleanDepTipo = dependencia_tipo || (dependencia_id === 'dep-02' || String(dependencia_name).toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL');
+      const cleanDepName = cleanDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL';
+      const cleanDepId = cleanDepTipo === 'AGENCIA_AGRARIA' ? (dependencia_id || 'dep-02') : (dependencia_id || 'dep-01');
+
+      if (!dependencia_id && !dependencia_name && !dependencia_tipo) {
+        return res.status(400).json({
+          success: false,
+          message: "La dependencia del marcador es obligatoria. Debe seleccionar 'SEDE CENTRAL' o 'AGENCIA AGRARIA'.",
+        });
+      }
+
+      if (!ip_address || !String(ip_address).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "La dirección IP del marcador es obligatoria.",
+        });
+      }
+
+      const cleanPort = Number(port);
+      if (isNaN(cleanPort) || cleanPort <= 0 || cleanPort > 65535) {
+        return res.status(400).json({
+          success: false,
+          message: "El puerto de comunicación debe ser un número válido entre 1 y 65535.",
+        });
+      }
+
+      if (!location_detail || !String(location_detail).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "La ubicación física del marcador es obligatoria.",
+        });
+      }
+
+      const cleanSn = String(serial_number).trim().toUpperCase();
+      const cleanName = String(name).trim();
+      const cleanIp = String(ip_address).trim();
+
+      // 2. Validate IP regex
+      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      if (!ipRegex.test(cleanIp)) {
+        return res.status(400).json({
+          success: false,
+          message: `La dirección IP '${cleanIp}' no tiene un formato IPv4 válido (ejemplo: 192.168.1.201).`,
+        });
+      }
+
+      // 3. Check for duplicates in persistent storage
+      const existingDevices = await getStoredDevices();
+
+      const dupSn = existingDevices.find(
+        (d: any) => d.serial_number && d.serial_number.toUpperCase() === cleanSn
+      );
+      if (dupSn) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un marcador registrado con el número de serie '${cleanSn}'.`,
+        });
+      }
+
+      const dupName = existingDevices.find(
+        (d: any) => d.name && d.name.toLowerCase() === cleanName.toLowerCase()
+      );
+      if (dupName) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe un marcador con el nombre '${cleanName}'. Por favor elija un nombre diferente.`,
+        });
+      }
+
+      const dupIp = existingDevices.find(
+        (d: any) => d.ip_address === cleanIp && Number(d.port) === cleanPort
+      );
+      if (dupIp) {
+        return res.status(409).json({
+          success: false,
+          message: `La dirección IP '${cleanIp}' con puerto ${cleanPort} ya se encuentra asignada al marcador '${dupIp.name}'.`,
+        });
+      }
+
+      // 4. Create and persist new device record
+      const newDevice = {
+        id: `dev-${Date.now()}`,
+        serial_number: cleanSn,
+        name: cleanName,
+        brand: String(brand).trim(),
+        model: String(model).trim(),
+        ip_address: cleanIp,
+        port: cleanPort,
+        protocol: protocol || "PUSH_ADMS",
+        dependencia_tipo: cleanDepTipo,
+        dependencia_id: cleanDepId,
+        dependencia_name: cleanDepName,
+        location_detail: String(location_detail).trim(),
+        last_activity: new Date().toLocaleString("es-PE", { timeZone: "America/Lima" }),
+        status: status || "CONFIGURED",
+        firmware_version: firmware_version || "Ver 8.0.4.3-2026",
+        last_test: last_test || undefined,
+      };
+
+      existingDevices.push(newDevice);
+      await saveStoredDevices(existingDevices);
+
+      console.log(`[API /api/devices] Marcador guardado exitosamente: ${newDevice.name} (${newDevice.serial_number}) - Dependencia: ${newDevice.dependencia_name}`);
+
+      return res.status(201).json({
+        success: true,
+        message: "Marcador registrado correctamente.",
+        data: newDevice,
+      });
+    } catch (err: any) {
+      console.error("Error al registrar marcador en base de datos:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Error interno al persistir el marcador en la base de datos.",
+        error: err.message,
+      });
+    }
+  });
+
+  // PUT /api/devices/:id - Update existing device
+  app.put("/api/devices/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updatedData = req.body || {};
+
+      const existingDevices = await getStoredDevices();
+      const index = existingDevices.findIndex((d: any) => d.id === id);
+
+      if (index === -1) {
+        existingDevices.push({ ...updatedData, id });
+      } else {
+        existingDevices[index] = {
+          ...existingDevices[index],
+          ...updatedData,
+          id,
+        };
+      }
+
+      await saveStoredDevices(existingDevices);
+      return res.json({ success: true, message: "Marcador actualizado correctamente.", data: existingDevices[index] || updatedData });
+    } catch (err: any) {
+      console.error("Error al actualizar marcador:", err);
+      return res.status(500).json({ success: false, message: "Error al actualizar marcador en base de datos." });
+    }
+  });
+
+  // DELETE /api/devices/:id - Delete device
+  app.delete("/api/devices/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const existingDevices = await getStoredDevices();
+      const filtered = existingDevices.filter((d: any) => d.id !== id);
+      await saveStoredDevices(filtered);
+      return res.json({ success: true, message: "Marcador eliminado correctamente." });
+    } catch (err: any) {
+      console.error("Error al eliminar marcador:", err);
+      return res.status(500).json({ success: false, message: "Error al eliminar marcador." });
+    }
+  });
+
+  // ==============================================================
+  // API ROUTES: Autorizaciones Temporales de Marcación (CRUD)
+  // ==============================================================
+
+  // GET /api/punch-authorizations
+  app.get("/api/punch-authorizations", async (req, res) => {
+    try {
+      const auths = await getStoredAuthorizations();
+      return res.json({ success: true, data: auths });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al leer autorizaciones temporales." });
+    }
+  });
+
+  // POST /api/punch-authorizations
+  app.post("/api/punch-authorizations", async (req, res) => {
+    try {
+      const {
+        employee_id,
+        employee_dni,
+        employee_name,
+        employee_cargo,
+        dependencia_origen_tipo,
+        dependencia_origen_name,
+        dependencia_autorizada_tipo,
+        dependencia_autorizada_name,
+        device_id,
+        device_name,
+        device_sn,
+        start_date,
+        end_date,
+        motivo,
+        documento_autorizacion,
+        document_file_name,
+        created_by = "Jefe de Recursos Humanos",
+      } = req.body || {};
+
+      if (!employee_dni || !start_date || !end_date || !dependencia_autorizada_tipo || !motivo || !documento_autorizacion) {
+        return res.status(400).json({
+          success: false,
+          message: "Todos los campos de la autorización temporal son obligatorios.",
+        });
+      }
+
+      const newAuth = {
+        id: `auth-${Date.now()}`,
+        employee_id: employee_id || `emp-${employee_dni}`,
+        employee_dni,
+        employee_name,
+        employee_cargo,
+        dependencia_origen_tipo: dependencia_origen_tipo || "SEDE_CENTRAL",
+        dependencia_origen_name: dependencia_origen_name || "SEDE CENTRAL",
+        dependencia_autorizada_tipo,
+        dependencia_autorizada_name: dependencia_autorizada_name || (dependencia_autorizada_tipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL'),
+        device_id: device_id || undefined,
+        device_name: device_name || undefined,
+        device_sn: device_sn || undefined,
+        start_date,
+        end_date,
+        motivo,
+        documento_autorizacion,
+        document_file_name,
+        status: "ACTIVA",
+        created_at: new Date().toISOString(),
+        created_by,
+      };
+
+      const existingAuths = await getStoredAuthorizations();
+      existingAuths.unshift(newAuth);
+      await saveStoredAuthorizations(existingAuths);
+
+      return res.status(201).json({
+        success: true,
+        message: "Autorización temporal de marcación registrada correctamente.",
+        data: newAuth,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        message: "Error al guardar autorización temporal.",
+        error: err.message,
+      });
+    }
+  });
+
+  // PUT /api/punch-authorizations/:id/revoke
+  app.put("/api/punch-authorizations/:id/revoke", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { revoked_by = "Jefe de Recursos Humanos", revoked_reason = "Revocada administrativamente" } = req.body || {};
+
+      const existingAuths = await getStoredAuthorizations();
+      const index = existingAuths.findIndex((a: any) => a.id === id);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, message: "Autorización no encontrada." });
+      }
+
+      existingAuths[index] = {
+        ...existingAuths[index],
+        status: "REVOCADA",
+        revoked_at: new Date().toISOString(),
+        revoked_by,
+        revoked_reason,
+      };
+
+      await saveStoredAuthorizations(existingAuths);
+      return res.json({
+        success: true,
+        message: "Autorización temporal revocada.",
+        data: existingAuths[index],
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al revocar autorización." });
+    }
   });
 
   // API ROUTE: ZKTeco Real TCP Socket Connection Test & Diagnostics

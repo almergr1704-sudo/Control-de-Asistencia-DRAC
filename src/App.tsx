@@ -51,6 +51,8 @@ import {
   Horario,
   DispositivoZkTeco,
   MarcacionRaw,
+  PunchValidationStatus,
+  AutorizacionMarcacionTemporal,
   AuditLog,
   EmployeeAssignmentHistory,
   MarcacionCorrection,
@@ -141,9 +143,40 @@ export default function App() {
   const [devices, setDevices] = useState<DispositivoZkTeco[]>(() =>
     loadStored('devices', INITIAL_DEVICES)
   );
+
+  // Sync devices from server database on mount
+  useEffect(() => {
+    fetch('/api/devices')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+          setDevices(data.data);
+        }
+      })
+      .catch((err) => {
+        console.log('Información: no se pudo sincronizar dispositivos desde el backend de inmediato:', err);
+      });
+  }, []);
   const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() =>
     loadStored('rawPunches', INITIAL_RAW_PUNCHES)
   );
+  const [punchAuthorizations, setPunchAuthorizations] = useState<AutorizacionMarcacionTemporal[]>(() =>
+    loadStored('punchAuthorizations', [])
+  );
+
+  // Sync punch authorizations from server database on mount
+  useEffect(() => {
+    fetch('/api/punch-authorizations')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+          setPunchAuthorizations(data.data);
+        }
+      })
+      .catch((err) => {
+        console.log('Información: no se pudieron sincronizar autorizaciones temporales:', err);
+      });
+  }, []);
   const [papeletas, setPapeletas] = useState<PapeletaSalida[]>(() =>
     loadStored('papeletas', INITIAL_PAPELETAS)
   );
@@ -177,6 +210,7 @@ export default function App() {
       localStorage.setItem('drac_data_horarios', JSON.stringify(horarios));
       localStorage.setItem('drac_data_devices', JSON.stringify(devices));
       localStorage.setItem('drac_data_rawPunches', JSON.stringify(rawPunches));
+      localStorage.setItem('drac_data_punchAuthorizations', JSON.stringify(punchAuthorizations));
       localStorage.setItem('drac_data_papeletas', JSON.stringify(papeletas));
       localStorage.setItem('drac_data_encargaturas', JSON.stringify(encargaturas));
       localStorage.setItem('drac_data_papeletaAudits', JSON.stringify(papeletaAudits));
@@ -198,6 +232,7 @@ export default function App() {
     horarios,
     devices,
     rawPunches,
+    punchAuthorizations,
     papeletas,
     encargaturas,
     papeletaAudits,
@@ -531,35 +566,243 @@ export default function App() {
   };
 
   // DEVICE HANDLERS
-  const handleAddDevice = (newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity'>) => {
-    const created: DispositivoZkTeco = {
-      ...newDev,
-      id: `dev-${Date.now()}`,
-      last_activity: new Date().toLocaleString('es-PE'),
-    };
-    setDevices((prev) => [...prev, created]);
-    addAuditLog('BIOMETRICOS', 'REGISTRAR_DISPOSITIVO', created.id, `Nuevo Biométrico: ${created.name} (${created.serial_number}) - Estado: ${created.status}`);
+  const handleAddDevice = async (
+    newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity'>
+  ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
+    try {
+      const res = await fetch('/api/devices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDev),
+      });
+
+      const resData = await res.json();
+
+      if (!res.ok || !resData.success) {
+        const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
+        console.error('[App] Error al registrar marcador en API:', errMsg);
+        throw new Error(errMsg);
+      }
+
+      const created: DispositivoZkTeco = resData.data;
+      setDevices((prev) => {
+        const exists = prev.some((d) => d.id === created.id || d.serial_number === created.serial_number);
+        if (exists) return prev.map((d) => (d.id === created.id || d.serial_number === created.serial_number ? created : d));
+        return [...prev, created];
+      });
+
+      addAuditLog(
+        'BIOMETRICOS',
+        'REGISTRAR_DISPOSITIVO',
+        created.id,
+        `Nuevo Biométrico: ${created.name} (${created.serial_number}) - Estado: ${created.status}`
+      );
+
+      return {
+        success: true,
+        message: 'Marcador registrado correctamente.',
+        device: created,
+      };
+    } catch (err: any) {
+      console.error('[App.tsx] Fallo al invocar /api/devices POST:', err);
+      // Re-throw so the modal catches it and maintains form state and shows error banner
+      throw err;
+    }
   };
 
-  const handleEditDevice = (updatedDev: DispositivoZkTeco) => {
+  const handleEditDevice = async (updatedDev: DispositivoZkTeco) => {
     setDevices((prev) => prev.map((d) => (d.id === updatedDev.id ? updatedDev : d)));
+    try {
+      await fetch(`/api/devices/${updatedDev.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedDev),
+      });
+    } catch (e) {
+      console.error('[App] Error al sincronizar edición con backend:', e);
+    }
     addAuditLog('BIOMETRICOS', 'EDITAR_DISPOSITIVO', updatedDev.id, `Actualización Biométrico: ${updatedDev.name}`);
   };
 
-  const handleDeleteDevice = (deviceId: string) => {
+  const handleDeleteDevice = async (deviceId: string) => {
     setDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    try {
+      await fetch(`/api/devices/${deviceId}`, {
+        method: 'DELETE',
+      });
+    } catch (e) {
+      console.error('[App] Error al sincronizar eliminación con backend:', e);
+    }
     addAuditLog('BIOMETRICOS', 'ELIMINAR_DISPOSITIVO', deviceId, `Eliminación de Biométrico ID ${deviceId}`);
   };
 
+  // PUNCH AUTHORIZATION HANDLERS
+  const handleAddPunchAuthorization = async (
+    newAuthData: Omit<AutorizacionMarcacionTemporal, 'id' | 'created_at' | 'status'>
+  ) => {
+    try {
+      const res = await fetch('/api/punch-authorizations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAuthData),
+      });
+      const data = await res.json();
+      const createdAuth: AutorizacionMarcacionTemporal = data.success && data.data
+        ? data.data
+        : {
+            ...newAuthData,
+            id: `auth-${Date.now()}`,
+            status: 'ACTIVA',
+            created_at: new Date().toISOString(),
+          };
+
+      setPunchAuthorizations((prev) => [createdAuth, ...prev]);
+      addAuditLog(
+        'BIOMETRICOS',
+        'CREAR_AUTORIZACION_TEMPORAL',
+        createdAuth.id,
+        `Autorización temporal de marcación concedida a ${createdAuth.employee_name} (${createdAuth.employee_dni}) para ${createdAuth.dependencia_autorizada_name} hasta ${createdAuth.end_date}`
+      );
+      return createdAuth;
+    } catch (err: any) {
+      console.error('Error al registrar autorización temporal:', err);
+      const fallbackAuth: AutorizacionMarcacionTemporal = {
+        ...newAuthData,
+        id: `auth-${Date.now()}`,
+        status: 'ACTIVA',
+        created_at: new Date().toISOString(),
+      };
+      setPunchAuthorizations((prev) => [fallbackAuth, ...prev]);
+      return fallbackAuth;
+    }
+  };
+
+  const handleRevokePunchAuthorization = async (authId: string, reason?: string) => {
+    try {
+      await fetch(`/api/punch-authorizations/${authId}/revoke`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revoked_reason: reason || 'Revocada administrativamente' }),
+      });
+    } catch (e) {
+      console.error('Error al sincronizar revocación:', e);
+    }
+    setPunchAuthorizations((prev) =>
+      prev.map((a) =>
+        a.id === authId
+          ? {
+              ...a,
+              status: 'REVOCADA',
+              revoked_at: new Date().toISOString(),
+              revoked_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
+              revoked_reason: reason || 'Revocada administrativamente',
+            }
+          : a
+      )
+    );
+    addAuditLog('BIOMETRICOS', 'REVOCAR_AUTORIZACION_TEMPORAL', authId, `Revocación de autorización ID ${authId}: ${reason || 'Revocada'}`);
+  };
+
+  const handleDeletePunchAuthorization = (authId: string) => {
+    setPunchAuthorizations((prev) => prev.filter((a) => a.id !== authId));
+    addAuditLog('BIOMETRICOS', 'ELIMINAR_AUTORIZACION_TEMPORAL', authId, `Eliminación de registro de autorización ${authId}`);
+  };
+
+  // PUNCH VALIDATION & INGESTION HANDLER
   const handleSimulatePunch = (newPunchData: Omit<MarcacionRaw, 'id' | 'processed' | 'processed_at'>) => {
+    // 1. Identificar marcador biométrico y su Dependencia
+    const device = devices.find(
+      (d) => d.id === newPunchData.device_id || d.serial_number === newPunchData.device_sn
+    );
+    const deviceDepTipo =
+      device?.dependencia_tipo ||
+      (device?.dependencia_id === 'dep-02' || device?.dependencia_name?.toUpperCase().includes('AGENCIA')
+        ? 'AGENCIA_AGRARIA'
+        : 'SEDE_CENTRAL');
+    const deviceDepName = deviceDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL';
+
+    // 2. Identificar colaborador y su Dependencia institucional
+    const employee = employees.find((e) => e.dni === newPunchData.employee_dni);
+    const employeeDepTipo =
+      employee?.dependencia_id === 'dep-02' ||
+      employee?.dependencia_name?.toUpperCase().includes('AGENCIA')
+        ? 'AGENCIA_AGRARIA'
+        : 'SEDE_CENTRAL';
+    const employeeDepName = employeeDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL';
+
+    // 3. Consultar si tiene una Autorización Temporal de Marcación Activa para esta fecha
+    const punchDate =
+      (newPunchData.timestamp && newPunchData.timestamp.split(' ')[0]) ||
+      new Date().toISOString().split('T')[0];
+
+    const activeAuth = punchAuthorizations.find((auth) => {
+      if (auth.status !== 'ACTIVA') return false;
+      if (auth.employee_dni !== newPunchData.employee_dni) return false;
+      if (punchDate < auth.start_date || punchDate > auth.end_date) return false;
+      // Verificar si la autorización corresponde al tipo de dependencia del marcador
+      if (auth.dependencia_autorizada_tipo !== deviceDepTipo) return false;
+      if (auth.device_id && device && auth.device_id !== device.id) return false;
+      return true;
+    });
+
+    // 4. Comparar Dependencias: ¿Coinciden o cuenta con Excepción Autorizada?
+    let validationStatus: PunchValidationStatus = 'VALIDA';
+    let rejectionReason: string | undefined = undefined;
+
+    if (deviceDepTipo === employeeDepTipo) {
+      validationStatus = 'VALIDA';
+    } else if (activeAuth) {
+      validationStatus = 'EXCEPCION_AUTORIZADA';
+    } else {
+      validationStatus = 'RECHAZADA_DEPENDENCIA';
+      rejectionReason = `Marcación rechazada por conflicto de dependencia: El colaborador pertenece a ${employeeDepName} e intentó registrar asistencia en el marcador '${device?.name || 'Marcador'}' configurado para ${deviceDepName}. No cuenta con Autorización Temporal activa.`;
+    }
+
     const createdPunch: MarcacionRaw = {
       ...newPunchData,
       id: `punch-${Date.now()}`,
+      device_id: device?.id || newPunchData.device_id,
+      device_sn: device?.serial_number || newPunchData.device_sn,
+      device_name: device?.name || newPunchData.device_name,
+      device_dependencia_tipo: deviceDepTipo,
+      device_dependencia_name: deviceDepName,
+      employee_dni: newPunchData.employee_dni,
+      employee_name: employee ? `${employee.first_name} ${employee.last_name}` : newPunchData.employee_name,
+      employee_dependencia_tipo: employeeDepTipo,
+      employee_dependencia_name: employeeDepName,
       processed: true,
       processed_at: new Date().toISOString(),
+      validation_status: validationStatus,
+      rejection_reason: rejectionReason,
+      authorization_id: activeAuth?.id,
     };
+
     setRawPunches((prev) => [createdPunch, ...prev]);
-    addAuditLog('BIOMETRICOS', 'MARCACION_RECIBIDA', createdPunch.id, `Marcación de DNI ${createdPunch.employee_dni}`);
+
+    if (validationStatus === 'RECHAZADA_DEPENDENCIA') {
+      addAuditLog(
+        'BIOMETRICOS',
+        'MARCACION_RECHAZADA_DEPENDENCIA',
+        createdPunch.id,
+        `INCIDENCIA BIOMÉTRICA: Marcación RECHAZADA de DNI ${createdPunch.employee_dni} (${employeeDepName}) en marcador ${device?.name || 'ZK'} (${deviceDepName})`
+      );
+    } else if (validationStatus === 'EXCEPCION_AUTORIZADA') {
+      addAuditLog(
+        'BIOMETRICOS',
+        'MARCACION_EXCEPCION_AUTORIZADA',
+        createdPunch.id,
+        `MARCACIÓN AUTORIZADA POR EXCEPCIÓN: DNI ${createdPunch.employee_dni} (${employeeDepName}) en ${device?.name} (${deviceDepName}) bajo documento ${activeAuth?.documento_autorizacion}`
+      );
+    } else {
+      addAuditLog(
+        'BIOMETRICOS',
+        'MARCACION_RECIBIDA',
+        createdPunch.id,
+        `Marcación VÁLIDA: DNI ${createdPunch.employee_dni} en ${device?.name || 'Marcador'}`
+      );
+    }
+
+    return createdPunch;
   };
 
   // PAPELETAS HANDLERS
@@ -831,11 +1074,15 @@ export default function App() {
               rawPunches={rawPunches}
               employees={employees}
               dependencias={dependencias}
+              punchAuthorizations={punchAuthorizations}
               activeRole={activeRole}
               onAddDevice={handleAddDevice}
               onEditDevice={handleEditDevice}
               onDeleteDevice={handleDeleteDevice}
               onSimulatePunch={handleSimulatePunch}
+              onAddPunchAuthorization={handleAddPunchAuthorization}
+              onRevokePunchAuthorization={handleRevokePunchAuthorization}
+              onDeletePunchAuthorization={handleDeletePunchAuthorization}
             />
           )}
 
