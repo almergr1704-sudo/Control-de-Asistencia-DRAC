@@ -129,6 +129,70 @@ export interface RoleHistoryEntry {
   reason?: string;
 }
 
+export type EncargaturaMotivo =
+  | 'VACACIONES'
+  | 'PERMISO'
+  | 'COMISION_SERVICIOS'
+  | 'LICENCIA'
+  | 'TRABAJO_FUERA_SEDE'
+  | 'OTRO';
+
+export type EncargaturaDocumentType =
+  | 'MEMORANDO'
+  | 'RESOLUCION_DIRECTORAL'
+  | 'OFICIO'
+  | 'DECRETO'
+  | 'OTRO';
+
+export type EncargaturaStatus = 'PENDIENTE' | 'VIGENTE' | 'FINALIZADA' | 'ANULADA';
+
+export interface Encargatura {
+  id: string;
+  // Trabajador Titular (quien se ausenta)
+  titular_employee_id: string;
+  titular_dni: string;
+  titular_name: string;
+  titular_cargo: string;
+  titular_area_name: string;
+  titular_direccion_organo_name?: string;
+
+  // Trabajador Encargado (quien asume temporalmente la jefatura)
+  encargado_employee_id: string;
+  encargado_dni: string;
+  encargado_name: string;
+  encargado_cargo: string;
+  encargado_area_procedencia_id: string;
+  encargado_area_procedencia_name: string;
+  encargado_dependencia_procedencia_name?: string;
+
+  // Unidad Orgánica Encargada (Ámbito de Jefatura Delegada)
+  dependencia_id: string;
+  dependencia_name: string;
+  direccion_organo_id?: string;
+  direccion_organo_name?: string;
+  direccion_organo_type?: OrganoType;
+  area_id?: string;
+  area_name?: string;
+  cargo_encargado: string; // Ej: "Director de Administración (e)", "Jefe de Oficina Agraria Celendín (e)"
+
+  // Sustento y Vigencia Administrativa
+  motivo: EncargaturaMotivo;
+  motivo_detalle?: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  document_type: EncargaturaDocumentType;
+  document_number: string; // Ej: "Memorando N.º 025-2026-DRAC"
+  document_date: string; // YYYY-MM-DD
+  document_file_name?: string;
+  status: EncargaturaStatus;
+
+  // Trazabilidad y Auditoría
+  papeletas_approved_count?: number;
+  created_at: string;
+  created_by?: string;
+  observaciones?: string;
+}
+
 export interface Employee {
   id: string;
   codigo_trabajador: string; // Ej: DRAC-2026-001 - NON-EDITABLE after creation
@@ -161,7 +225,8 @@ export interface Employee {
   username?: string; // Nombre de usuario para iniciar sesión
   account_status?: 'ACTIVE' | 'INACTIVE'; // Estado de la cuenta
   auth_method?: 'PASSWORD' | 'BIOMETRIC' | 'INSTITUTIONAL'; // Método de acceso
-  role: RoleType; // Perfil del sistema asignado
+  role: RoleType; // Perfil primario/activo en sesión
+  assigned_roles?: RoleType[]; // Conjunto de perfiles acumulativos (siempre incluye TRABAJADOR)
   role_history?: RoleHistoryEntry[]; // Historial de cambios de perfil para trazabilidad
   
   // Cargo y Datos Laborales
@@ -169,7 +234,10 @@ export interface Employee {
   cargo_id?: string; // ID del catálogo de cargos
   regimen_laboral: RegimenLaboral;
   condicion_laboral: CondicionLaboral;
-  is_jefe_director?: boolean;
+  is_jefe_director?: boolean; // Es titular de Dirección, Órgano Apoyo, Jefatura Agencia u Oficina Agraria
+  unidad_dirigida_id?: string; // ID de la unidad que dirige formalmente como titular
+  unidad_dirigida_name?: string; // Nombre de la unidad que dirige
+  unidad_dirigida_type?: OrganoType; // Tipo orgánico (DIRECCION, ORGANO_APOYO, JEFATURA_AGENCIA, OFICINA_AGRARIA)
   
   hire_date: string; // NON-EDITABLE original hire date
   active: boolean; // DESACTIVABLE
@@ -322,6 +390,15 @@ export interface PapeletaAudit {
   timestamp: string;
 }
 
+export interface PapeletaBossDelegationInfo {
+  is_encargado: boolean;
+  encargatura_id?: string;
+  unidad_encargada: string;
+  documento: string; // Ej: "Memorando N.º 025-2026-DRAC"
+  vigencia: string; // Ej: "01/09/2026 – 15/09/2026"
+  motivo?: string;
+}
+
 export interface PapeletaSalida {
   id: string;
   code: string; // Ej: PAP-2026-001
@@ -351,8 +428,17 @@ export interface PapeletaSalida {
   
   boss_approved_at?: string;
   boss_comment?: string;
+  boss_approver_name?: string;
+  boss_approver_dni?: string;
+  boss_approver_profile?: string; // Ej: "Trabajador" | "Trabajador + Jefe Inmediato"
+  boss_approver_function?: string; // Ej: "Jefe Titular" | "Jefe Encargado"
+  boss_delegation_info?: PapeletaBossDelegationInfo;
+
   hr_approved_at?: string;
   hr_comment?: string;
+  hr_approver_name?: string;
+  hr_approver_dni?: string;
+  
   security_guard_id?: string;
   security_guard_name?: string;
   created_at: string;

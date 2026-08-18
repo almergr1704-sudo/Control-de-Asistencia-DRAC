@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { AsistenciaProcesada, AsistenciaEstado, RoleType } from '../../types';
 import {
   Calendar,
@@ -16,8 +16,15 @@ import {
   Sliders,
   Info,
   Check,
+  Search,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { calculateShiftAndWorkedHours } from '../../utils/shiftCalculations';
+import { DataTablePagination } from '../common/DataTablePagination';
+import { SortableHeader, SortOrder } from '../common/SortableHeader';
+import { AdvancedSearchFilter } from '../common/AdvancedSearchFilter';
+import { EmptyState } from '../common/EmptyState';
 
 interface AttendanceModuleProps {
   activeView?: string;
@@ -34,9 +41,20 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   activeUserDni,
   onEditAttendanceRecord,
 }) => {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterArea, setFilterArea] = useState<string>('ALL');
+  const [filterOnlyTardiness, setFilterOnlyTardiness] = useState<boolean>(false);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // PAGINATION STATE
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  // SORTING STATE
+  const [sortField, setSortField] = useState<string | null>('fecha');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   React.useEffect(() => {
     if (!activeView) return;
@@ -80,20 +98,101 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const totalEffectiveHoursCalculated =
     editT1Calc.effectiveHours + (editT2Calc ? editT2Calc.effectiveHours : 0);
 
+  // UNIQUE AREAS FOR FILTER
+  const uniqueAreas = useMemo(() => {
+    const set = new Set<string>();
+    attendanceData.forEach((rec) => {
+      if (rec.area_name) set.add(rec.area_name);
+    });
+    return Array.from(set);
+  }, [attendanceData]);
+
+  // COUNT ACTIVE FILTERS
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'ALL') count++;
+    if (selectedDate) count++;
+    if (filterArea !== 'ALL') count++;
+    if (filterOnlyTardiness) count++;
+    return count;
+  }, [statusFilter, selectedDate, filterArea, filterOnlyTardiness]);
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('ALL');
+    setSelectedDate('');
+    setFilterArea('ALL');
+    setFilterOnlyTardiness(false);
+    setCurrentPage(1);
+  };
+
   // Filter records
-  const filteredRecords = attendanceData.filter((rec) => {
-    // Role filter
-    if (activeRole === 'EMPLOYEE' && rec.employee_dni !== activeUserDni) {
-      return false;
+  const filteredRecords = useMemo(() => {
+    return attendanceData.filter((rec) => {
+      // Role filter
+      if ((activeRole === 'EMPLOYEE' || activeRole === 'TRABAJADOR') && rec.employee_dni !== activeUserDni) {
+        return false;
+      }
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const matchName = rec.employee_name.toLowerCase().includes(term);
+        const matchDni = rec.employee_dni.includes(term);
+        const matchArea = rec.area_name.toLowerCase().includes(term);
+        if (!matchName && !matchDni && !matchArea) return false;
+      }
+      if (statusFilter !== 'ALL' && rec.status !== statusFilter) return false;
+      if (selectedDate && rec.fecha !== selectedDate) return false;
+      if (filterArea !== 'ALL' && rec.area_name !== filterArea) return false;
+      if (filterOnlyTardiness && (rec.total_tardiness_minutes || 0) <= 0) return false;
+      return true;
+    });
+  }, [
+    attendanceData,
+    activeRole,
+    activeUserDni,
+    searchTerm,
+    statusFilter,
+    selectedDate,
+    filterArea,
+    filterOnlyTardiness,
+  ]);
+
+  // SORT HANDLER
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortOrder === 'asc') setSortOrder('desc');
+      else if (sortOrder === 'desc') {
+        setSortField(null);
+        setSortOrder(null);
+      }
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
     }
-    const matchesSearch =
-      rec.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      rec.employee_dni.includes(searchTerm) ||
-      rec.area_name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || rec.status === statusFilter;
-    const matchesDate = !selectedDate || rec.fecha === selectedDate;
-    return matchesSearch && matchesStatus && matchesDate;
-  });
+    setCurrentPage(1);
+  };
+
+  // SORTED RECORDS
+  const sortedRecords = useMemo(() => {
+    if (!sortField || !sortOrder) return filteredRecords;
+    return [...filteredRecords].sort((a, b) => {
+      let valA: any = a[sortField as keyof AsistenciaProcesada] ?? '';
+      let valB: any = b[sortField as keyof AsistenciaProcesada] ?? '';
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredRecords, sortField, sortOrder]);
+
+  // PAGINATED RECORDS
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedRecords.slice(start, start + pageSize);
+  }, [sortedRecords, currentPage, pageSize]);
 
   const handleOpenEdit = (rec: AsistenciaProcesada) => {
     setEditingRecord(rec);
@@ -165,26 +264,38 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     },
   };
 
+  const isEditorRole =
+    activeRole === 'HR_ADMIN' ||
+    activeRole === 'SUPERVISOR' ||
+    activeRole === 'ADMIN_GENERAL' ||
+    activeRole === 'JEFE_RRHH' ||
+    activeRole === 'CONTROL_ASISTENCIA';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Banner */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-base font-bold text-white">
-              Sábana de Asistencia Procesada &amp; Cómputo de Horas Efectivas
-            </h2>
+            <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 rounded-lg text-indigo-400">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white">
+                Sábana de Asistencia Procesada &amp; Cómputo de Horas Efectivas
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Consolidado de marcaciones en ventanas biométricas, validación de turnos y cómputo de horas trabajadas.
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Consolidado de marcaciones en ventanas biométricas, validación de turnos y cómputo de horas trabajadas según normativa DRAC.
-          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start md:self-auto">
           <button
+            type="button"
             onClick={() => alert('Generando consolidado oficial en Excel / PDF...')}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded border border-slate-700 transition-colors flex items-center gap-1.5"
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Exportar Asistencia</span>
@@ -193,202 +304,316 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       </div>
 
       {/* Info Card: Punch Window & Calculation Rule */}
-      <div className="bg-[#090A0D] border border-indigo-950 rounded-xl p-3.5 flex items-start gap-3 text-xs">
+      <div className="bg-[#090A0D] border border-indigo-950/80 rounded-xl p-3.5 flex items-start gap-3 text-xs">
         <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
         <div className="space-y-0.5">
           <div className="font-bold text-indigo-300">
-            Regla de Cómputo de Horas Trabajadas (DRAC):
+            Regla Institucional de Cómputo de Asistencia (DRAC):
           </div>
           <p className="text-slate-400 leading-relaxed text-[11px]">
-            Las marcaciones dentro de la <strong>Ventana Permitida (TIME)</strong> comprueban la asistencia. El tiempo efectivo computado se calcula <strong className="text-slate-200">estrictamente a partir del Horario del Turno (TIME)</strong> con evaluación estricta a la hora de salida (sin tolerancia de salida; salidas anticipadas son descontadas).
+            Las marcaciones dentro de la <strong>Ventana Permitida (TIME)</strong> comprueban la asistencia. El tiempo efectivo computado se calcula <strong className="text-slate-200">estrictamente a partir del Horario del Turno</strong> con evaluación estricta a la hora de salida (sin tolerancia de salida).
           </p>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-[#090A0D] px-3 py-1.5 rounded border border-slate-800">
-            <Calendar className="w-3.5 h-3.5 text-slate-500" />
-            <span className="text-slate-400 font-medium">Fecha:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent text-slate-200 font-mono focus:outline-none"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 bg-[#090A0D] px-3 py-1.5 rounded border border-slate-800">
-            <Filter className="w-3.5 h-3.5 text-slate-500" />
-            <span className="text-slate-400 font-medium">Estado:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent text-slate-200 focus:outline-none"
-            >
-              <option value="ALL">Todos los Estados</option>
-              <option value="PUNCTUAL">Puntual</option>
-              <option value="LATE">Tardanza</option>
-              <option value="ABSENT">Falta</option>
-              <option value="VACATION">Vacaciones</option>
-              <option value="OUTING_PERMISSION">Papeleta / Permiso</option>
-            </select>
-          </div>
-
+      {/* Advanced Search & Multi-filter */}
+      <AdvancedSearchFilter
+        searchTerm={searchTerm}
+        onSearchChange={(val) => {
+          setSearchTerm(val);
+          setCurrentPage(1);
+        }}
+        searchPlaceholder="🔍 Buscar por empleado, DNI, área..."
+        activeFilterCount={activeFilterCount}
+        onResetFilters={handleResetFilters}
+      >
+        {/* Filter Date */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Fecha Específica</label>
           <input
-            type="text"
-            placeholder="Filtrar por empleado, DNI..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-3 py-1.5 bg-[#090A0D] text-slate-200 border border-slate-800 rounded focus:outline-none focus:border-indigo-600 min-w-[200px]"
+            type="date"
+            value={selectedDate}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
           />
         </div>
 
-        <div className="text-slate-500 font-mono">
-          Registros: {filteredRecords.length}
+        {/* Filter Status */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Estado Final</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Todos los Estados</option>
+            <option value="PUNCTUAL">Puntual</option>
+            <option value="LATE">Tardanza</option>
+            <option value="ABSENT">Falta</option>
+            <option value="VACATION">Vacaciones</option>
+            <option value="OUTING_PERMISSION">Papeleta / Permiso</option>
+          </select>
         </div>
-      </div>
+
+        {/* Filter Area */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Área / Oficina</label>
+          <select
+            value={filterArea}
+            onChange={(e) => {
+              setFilterArea(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Todas las áreas</option>
+            {uniqueAreas.map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filter Tardiness Checkbox */}
+        <div className="flex items-center pt-5">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-300 font-medium">
+            <input
+              type="checkbox"
+              checked={filterOnlyTardiness}
+              onChange={(e) => {
+                setFilterOnlyTardiness(e.target.checked);
+                setCurrentPage(1);
+              }}
+              className="w-4 h-4 rounded text-indigo-600 bg-slate-900 border-slate-700"
+            />
+            <span>Solo con Tardanza (&gt;0 min)</span>
+          </label>
+        </div>
+      </AdvancedSearchFilter>
 
       {/* Attendance Table */}
-      <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
+      <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="w-full">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-[#090A0D] text-slate-400 font-medium border-b border-slate-800">
               <tr>
-                <th className="px-4 py-3">Empleado / DNI</th>
-                <th className="px-4 py-3">Área / Fecha</th>
-                <th className="px-4 py-3">Turno 1 (Turno / Ventana / Real)</th>
-                <th className="px-4 py-3">Turno 2 (Turno / Ventana / Real)</th>
-                <th className="px-4 py-3 text-center">Horas Efectivas</th>
-                <th className="px-4 py-3 text-center">Tardanza</th>
-                <th className="px-4 py-3 text-center">Estado Final</th>
-                <th className="px-4 py-3">Observaciones &amp; Cómputo</th>
-                {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
-                  <th className="px-4 py-3 text-right">Acción</th>
-                )}
+                <th className="w-8 px-2 py-3 text-center">#</th>
+                <SortableHeader
+                  label="Empleado / DNI"
+                  field="employee_name"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Área & Fecha"
+                  field="fecha"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="w-32 hidden sm:table-cell"
+                />
+                <th className="px-3 py-3">Turno 1 (Turno / Real)</th>
+                <th className="px-3 py-3 hidden md:table-cell">Turno 2 (Turno / Real)</th>
+                <SortableHeader
+                  label="Horas Efectivas"
+                  field="total_effective_hours"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  align="center"
+                  className="w-24 text-center"
+                />
+                <SortableHeader
+                  label="Tardanza"
+                  field="total_tardiness_minutes"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  align="center"
+                  className="w-20 text-center"
+                />
+                <SortableHeader
+                  label="Estado"
+                  field="status"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  align="center"
+                  className="w-28 text-center"
+                />
+                {isEditorRole && <th className="px-3 py-3 text-right w-24">Acción</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800 font-sans">
-              {filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan={activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA' ? 9 : 8} className="px-4 py-12 text-center text-slate-500">
-                    <Clock className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-                    <p className="text-sm font-medium text-slate-400">No existen registros de asistencia para mostrar</p>
-                    <p className="text-xs text-slate-600 mt-1">Los registros procesados desde marcaciones biométricas o regularizaciones se mostrarán aquí.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords.map((rec) => {
-                  const badge = statusBadges[rec.status] || statusBadges.PUNCTUAL;
-                  const effHours = rec.total_effective_hours !== undefined
+            <tbody className="divide-y divide-slate-800/80 font-sans">
+              {paginatedRecords.map((rec, idx) => {
+                const badge = statusBadges[rec.status] || statusBadges.PUNCTUAL;
+                const effHours =
+                  rec.total_effective_hours !== undefined
                     ? rec.total_effective_hours
                     : (rec.t1_effective_hours || 0) + (rec.t2_effective_hours || 0);
+                const isExpanded = expandedRowId === rec.id;
+                const rowNum = (currentPage - 1) * pageSize + idx + 1;
 
-                  return (
-                    <tr key={rec.id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-4 py-3">
+                return (
+                  <React.Fragment key={rec.id}>
+                    <tr
+                      className={`hover:bg-slate-800/30 transition-colors ${
+                        isExpanded ? 'bg-slate-900/60' : ''
+                      }`}
+                    >
+                      <td className="px-2 py-3 text-center text-slate-500 font-mono text-[11px]">
+                        {rowNum}
+                      </td>
+
+                      <td className="px-3 py-3">
                         <div className="font-semibold text-white flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                           <span>{rec.employee_name}</span>
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500">DNI: {rec.employee_dni}</div>
+                        <div className="text-[10px] font-mono text-slate-400">DNI: {rec.employee_dni}</div>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedRowId(isExpanded ? null : rec.id)}
+                          className="text-[10px] text-slate-500 hover:text-indigo-400 flex items-center gap-0.5 mt-0.5 sm:hidden"
+                        >
+                          <span>{isExpanded ? 'Ocultar' : 'Detalles'}</span>
+                          {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                        </button>
                       </td>
 
-                      <td className="px-4 py-3 text-slate-300">
-                        <div className="font-medium text-slate-200">{rec.area_name}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">{rec.fecha}</div>
+                      <td className="px-3 py-3 hidden sm:table-cell">
+                        <div className="font-medium text-slate-200 truncate max-w-[140px]">{rec.area_name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{rec.fecha}</div>
                       </td>
 
                       {/* Turno 1 */}
-                      <td className="px-4 py-3 font-mono text-[11px]">
-                        <div className="text-slate-400">
-                          Turno: <span className="text-white font-semibold">{rec.t1_scheduled_in || '--:--'} - {rec.t1_scheduled_out || '--:--'}</span>
-                        </div>
-                        <div className="text-indigo-400 text-[10px]">
-                          Ventana: {rec.t1_window_entry_start || '--:--'} a {rec.t1_window_exit_limit || '--:--'}
+                      <td className="px-3 py-3 font-mono text-[11px]">
+                        <div className="text-slate-400 text-[10px]">
+                          Prog: <span className="text-white font-semibold">{rec.t1_scheduled_in || '--:--'} - {rec.t1_scheduled_out || '--:--'}</span>
                         </div>
                         <div className="text-emerald-400 font-bold">
                           Real: {rec.t1_real_in || '--:--'} - {rec.t1_real_out || '--:--'}
                         </div>
                         {rec.t1_effective_hours !== undefined && (
                           <div className="text-[10px] text-slate-400">
-                            Cómputo T1: <strong className="text-emerald-300">{rec.t1_effective_hours}h</strong>
+                            Cómputo: <strong className="text-emerald-300">{rec.t1_effective_hours}h</strong>
                           </div>
                         )}
                       </td>
 
                       {/* Turno 2 */}
-                      <td className="px-4 py-3 font-mono text-[11px]">
+                      <td className="px-3 py-3 font-mono text-[11px] hidden md:table-cell">
                         {rec.t2_scheduled_in ? (
                           <>
-                            <div className="text-slate-400">
-                              Turno: <span className="text-white font-semibold">{rec.t2_scheduled_in} - {rec.t2_scheduled_out}</span>
-                            </div>
-                            <div className="text-indigo-400 text-[10px]">
-                              Ventana: {rec.t2_window_entry_start || '--:--'} a {rec.t2_window_exit_limit || '--:--'}
+                            <div className="text-slate-400 text-[10px]">
+                              Prog: <span className="text-white font-semibold">{rec.t2_scheduled_in} - {rec.t2_scheduled_out}</span>
                             </div>
                             <div className="text-emerald-400 font-bold">
                               Real: {rec.t2_real_in || '--:--'} - {rec.t2_real_out || '--:--'}
                             </div>
                             {rec.t2_effective_hours !== undefined && (
                               <div className="text-[10px] text-slate-400">
-                                Cómputo T2: <strong className="text-emerald-300">{rec.t2_effective_hours}h</strong>
+                                Cómputo: <strong className="text-emerald-300">{rec.t2_effective_hours}h</strong>
                               </div>
                             )}
                           </>
                         ) : (
-                          <span className="text-slate-600 text-[10px] italic">Jornada Continua</span>
+                          <span className="text-slate-500 text-[10px] italic">Jornada Continua</span>
                         )}
                       </td>
 
-                      {/* Horas Efectivas Computadas */}
-                      <td className="px-4 py-3 text-center font-mono">
-                        <div className="text-emerald-400 font-bold text-xs bg-emerald-950/40 border border-emerald-900/60 px-2 py-1 rounded inline-block">
-                          {effHours > 0 ? `${effHours.toFixed(1)} hrs` : '0.0 hrs'}
+                      {/* Horas Efectivas */}
+                      <td className="px-3 py-3 text-center font-mono">
+                        <div className="text-emerald-400 font-bold text-xs bg-emerald-950/40 border border-emerald-900/60 px-2 py-0.5 rounded inline-block">
+                          {effHours > 0 ? `${effHours.toFixed(1)}h` : '0.0h'}
                         </div>
-                        <div className="text-[9px] text-slate-500 mt-0.5">Topado a Turno</div>
                       </td>
 
                       {/* Tardanza */}
-                      <td className="px-4 py-3 text-center font-mono font-bold">
+                      <td className="px-3 py-3 text-center font-mono font-bold">
                         {rec.total_tardiness_minutes > 0 ? (
-                          <span className="text-amber-500">{rec.total_tardiness_minutes} min</span>
+                          <span className="text-amber-400">{rec.total_tardiness_minutes}m</span>
                         ) : (
-                          <span className="text-slate-600">0 min</span>
+                          <span className="text-slate-600">0m</span>
                         )}
                       </td>
 
                       {/* Status Badge */}
-                      <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-0.5 text-[10px] font-bold border rounded uppercase inline-flex items-center gap-1 font-mono ${badge.bg}`}>
+                      <td className="px-3 py-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 text-[10px] font-bold border rounded uppercase inline-flex items-center gap-1 font-mono whitespace-nowrap ${badge.bg}`}
+                        >
                           {badge.icon}
                           <span>{badge.label}</span>
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 text-slate-400 text-[11px] max-w-xs">
-                        <div className="truncate">{rec.observations || 'Marcación regular en ventana permitida'}</div>
-                      </td>
-
-                      {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
-                        <td className="px-4 py-3 text-right">
+                      {/* Action */}
+                      {isEditorRole && (
+                        <td className="px-3 py-3 text-right">
                           <button
+                            type="button"
                             onClick={() => handleOpenEdit(rec)}
-                            className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1"
+                            className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded text-[11px] font-semibold border border-indigo-500/30 transition-colors inline-flex items-center gap-1 shadow-sm"
                           >
                             <Edit2 className="w-3 h-3" />
-                            <span>Regularizar</span>
+                            <span>Ajustar</span>
                           </button>
                         </td>
                       )}
                     </tr>
-                  );
-                })
-              )}
+
+                    {/* Expandable details */}
+                    {isExpanded && (
+                      <tr className="bg-[#090A0D]/90 border-b border-slate-800 sm:hidden">
+                        <td colSpan={isEditorRole ? 8 : 7} className="p-3 space-y-2 text-xs">
+                          <div>
+                            <span className="text-slate-400 font-semibold">Área:</span> {rec.area_name}
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-semibold">Fecha:</span> {rec.fecha}
+                          </div>
+                          {rec.observations && (
+                            <div>
+                              <span className="text-slate-400 font-semibold">Obs:</span> {rec.observations}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
+
+          {filteredRecords.length === 0 && (
+            <EmptyState
+              icon={Clock}
+              title="No se encontraron registros de asistencia"
+              description="Los registros procesados desde marcaciones biométricas o regularizaciones se mostrarán aquí."
+              isFiltered={activeFilterCount > 0 || Boolean(searchTerm)}
+              onAction={handleResetFilters}
+            />
+          )}
         </div>
+
+        {/* Reusable Pagination */}
+        <DataTablePagination
+          currentPage={currentPage}
+          pageSize={pageSize}
+          totalItems={filteredRecords.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* MODAL: EDIT / REGULARIZE ATTENDANCE */}
@@ -403,7 +628,11 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 <Edit2 className="w-4 h-4 text-indigo-400" />
                 Regularización de Asistencia &amp; Cómputo
               </h3>
-              <button type="button" onClick={() => setEditingRecord(null)} className="text-slate-500 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setEditingRecord(null)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -467,7 +696,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 </div>
               </div>
 
-              {/* Turno 2 Edits & Live Computation (if applicable) */}
+              {/* Turno 2 Edits & Live Computation */}
               {editingRecord.t2_scheduled_in && (
                 <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
                   <div className="flex items-center justify-between text-slate-300 font-bold text-[11px]">
@@ -508,7 +737,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
               )}
 
               {/* Total Hours Computed Card */}
-              <div className="p-3 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30 rounded-lg flex items-center justify-between text-xs font-mono">
+              <div className="p-3 bg-slate-900 border border-emerald-500/30 rounded-lg flex items-center justify-between text-xs font-mono">
                 <span className="text-slate-300">Total Horas Efectivas Computadas:</span>
                 <span className="text-emerald-400 font-bold text-sm bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
                   {totalEffectiveHoursCalculated.toFixed(1)} hrs

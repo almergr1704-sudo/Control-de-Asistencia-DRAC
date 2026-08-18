@@ -108,6 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'org_areas', label: 'Áreas / Oficinas' },
         { id: 'org_cargos', label: 'Cargos' },
         { id: 'org_resps', label: 'Jefes / Aprobadores' },
+        { id: 'org_bulk', label: 'Carga Masiva Excel' },
       ],
     },
     {
@@ -120,6 +121,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'personnel_new', label: 'Registrar Personal' },
         { id: 'personnel_assign', label: 'Asignaciones' },
         { id: 'personnel_history', label: 'Historial' },
+        { id: 'personnel_encargaturas', label: 'Encargaturas Temporales' },
+        { id: 'personnel_bulk', label: 'Carga Masiva Excel' },
       ],
     },
     {

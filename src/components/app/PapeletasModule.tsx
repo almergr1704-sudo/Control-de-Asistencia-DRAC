@@ -1,5 +1,15 @@
-import React, { useState, useRef } from 'react';
-import { PapeletaSalida, PapeletaStatus, PapeletaAudit, RoleType, PapeletaMotivo, Employee } from '../../types';
+import React, { useState, useRef, useMemo } from 'react';
+import {
+  PapeletaSalida,
+  PapeletaStatus,
+  PapeletaAudit,
+  RoleType,
+  PapeletaMotivo,
+  Employee,
+  Dependencia,
+  DireccionOrgano,
+  Area,
+} from '../../types';
 import {
   FileText,
   Plus,
@@ -9,7 +19,6 @@ import {
   ShieldCheck,
   UserCheck,
   Building2,
-  History,
   AlertCircle,
   Send,
   PenTool,
@@ -19,9 +28,21 @@ import {
   Crown,
   Eye,
   X,
-  XOctagon,
+  User,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Search,
+  Filter,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
+import { DataTablePagination } from '../common/DataTablePagination';
+import { SortableHeader, SortOrder } from '../common/SortableHeader';
+import { AdvancedSearchFilter } from '../common/AdvancedSearchFilter';
+import { EmptyState } from '../common/EmptyState';
 
 interface PapeletasModuleProps {
   activeView?: string;
@@ -50,33 +71,67 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   onUpdatePapeletaStatus,
   onCreatePapeleta,
 }) => {
+  // Navigation & View Mode Detection
+  const isSecurityView =
+    activeView?.startsWith('security_') ||
+    activeRole === 'VIGILANCIA' ||
+    activeRole === 'SECURITY_GUARD';
+
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [selectedPapeleta, setSelectedPapeleta] = useState<PapeletaSalida | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // Tab filter (ALL, PENDING, APPROVED, IN_OUTING, COMPLETED, MY)
+  const [statusTab, setStatusTab] = useState<string>(() => {
+    if (activeView === 'security_exit') return 'APPROVED';
+    if (activeView === 'security_return' || activeView === 'security_outside') return 'IN_OUTING';
+    if (activeView === 'papeletas_pending') return 'PENDING';
+    if (activeView === 'papeletas_approved') return 'APPROVED';
+    if (activeView === 'papeletas_my') return 'MY';
+    return 'ALL';
+  });
 
   React.useEffect(() => {
     if (!activeView) return;
     if (activeView === 'papeletas_new') {
       setShowCreateModal(true);
-      setStatusFilter('ALL');
+      setStatusTab('ALL');
     } else if (activeView === 'papeletas_pending') {
       setShowCreateModal(false);
-      setStatusFilter('PENDING');
-    } else if (activeView === 'papeletas_approved') {
+      setStatusTab('PENDING');
+    } else if (activeView === 'papeletas_approved' || activeView === 'security_exit') {
       setShowCreateModal(false);
-      setStatusFilter('APPROVED');
+      setStatusTab('APPROVED');
+    } else if (activeView === 'security_return' || activeView === 'security_outside') {
+      setShowCreateModal(false);
+      setStatusTab('IN_OUTING');
     } else if (activeView === 'papeletas_my') {
       setShowCreateModal(false);
-      setStatusFilter('MY');
+      setStatusTab('MY');
     } else {
       setShowCreateModal(false);
-      setStatusFilter('ALL');
     }
   }, [activeView]);
-  const [selectedPapeleta, setSelectedPapeleta] = useState<PapeletaSalida | null>(null);
-  const [commentInput, setCommentInput] = useState('');
-  const [horaRealInput, setHoraRealInput] = useState('10:30');
 
-  // DATA POLICY CONFIRM MODAL STATE
+  // PAGINATION STATE
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  // SORTING STATE
+  const [sortField, setSortField] = useState<string | null>('fecha');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+
+  // ADVANCED SEARCH & MULTI-FILTER STATE
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterMotivo, setFilterMotivo] = useState<string>('ALL');
+  const [filterDependencia, setFilterDependencia] = useState<string>('ALL');
+  const [filterArea, setFilterArea] = useState<string>('ALL');
+  const [filterFechaDesde, setFilterFechaDesde] = useState<string>('');
+  const [filterFechaHasta, setFilterFechaHasta] = useState<string>('');
+  const [filterSalidaRegistrada, setFilterSalidaRegistrada] = useState<string>('ALL'); // 'ALL' | 'YES' | 'NO'
+  const [filterRetornoRegistrado, setFilterRetornoRegistrado] = useState<string>('ALL');
+
+  // DATA POLICY CONFIRM MODAL
   const [confirmModalConfig, setConfirmModalConfig] = useState<DataPolicyConfirmConfig>({
     isOpen: false,
     title: '',
@@ -85,6 +140,25 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
     requireReason: true,
     onConfirm: () => {},
     onCancel: () => {},
+  });
+
+  // VIGILANCIA REGISTRATION MODAL
+  const [vigilanciaModal, setVigilanciaModal] = useState<{
+    isOpen: boolean;
+    papeleta: PapeletaSalida | null;
+    type: 'EXIT' | 'RETURN';
+    hora: string;
+    dniConfirmInput: string;
+    observacion: string;
+    dniError: string | null;
+  }>({
+    isOpen: false,
+    papeleta: null,
+    type: 'EXIT',
+    hora: new Date().toLocaleTimeString('es-PE', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+    dniConfirmInput: '',
+    observacion: '',
+    dniError: null,
   });
 
   // FORM STATE FOR NEW PAPELETA
@@ -99,95 +173,204 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const [formHoraRetorno, setFormHoraRetorno] = useState('12:30');
   const [formSinRetorno, setFormSinRetorno] = useState(false);
 
-  // DIGITAL SIGNATURE CANVAS STATE
+  // SIGNATURE CANVAS
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Selected Employee object & Active user employee object
+  // Active user employee object & Selected employee
   const currentEmployee = employees.find((e) => e.id === formEmployeeId) || employees[0];
   const activeUserEmployee = employees.find((e) => e.dni === activeUserDni) || employees[0];
 
-  // AUTOMATIC APPROVER DETERMINATION based on DRAC Organizational Unit
   const autoSupervisorName = currentEmployee?.supervisor_name || 'Jefe / Director Inmediato';
   const autoSupervisorId = currentEmployee?.supervisor_id || 'boss-default';
 
-  const isSecurityRole = activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD';
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterMotivo !== 'ALL') count++;
+    if (filterDependencia !== 'ALL') count++;
+    if (filterArea !== 'ALL') count++;
+    if (filterFechaDesde) count++;
+    if (filterFechaHasta) count++;
+    if (filterSalidaRegistrada !== 'ALL') count++;
+    if (filterRetornoRegistrado !== 'ALL') count++;
+    return count;
+  }, [
+    filterMotivo,
+    filterDependencia,
+    filterArea,
+    filterFechaDesde,
+    filterFechaHasta,
+    filterSalidaRegistrada,
+    filterRetornoRegistrado,
+  ]);
 
-  // MODAL FOR VIGILANCIA RECORDING REAL TIME
-  const [vigilanciaModal, setVigilanciaModal] = useState<{
-    isOpen: boolean;
-    papeleta: PapeletaSalida | null;
-    type: 'EXIT' | 'RETURN';
-    hora: string;
-    observacion: string;
-  }>({
-    isOpen: false,
-    papeleta: null,
-    type: 'EXIT',
-    hora: new Date().toTimeString().substring(0, 5),
-    observacion: '',
-  });
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setFilterMotivo('ALL');
+    setFilterDependencia('ALL');
+    setFilterArea('ALL');
+    setFilterFechaDesde('');
+    setFilterFechaHasta('');
+    setFilterSalidaRegistrada('ALL');
+    setFilterRetornoRegistrado('ALL');
+    setCurrentPage(1);
+  };
 
-  // Scope-based Filtering for DRAC Roles & Sub-views
-  const scopedPapeletas = papeletas.filter((p) => {
-    // 1. Trabajador base -> Solo ve sus propias papeletas
-    if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') {
-      return p.employee_dni === activeUserDni;
-    }
-
-    // 2. Vigilancia / Seguridad Garita -> Ve autorizadas (listas para salir), en salida real (para retorno) y completadas
-    if (isSecurityRole) {
-      if (activeView === 'security_exit') {
-        return p.status === 'APPROVED';
+  // Sort handler
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      if (sortOrder === 'asc') setSortOrder('desc');
+      else if (sortOrder === 'desc') {
+        setSortField(null);
+        setSortOrder(null);
       }
-      if (activeView === 'security_return' || activeView === 'security_outside') {
-        return p.status === 'IN_OUTING';
-      }
-      // security_papeletas or generic view
-      if (statusFilter === 'APPROVED') return p.status === 'APPROVED';
-      if (statusFilter === 'IN_OUTING') return p.status === 'IN_OUTING';
-      if (statusFilter === 'COMPLETED') return p.status === 'COMPLETED';
-      return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
     }
+    setCurrentPage(1);
+  };
 
-    // 3. Jefe / Director de Área u Órgano -> Ámbito organizacional restringido
-    if (activeRole === 'JEFE' || activeRole === 'SUPERVISOR') {
-      let isAllowedByOrg = false;
-      if (p.employee_dni === activeUserDni) {
-        isAllowedByOrg = true; // Su propia papeleta
-      } else if (!activeUserEmployee) {
-        isAllowedByOrg = true;
-      } else {
-        const requester = employees.find((e) => e.dni === p.employee_dni);
-        if (!requester) {
-          isAllowedByOrg = true;
-        } else {
-          // Verificar si pertenece a la misma Dirección/Órgano o Dependencia
-          const sameDireccion = requester.direccion_organo_id && requester.direccion_organo_id === activeUserEmployee.direccion_organo_id;
-          const sameDependencia = requester.dependencia_id && requester.dependencia_id === activeUserEmployee.dependencia_id;
-          const directSubordinate = requester.supervisor_id === activeUserEmployee.id;
-          isAllowedByOrg = Boolean(sameDireccion || sameDependencia || directSubordinate);
+  // UNIQUE DEPENDENCIES & AREAS FOR FILTERS
+  const uniqueDependencias = useMemo(() => {
+    const set = new Set<string>();
+    papeletas.forEach((p) => {
+      if (p.dependencia_name) set.add(p.dependencia_name);
+    });
+    return Array.from(set);
+  }, [papeletas]);
+
+  const uniqueAreas = useMemo(() => {
+    const set = new Set<string>();
+    papeletas.forEach((p) => {
+      if (p.area_name) set.add(p.area_name);
+    });
+    return Array.from(set);
+  }, [papeletas]);
+
+  // MASTER FILTERING & RBAC SCOPING
+  const filteredPapeletas = useMemo(() => {
+    return papeletas.filter((p) => {
+      // 1. RBAC SCOPE
+      if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') {
+        if (p.employee_dni !== activeUserDni) return false;
+      } else if (activeRole === 'JEFE' || activeRole === 'SUPERVISOR') {
+        // Jefe inmediato: ve sus propias papeletas + las de su ámbito asignado
+        if (p.employee_dni !== activeUserDni) {
+          const req = employees.find((e) => e.dni === p.employee_dni);
+          const isDirectSubordinate = req && req.supervisor_id === activeUserEmployee?.id;
+          const sameDir = req && activeUserEmployee && req.direccion_organo_id && req.direccion_organo_id === activeUserEmployee.direccion_organo_id;
+          const sameDep = req && activeUserEmployee && req.dependencia_id && req.dependencia_id === activeUserEmployee.dependencia_id;
+          if (!isDirectSubordinate && !sameDir && !sameDep) {
+            return false;
+          }
         }
       }
 
-      if (!isAllowedByOrg) return false;
+      // 2. VIGILANCIA / GARITA SCOPE RULE (CRITICAL DRAC SPEC)
+      // Toda papeleta con V°B° Jefe + Aprobación RRHH (status === 'APPROVED') y salida no registrada debe aparecer en Garita.
+      if (isSecurityView) {
+        if (statusTab === 'APPROVED' || activeView === 'security_exit') {
+          // Pendientes de salida física
+          if (p.status !== 'APPROVED' || Boolean(p.hora_real_salida)) return false;
+        } else if (statusTab === 'IN_OUTING' || activeView === 'security_return' || activeView === 'security_outside') {
+          // Personal actualmente fuera con salida sellada pero sin retorno
+          if (p.status !== 'IN_OUTING') return false;
+        } else if (statusTab === 'COMPLETED') {
+          if (p.status !== 'COMPLETED') return false;
+        } else if (statusTab === 'ALL') {
+          // Todas las papeletas relevantes para garita (autorizadas, en curso o finalizadas)
+          const isRelevantForGarita =
+            p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
+          if (!isRelevantForGarita) return false;
+        }
+      } else {
+        // NON-SECURITY TAB FILTERS
+        if (statusTab === 'PENDING') {
+          if (p.status !== 'PENDING_BOSS' && p.status !== 'PENDING_HR') return false;
+        } else if (statusTab === 'APPROVED') {
+          if (p.status !== 'APPROVED' && p.status !== 'IN_OUTING' && p.status !== 'COMPLETED') return false;
+        } else if (statusTab === 'IN_OUTING') {
+          if (p.status !== 'IN_OUTING') return false;
+        } else if (statusTab === 'COMPLETED') {
+          if (p.status !== 'COMPLETED') return false;
+        } else if (statusTab === 'MY') {
+          if (p.employee_dni !== activeUserDni) return false;
+        }
+      }
 
-      // Status filters for Jefe
-      if (statusFilter === 'PENDING') return p.status === 'PENDING_BOSS';
-      if (statusFilter === 'APPROVED') return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
-      if (statusFilter === 'MY') return p.employee_dni === activeUserDni;
+      // 3. TEXT SEARCH
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const matchCode = p.code.toLowerCase().includes(term);
+        const matchDni = p.employee_dni.includes(term);
+        const matchName = p.employee_name.toLowerCase().includes(term);
+        const matchDestino = p.destino.toLowerCase().includes(term);
+        const matchDesc = p.descripcion.toLowerCase().includes(term);
+        const matchArea = p.area_name.toLowerCase().includes(term);
+        if (!matchCode && !matchDni && !matchName && !matchDestino && !matchDesc && !matchArea) {
+          return false;
+        }
+      }
+
+      // 4. MULTI-FILTERS
+      if (filterMotivo !== 'ALL' && p.motivo !== filterMotivo) return false;
+      if (filterDependencia !== 'ALL' && p.dependencia_name !== filterDependencia) return false;
+      if (filterArea !== 'ALL' && p.area_name !== filterArea) return false;
+      if (filterFechaDesde && p.fecha < filterFechaDesde) return false;
+      if (filterFechaHasta && p.fecha > filterFechaHasta) return false;
+      if (filterSalidaRegistrada === 'YES' && !p.hora_real_salida) return false;
+      if (filterSalidaRegistrada === 'NO' && Boolean(p.hora_real_salida)) return false;
+      if (filterRetornoRegistrado === 'YES' && !p.hora_real_retorno) return false;
+      if (filterRetornoRegistrado === 'NO' && Boolean(p.hora_real_retorno)) return false;
+
       return true;
-    }
+    });
+  }, [
+    papeletas,
+    activeRole,
+    activeUserDni,
+    activeUserEmployee,
+    employees,
+    isSecurityView,
+    activeView,
+    statusTab,
+    searchTerm,
+    filterMotivo,
+    filterDependencia,
+    filterArea,
+    filterFechaDesde,
+    filterFechaHasta,
+    filterSalidaRegistrada,
+    filterRetornoRegistrado,
+  ]);
 
-    // 4. Director General, Jefe de RRHH, Control Asistencia y Admin General -> Ver todas las papeletas con filtros
-    if (statusFilter === 'PENDING') return p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR';
-    if (statusFilter === 'APPROVED') return p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED';
-    if (statusFilter === 'MY') return p.employee_dni === activeUserDni;
-    return true;
-  });
+  // SORTED RESULTS
+  const sortedPapeletas = useMemo(() => {
+    if (!sortField || !sortOrder) return filteredPapeletas;
 
-  // CANVAS SIGNATURE DRAWING HANDLERS
+    return [...filteredPapeletas].sort((a, b) => {
+      let valA: any = a[sortField as keyof PapeletaSalida] ?? '';
+      let valB: any = b[sortField as keyof PapeletaSalida] ?? '';
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredPapeletas, sortField, sortOrder]);
+
+  // PAGINATED SLICE
+  const paginatedPapeletas = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedPapeletas.slice(startIndex, startIndex + pageSize);
+  }, [sortedPapeletas, currentPage, pageSize]);
+
+  // CANVAS DRAWING HANDLERS
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     setIsDrawing(true);
     const canvas = canvasRef.current;
@@ -228,9 +411,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     setSignatureData(null);
   };
 
@@ -273,39 +454,103 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
     setSignatureData(null);
   };
 
+  // VIGILANCIA CONFIRMATION SUBMISSION
+  const handleVigilanciaSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vigilanciaModal.papeleta) return;
+
+    // DNI confirmation check
+    const enteredDni = vigilanciaModal.dniConfirmInput.trim();
+    if (enteredDni && enteredDni !== vigilanciaModal.papeleta.employee_dni) {
+      setVigilanciaModal((prev) => ({
+        ...prev,
+        dniError: `DNI no coincide con el titular (${vigilanciaModal.papeleta?.employee_dni}).`,
+      }));
+      return;
+    }
+
+    const currentServerTime =
+      vigilanciaModal.hora ||
+      new Date().toLocaleTimeString('es-PE', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+    if (vigilanciaModal.type === 'EXIT') {
+      const isSinRetorno = Boolean(vigilanciaModal.papeleta.sin_retorno);
+      const action = isSinRetorno ? 'MARK_COMPLETED_REAL' : 'MARK_OUTING_REAL';
+      const obs =
+        vigilanciaModal.observacion ||
+        (isSinRetorno
+          ? 'Salida definitiva sin retorno registrada en Garita de Vigilancia'
+          : 'Salida física registrada en Garita de Vigilancia');
+
+      onUpdatePapeletaStatus(
+        vigilanciaModal.papeleta.id,
+        action,
+        obs,
+        currentServerTime
+      );
+    } else {
+      const obs =
+        vigilanciaModal.observacion || 'Retorno físico registrado conforme en Garita de Vigilancia';
+
+      onUpdatePapeletaStatus(
+        vigilanciaModal.papeleta.id,
+        'MARK_COMPLETED_REAL',
+        obs,
+        vigilanciaModal.papeleta.hora_real_salida || undefined,
+        currentServerTime
+      );
+    }
+
+    setVigilanciaModal({
+      isOpen: false,
+      papeleta: null,
+      type: 'EXIT',
+      hora: '',
+      dniConfirmInput: '',
+      observacion: '',
+      dniError: null,
+    });
+  };
+
   const statusBadge: Record<string, { label: string; color: string }> = {
     DRAFT: { label: 'BORRADOR', color: 'bg-slate-800 text-slate-400 border-slate-700' },
-    PENDING_BOSS: { label: '1º PENDIENTE VOBO JEFE/DIRECTOR', color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },
-    PENDING_HR: { label: '2º PENDIENTE VOBO PERSONAL / RRHH', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
-    APPROVED: { label: 'AUTORIZADA (LISTA EN VIGILANCIA)', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-    IN_OUTING: { label: 'EN SALIDA REAL (VIGILANCIA)', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-    COMPLETED: { label: 'FINALIZADA (RETORNO REGISTRADO)', color: 'bg-purple-500/10 text-purple-400 border-purple-500/20' },
-    REJECTED: { label: 'RECHAZADA', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20' },
+    PENDING_BOSS: { label: '1º VOBO JEFE', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+    PENDING_HR: { label: '2º VOBO RRHH', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30' },
+    APPROVED: { label: 'AUTORIZADA GARITA', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+    IN_OUTING: { label: 'EN SALIDA REAL', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+    COMPLETED: { label: 'FINALIZADA', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+    REJECTED: { label: 'RECHAZADA', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
     CANCELLED: { label: 'CANCELADA', color: 'bg-slate-800 text-slate-500 border-slate-700' },
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Banner */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-400" />
-            <h2 className="text-base font-bold text-white">
-              {isSecurityRole ? 'Papeletas y Control de Garita de Vigilancia DRAC' : 'Papeletas de Salida DRAC (Permisos Oficiales de Jornada)'}
-            </h2>
-            <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-bold rounded-full">
-              AUTO-APROBADOR DETERMINADO
-            </span>
+            <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 rounded-lg text-indigo-400">
+              {isSecurityView ? <Shield className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white leading-tight">
+                {isSecurityView
+                  ? 'Control de Garita y Vigilancia DRAC — Salidas y Retornos'
+                  : 'Papeletas de Salida DRAC (Permisos Oficiales de Jornada)'}
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isSecurityView
+                  ? 'Verificación física de DNI, registro de horas exactas de salida y retorno de servidores públicos autorizados.'
+                  : 'Flujo oficial: Solicitud + Firma Digital ➔ VoBo Jefe Inmediato ➔ Autorización RRHH ➔ Garita Vigilancia.'}
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Flujo institucional: Solicitud + Firma Digital ➔ VoBo Jefe/Director Responsable ➔ VoBo Personal (RRHH) ➔ Registro Garita Vigilancia (Salida y Retorno).
-          </p>
         </div>
 
         {/* Create Papeleta Button */}
-        {!isSecurityRole && (
+        {!isSecurityView && (
           <button
+            type="button"
             onClick={() => {
               if (employees.length === 0) {
                 alert('Error: No se puede solicitar papeletas sin personal registrado en el sistema.');
@@ -313,7 +558,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               }
               setShowCreateModal(true);
             }}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 self-start md:self-auto shadow-sm"
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 self-start md:self-auto shadow-sm shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>Solicitar Papeleta de Salida</span>
@@ -321,284 +566,676 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         )}
       </div>
 
-      {/* Role Notice for Vigilancia */}
-      {isSecurityRole && (
-        <div className="p-3 bg-blue-950/30 border border-blue-800/40 rounded-xl flex items-center justify-between gap-3 text-xs text-blue-300">
-          <div className="flex items-center gap-3">
-            <Shield className="w-5 h-5 text-blue-400 shrink-0" />
-            <div>
-              <span className="font-bold text-white">Puesto de Vigilancia y Garita DRAC</span>: Visualiza papeletas autorizadas por Jefatura y Personal (RRHH) para sellar la hora exacta de salida y de retorno de los trabajadores.
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={() => setStatusFilter('APPROVED')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
-                statusFilter === 'APPROVED' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Listas p/ Salida ({papeletas.filter((p) => p.status === 'APPROVED').length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('IN_OUTING')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
-                statusFilter === 'IN_OUTING' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Personal Fuera ({papeletas.filter((p) => p.status === 'IN_OUTING').length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('ALL')}
-              className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
-                statusFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-            >
-              Todas
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Quick Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
+        <button
+          type="button"
+          onClick={() => {
+            setStatusTab('ALL');
+            setCurrentPage(1);
+          }}
+          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+            statusTab === 'ALL'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+          }`}
+        >
+          {isSecurityView ? 'Todas en Garita' : 'Todas'} ({papeletas.length})
+        </button>
 
-      {/* General Filter Tabs (for Non-Security or Administrative Roles) */}
-      {!isSecurityRole && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-          <button
-            onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-              statusFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
-            }`}
-          >
-            Todas ({papeletas.length})
-          </button>
-          <button
-            onClick={() => setStatusFilter('PENDING')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              statusFilter === 'PENDING' ? 'bg-amber-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Pendientes VoBo ({papeletas.filter((p) => p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR').length})</span>
-          </button>
-          <button
-            onClick={() => setStatusFilter('APPROVED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              statusFilter === 'APPROVED' ? 'bg-emerald-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Autorizadas Garita ({papeletas.filter((p) => p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED').length})</span>
-          </button>
-          <button
-            onClick={() => setStatusFilter('MY')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              statusFilter === 'MY' ? 'bg-purple-600 text-white' : 'bg-slate-900/60 text-slate-400 hover:text-white'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Mis Solicitudes ({papeletas.filter((p) => p.employee_dni === activeUserDni).length})</span>
-          </button>
-        </div>
-      )}
+        {isSecurityView ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('APPROVED');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'APPROVED'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-emerald-400 hover:text-white'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>
+                Pendientes de Salida ({papeletas.filter((p) => p.status === 'APPROVED' && !p.hora_real_salida).length})
+              </span>
+            </button>
 
-      {/* Papeletas Table List */}
-      <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('IN_OUTING');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'IN_OUTING'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-blue-400 hover:text-white'
+              }`}
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+              <span>
+                Personal Fuera / Retorno ({papeletas.filter((p) => p.status === 'IN_OUTING').length})
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('COMPLETED');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'COMPLETED'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-purple-400 hover:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Finalizadas ({papeletas.filter((p) => p.status === 'COMPLETED').length})</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('PENDING');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'PENDING'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                Pendientes VoBo ({papeletas.filter((p) => p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR').length})
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('APPROVED');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'APPROVED'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>
+                Autorizadas Garita ({papeletas.filter((p) => p.status === 'APPROVED' || p.status === 'IN_OUTING' || p.status === 'COMPLETED').length})
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStatusTab('MY');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                statusTab === 'MY'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5 text-purple-400" />
+              <span>Mis Solicitudes ({papeletas.filter((p) => p.employee_dni === activeUserDni).length})</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Advanced Search & Multi-filter */}
+      <AdvancedSearchFilter
+        searchTerm={searchTerm}
+        onSearchChange={(val) => {
+          setSearchTerm(val);
+          setCurrentPage(1);
+        }}
+        searchPlaceholder="🔍 Buscar por DNI, N.º papeleta, trabajador, área, destino..."
+        activeFilterCount={activeFilterCount}
+        onResetFilters={handleResetFilters}
+      >
+        {/* Filter by Motivo */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Tipo / Motivo</label>
+          <select
+            value={filterMotivo}
+            onChange={(e) => {
+              setFilterMotivo(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Todos los motivos</option>
+            <option value="COMISION_SERVICIOS">Comisión de Servicios</option>
+            <option value="SALUD_MEDICA">Salud / Atención Médica</option>
+            <option value="DILIGENCIA_OFICIAL">Diligencia Oficial</option>
+            <option value="PERSONAL">Asuntos Personales</option>
+            <option value="OTRO">Otros</option>
+          </select>
+        </div>
+
+        {/* Filter by Dependencia */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Dependencia</label>
+          <select
+            value={filterDependencia}
+            onChange={(e) => {
+              setFilterDependencia(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Todas las dependencias</option>
+            {uniqueDependencias.map((dep) => (
+              <option key={dep} value={dep}>
+                {dep}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filter by Área */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Área / Oficina</label>
+          <select
+            value={filterArea}
+            onChange={(e) => {
+              setFilterArea(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Todas las áreas</option>
+            {uniqueAreas.map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filter Date From */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Fecha Desde</label>
+          <input
+            type="date"
+            value={filterFechaDesde}
+            onChange={(e) => {
+              setFilterFechaDesde(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+          />
+        </div>
+
+        {/* Filter Date To */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Fecha Hasta</label>
+          <input
+            type="date"
+            value={filterFechaHasta}
+            onChange={(e) => {
+              setFilterFechaHasta(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+          />
+        </div>
+
+        {/* Filter Salida Registrada */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Salida Física</label>
+          <select
+            value={filterSalidaRegistrada}
+            onChange={(e) => {
+              setFilterSalidaRegistrada(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Cualquiera</option>
+            <option value="YES">Con Salida Registrada</option>
+            <option value="NO">Sin Salida Registrada</option>
+          </select>
+        </div>
+
+        {/* Filter Retorno Registrado */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1 text-[11px]">Retorno Físico</label>
+          <select
+            value={filterRetornoRegistrado}
+            onChange={(e) => {
+              setFilterRetornoRegistrado(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full bg-[#090A0D] border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="ALL">Cualquiera</option>
+            <option value="YES">Con Retorno Registrado</option>
+            <option value="NO">Sin Retorno Registrado</option>
+          </select>
+        </div>
+      </AdvancedSearchFilter>
+
+      {/* Main Responsive Table Container */}
+      <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="w-full">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-[#090A0D] border-b border-slate-800 text-slate-400 font-medium">
               <tr>
-                <th className="px-4 py-3">Nº Papeleta / Colaborador</th>
-                <th className="px-4 py-3">Motivo &amp; Destino</th>
-                <th className="px-4 py-3">Horas Autorizadas</th>
-                <th className="px-4 py-3">Garita Real (Salida - Retorno)</th>
-                <th className="px-4 py-3">Estado Workflow</th>
-                <th className="px-4 py-3 text-right">Aprobación / Garita</th>
+                <th className="w-8 px-2 py-3 text-center">#</th>
+                <SortableHeader
+                  label="Nº Papeleta"
+                  field="code"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="w-28"
+                />
+                <SortableHeader
+                  label="Trabajador / DNI"
+                  field="employee_name"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Dependencia / Área"
+                  field="dependencia_name"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="hidden md:table-cell"
+                />
+                <SortableHeader
+                  label="Motivo & Destino"
+                  field="motivo"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="hidden sm:table-cell"
+                />
+                <SortableHeader
+                  label="Fecha & Horas"
+                  field="fecha"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="w-32"
+                />
+                <th className="px-3 py-3 w-28 text-center">Salida / Retorno</th>
+                <SortableHeader
+                  label="Estado"
+                  field="status"
+                  currentSortField={sortField}
+                  currentSortOrder={sortOrder}
+                  onSort={handleSort}
+                  className="w-28 text-center"
+                  align="center"
+                />
+                <th className="px-3 py-3 text-right w-36">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800 font-sans">
-              {scopedPapeletas.map((p) => {
+            <tbody className="divide-y divide-slate-800/80">
+              {paginatedPapeletas.map((p, idx) => {
                 const badge = statusBadge[p.status] || statusBadge.DRAFT;
-
-                // Time Difference Calculation for Garita
-                let timeDifferenceLabel = null;
-                if (p.hora_real_salida && p.hora_real_retorno) {
-                  timeDifferenceLabel = 'Retorno Registrado';
-                }
+                const isExpanded = expandedRowId === p.id;
+                const rowNum = (currentPage - 1) * pageSize + idx + 1;
 
                 return (
-                  <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="font-mono text-indigo-400 font-bold">{p.code}</div>
-                      <div className="font-bold text-white text-xs mt-0.5">{p.employee_name}</div>
-                      <div className="text-[10px] text-slate-400">
-                        {p.dependencia_name} - {p.area_name}
-                      </div>
-                      <div className="text-[9px] text-amber-400 mt-0.5 flex items-center gap-1">
-                        <Crown className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                        <span>Aprobador: {p.supervisor_name}</span>
-                      </div>
-                    </td>
+                  <React.Fragment key={p.id}>
+                    <tr
+                      className={`hover:bg-slate-800/30 transition-colors ${
+                        isExpanded ? 'bg-slate-900/60' : ''
+                      }`}
+                    >
+                      <td className="px-2 py-3 text-center text-slate-500 font-mono text-[11px]">
+                        {rowNum}
+                      </td>
 
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-200 uppercase text-[10px] tracking-wide">
-                        {p.motivo}
-                      </div>
-                      <div className="text-slate-300 font-medium line-clamp-1 mt-0.5">{p.descripcion}</div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3 h-3 text-indigo-400 shrink-0" />
-                        <span>Destino: {p.destino}</span>
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 font-mono">
-                      <div className="text-slate-200 font-bold">{p.fecha}</div>
-                      <div className="text-slate-400 text-[10px]">
-                        {p.hora_estimada_salida} ➔ {p.hora_estimada_retorno}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-3 font-mono">
-                      {p.hora_real_salida ? (
-                        <div>
-                          <div className="text-emerald-400 font-bold">Salida: {p.hora_real_salida}</div>
-                          <div className="text-purple-400 font-bold">
-                            Retorno: {p.hora_real_retorno || 'Pendiente...'}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-slate-500 italic text-[11px]">En Espera Garita</div>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 text-[10px] font-bold rounded border ${badge.color}`}
-                      >
-                        {badge.label}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      {/* Code */}
+                      <td className="px-3 py-3">
+                        <div className="font-mono text-indigo-400 font-bold">{p.code}</div>
                         <button
-                          onClick={() => setSelectedPapeleta(p)}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs flex items-center gap-1"
+                          type="button"
+                          onClick={() => setExpandedRowId(isExpanded ? null : p.id)}
+                          className="text-[10px] text-slate-400 hover:text-indigo-300 flex items-center gap-0.5 mt-0.5"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ver Ficha</span>
+                          <span>{isExpanded ? 'Ocultar' : 'Detalle'}</span>
+                          {isExpanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
                         </button>
+                      </td>
 
-                        {/* VoBo Boss Step */}
-                        {p.status === 'PENDING_BOSS' && (activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
-                          <button
-                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_BOSS', 'VoBo Aprobado por Jefe/Director Responsable')}
-                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold flex items-center gap-1"
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Dar VoBo Jefe</span>
-                          </button>
-                        )}
+                      {/* Worker & DNI */}
+                      <td className="px-3 py-3">
+                        <div className="font-bold text-white text-xs">{p.employee_name}</div>
+                        <div className="font-mono text-[11px] text-slate-400">DNI: {p.employee_dni}</div>
+                      </td>
 
-                        {/* VoBo HR Step */}
-                        {p.status === 'PENDING_HR' && (activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'CONTROL_ASISTENCIA') && (
-                          <button
-                            onClick={() => onUpdatePapeletaStatus(p.id, 'APPROVE_HR', 'Papeleta Autorizada Institucionalmente por RRHH')}
-                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold flex items-center gap-1"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>Autorizar RRHH</span>
-                          </button>
-                        )}
+                      {/* Dependency & Area */}
+                      <td className="px-3 py-3 hidden md:table-cell">
+                        <div className="text-slate-200 font-medium truncate max-w-[180px]">
+                          {p.dependencia_name}
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[180px]">{p.area_name}</div>
+                      </td>
 
-                        {/* Reject Option */}
-                        {(p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR') && (activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN') && (
-                          <button
-                            onClick={() => {
-                              setConfirmModalConfig({
-                                isOpen: true,
-                                title: 'Rechazar Solicitud de Papeleta',
-                                message: `¿Desea rechazar la papeleta ${p.code} de ${p.employee_name}? Ingrese el motivo institucional en la bitácora.`,
-                                actionType: 'REJECT',
-                                requireReason: true,
-                                entityName: `${p.code} - ${p.employee_name}`,
-                                confirmText: 'Confirmar Rechazo',
-                                onConfirm: (reason) => {
-                                  onUpdatePapeletaStatus(p.id, 'REJECT', reason || 'Rechazado por Jefatura / RRHH');
-                                  setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                                },
-                                onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                              });
-                            }}
-                            className="px-2 py-1 bg-slate-800 hover:bg-rose-950 text-rose-400 border border-rose-500/20 rounded text-xs font-bold flex items-center gap-1"
-                            title="Rechazar Papeleta"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>Rechazar</span>
-                          </button>
-                        )}
+                      {/* Motivo & Destino */}
+                      <td className="px-3 py-3 hidden sm:table-cell">
+                        <span className="font-semibold text-slate-200 text-[11px] block">
+                          {p.motivo.replace('_', ' ')}
+                        </span>
+                        <span className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5 truncate max-w-[180px]">
+                          <MapPin className="w-3 h-3 text-indigo-400 shrink-0" />
+                          {p.destino}
+                        </span>
+                      </td>
 
-                        {/* Vigilancia Garita Output */}
-                        {p.status === 'APPROVED' && (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
-                          <button
-                            onClick={() => {
-                              const realTime = new Date().toTimeString().substring(0, 5);
-                              setVigilanciaModal({
-                                isOpen: true,
-                                papeleta: p,
-                                type: 'EXIT',
-                                hora: realTime,
-                                observacion: p.sin_retorno ? 'Salida de comisión sin retorno registrada en Garita' : 'Salida autorizada registrada en Garita',
-                              });
-                            }}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm"
-                          >
-                            <Shield className="w-3.5 h-3.5" />
-                            <span>{p.sin_retorno ? 'Registrar Salida (Sin Retorno)' : 'Registrar Salida Garita'}</span>
-                          </button>
-                        )}
+                      {/* Date & Scheduled Time */}
+                      <td className="px-3 py-3 font-mono">
+                        <div className="text-slate-200 font-bold text-xs">{p.fecha}</div>
+                        <div className="text-slate-400 text-[10px] whitespace-nowrap">
+                          {p.hora_estimada_salida} ➔ {p.hora_estimada_retorno}
+                        </div>
+                      </td>
 
-                        {/* Vigilancia Garita Return */}
-                        {p.status === 'IN_OUTING' && (activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD' || activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH') && (
-                          <button
-                            onClick={() => {
-                              const realTime = new Date().toTimeString().substring(0, 5);
-                              setVigilanciaModal({
-                                isOpen: true,
-                                papeleta: p,
-                                type: 'RETURN',
-                                hora: realTime,
-                                observacion: 'Retorno registrado conforme en Garita de Vigilancia',
-                              });
-                            }}
-                            className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold flex items-center gap-1 shadow-sm"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Registrar Retorno Garita</span>
-                          </button>
+                      {/* Real Garita Times */}
+                      <td className="px-3 py-3 font-mono text-[11px] text-center">
+                        {p.hora_real_salida ? (
+                          <div className="space-y-0.5">
+                            <span className="text-emerald-400 font-bold block">
+                              S: {p.hora_real_salida}
+                            </span>
+                            <span
+                              className={`block font-bold ${
+                                p.hora_real_retorno ? 'text-purple-400' : 'text-amber-400 animate-pulse'
+                              }`}
+                            >
+                              R: {p.hora_real_retorno || (p.sin_retorno ? 'Sin retorno' : 'Fuera...')}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic text-[10px]">Sin salida</span>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+
+                      {/* Status Badge */}
+                      <td className="px-3 py-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded border whitespace-nowrap ${badge.color}`}
+                        >
+                          {badge.label}
+                        </span>
+                      </td>
+
+                      {/* Action Buttons */}
+                      <td className="px-3 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* View Detail Button */}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPapeleta(p)}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs transition-colors"
+                            title="Ver Ficha Completa"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* 1º VoBo Jefe Inmediato */}
+                          {p.status === 'PENDING_BOSS' &&
+                            (activeRole === 'JEFE' ||
+                              activeRole === 'SUPERVISOR' ||
+                              activeRole === 'DIRECTOR_GENERAL' ||
+                              activeRole === 'ADMIN_GENERAL' ||
+                              activeRole === 'HR_ADMIN' ||
+                              activeRole === 'JEFE_RRHH') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdatePapeletaStatus(
+                                    p.id,
+                                    'APPROVE_BOSS',
+                                    'VoBo Aprobado por Jefe Inmediato / Director Responsable'
+                                  )
+                                }
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors shadow-sm whitespace-nowrap"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>VoBo Jefe</span>
+                              </button>
+                            )}
+
+                          {/* 2º Aprobación RRHH / Jefe de Personal */}
+                          {p.status === 'PENDING_HR' &&
+                            (activeRole === 'JEFE_RRHH' ||
+                              activeRole === 'ADMIN_GENERAL' ||
+                              activeRole === 'HR_ADMIN' ||
+                              activeRole === 'CONTROL_ASISTENCIA') && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdatePapeletaStatus(
+                                    p.id,
+                                    'APPROVE_HR',
+                                    'Papeleta Autorizada Institucionalmente por RRHH / Jefe de Personal'
+                                  )
+                                }
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors shadow-sm whitespace-nowrap"
+                              >
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>Aprobar RRHH</span>
+                              </button>
+                            )}
+
+                          {/* Reject Option */}
+                          {(p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR') &&
+                            (activeRole === 'JEFE' ||
+                              activeRole === 'SUPERVISOR' ||
+                              activeRole === 'DIRECTOR_GENERAL' ||
+                              activeRole === 'JEFE_RRHH' ||
+                              activeRole === 'ADMIN_GENERAL' ||
+                              activeRole === 'HR_ADMIN') && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConfirmModalConfig({
+                                    isOpen: true,
+                                    title: 'Rechazar Solicitud de Papeleta',
+                                    message: `¿Desea rechazar la papeleta ${p.code} de ${p.employee_name}? Ingrese el motivo institucional en la bitácora.`,
+                                    actionType: 'REJECT',
+                                    requireReason: true,
+                                    entityName: `${p.code} - ${p.employee_name}`,
+                                    confirmText: 'Confirmar Rechazo',
+                                    onConfirm: (reason) => {
+                                      onUpdatePapeletaStatus(
+                                        p.id,
+                                        'REJECT',
+                                        reason || 'Rechazado por Jefatura / RRHH'
+                                      );
+                                      setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                                    },
+                                    onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                                  });
+                                }}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 border border-rose-500/20 rounded text-xs transition-colors"
+                                title="Rechazar Papeleta"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                          {/* VIGILANCIA / GARITA: REGISTRAR SALIDA */}
+                          {p.status === 'APPROVED' &&
+                            !p.hora_real_salida &&
+                            (isSecurityView ||
+                              activeRole === 'ADMIN_GENERAL' ||
+                              activeRole === 'HR_ADMIN' ||
+                              activeRole === 'JEFE_RRHH') && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nowTime = new Date().toLocaleTimeString('es-PE', {
+                                    hour12: false,
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                  setVigilanciaModal({
+                                    isOpen: true,
+                                    papeleta: p,
+                                    type: 'EXIT',
+                                    hora: nowTime,
+                                    dniConfirmInput: '',
+                                    observacion: p.sin_retorno
+                                      ? 'Salida definitiva sin retorno registrada en Garita'
+                                      : 'Salida autorizada registrada en Garita',
+                                    dniError: null,
+                                  });
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold flex items-center gap-1 shadow-sm whitespace-nowrap transition-colors"
+                              >
+                                <Shield className="w-3 h-3" />
+                                <span>REGISTRAR SALIDA</span>
+                              </button>
+                            )}
+
+                          {/* VIGILANCIA / GARITA: REGISTRAR RETORNO */}
+                          {p.status === 'IN_OUTING' &&
+                            (isSecurityView ||
+                              activeRole === 'ADMIN_GENERAL' ||
+                              activeRole === 'HR_ADMIN' ||
+                              activeRole === 'JEFE_RRHH') && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nowTime = new Date().toLocaleTimeString('es-PE', {
+                                    hour12: false,
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  });
+                                  setVigilanciaModal({
+                                    isOpen: true,
+                                    papeleta: p,
+                                    type: 'RETURN',
+                                    hora: nowTime,
+                                    dniConfirmInput: '',
+                                    observacion: 'Retorno registrado conforme en Garita de Vigilancia',
+                                    dniError: null,
+                                  });
+                                }}
+                                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-bold flex items-center gap-1 shadow-sm whitespace-nowrap transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>REGISTRAR RETORNO</span>
+                              </button>
+                            )}
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expandable Row Details (For Complete Data Without Horizontal Scroll) */}
+                    {isExpanded && (
+                      <tr className="bg-[#090A0D]/90 border-b border-slate-800">
+                        <td colSpan={9} className="p-4 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg">
+                              <span className="text-slate-400 block font-semibold text-[10px] uppercase">
+                                Dependencia & Área
+                              </span>
+                              <div className="text-white font-medium mt-0.5">{p.dependencia_name}</div>
+                              <div className="text-slate-300 text-[11px]">{p.area_name}</div>
+                            </div>
+
+                            <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg">
+                              <span className="text-slate-400 block font-semibold text-[10px] uppercase">
+                                Destino & Justificación
+                              </span>
+                              <div className="text-indigo-300 font-medium mt-0.5">{p.destino}</div>
+                              <div className="text-slate-300 text-[11px] line-clamp-2">{p.descripcion}</div>
+                            </div>
+
+                            <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg">
+                              <span className="text-slate-400 block font-semibold text-[10px] uppercase">
+                                Horario Solicitado
+                              </span>
+                              <div className="text-white font-mono font-bold mt-0.5">{p.fecha}</div>
+                              <div className="text-slate-300 font-mono text-[11px]">
+                                {p.hora_estimada_salida} ➔ {p.hora_estimada_retorno}
+                              </div>
+                            </div>
+
+                            <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg">
+                              <span className="text-slate-400 block font-semibold text-[10px] uppercase">
+                                Trazabilidad Garita
+                              </span>
+                              <div className="text-emerald-400 font-mono text-[11px]">
+                                Salida Real: {p.hora_real_salida || 'Pendiente...'}
+                              </div>
+                              <div className="text-purple-400 font-mono text-[11px]">
+                                Retorno Real: {p.hora_real_retorno || (p.sin_retorno ? 'Sin retorno' : 'Pendiente...')}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                            <div>
+                              Aprobador Asignado:{' '}
+                              <strong className="text-amber-400">{p.supervisor_name}</strong>
+                            </div>
+                            {p.signed_at && (
+                              <div>
+                                Firmado digitalmente:{' '}
+                                <span className="text-slate-300">{new Date(p.signed_at).toLocaleString('es-PE')}</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
           </table>
 
-          {scopedPapeletas.length === 0 && (
-            <div className="p-12 text-center bg-slate-900/40">
-              <FileText className="w-10 h-10 text-slate-500 mx-auto mb-2" />
-              <h4 className="text-sm font-bold text-slate-200">
-                {isSecurityRole
-                  ? 'No hay papeletas pendientes para control de Garita'
-                  : 'No hay papeletas de salida registradas'}
-              </h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-                {isSecurityRole
-                  ? 'Las papeletas aparecerán automáticamente en esta vista una vez cuenten con la aprobación del Jefe Inmediato y la autorización de Personal (RRHH).'
-                  : 'Haga clic en "Solicitar Papeleta de Salida" para iniciar una nueva solicitud.'}
-              </p>
-            </div>
+          {/* Empty State */}
+          {filteredPapeletas.length === 0 && (
+            <EmptyState
+              icon={FileText}
+              title={
+                isSecurityView
+                  ? 'No hay papeletas en esta cola de Garita'
+                  : 'No se encontraron papeletas de salida'
+              }
+              description={
+                isSecurityView
+                  ? 'Las papeletas aprobadas por el Jefe Inmediato y autorizadas por Recursos Humanos aparecerán automáticamente aquí para el registro de salida física.'
+                  : 'No hay registros que coincidan con los filtros y criterios de búsqueda actuales.'
+              }
+              isFiltered={activeFilterCount > 0 || Boolean(searchTerm)}
+              onAction={handleResetFilters}
+            />
           )}
         </div>
+
+        {/* Reusable Pagination */}
+        <DataTablePagination
+          currentPage={currentPage}
+          pageSize={pageSize}
+          totalItems={filteredPapeletas.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* CREATE PAPELETA MODAL */}
@@ -610,7 +1247,11 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 <h3 className="font-bold text-base text-white">Solicitud de Papeleta de Salida DRAC</h3>
                 <p className="text-xs text-slate-400">Permiso oficial durante la jornada laboral</p>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -627,13 +1268,13 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 >
                   {employees.map((e) => (
                     <option key={e.id} value={e.id}>
-                      {e.first_name} {e.last_name} ({e.dependencia_name} - {e.area_name})
+                      {e.first_name} {e.last_name} (DNI: {e.dni} — {e.dependencia_name} - {e.area_name})
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* AUTOMATIC APPROVER DISPLAY */}
+              {/* Automatic Approver Display */}
               <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-xl flex items-center gap-2.5 text-xs">
                 <Crown className="w-5 h-5 text-amber-400 shrink-0" />
                 <div>
@@ -693,7 +1334,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                     type="date"
                     value={formFecha}
                     onChange={(e) => setFormFecha(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
+                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white font-mono"
                     required
                   />
                 </div>
@@ -704,7 +1345,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                     type="time"
                     value={formHoraSalida}
                     onChange={(e) => setFormHoraSalida(e.target.value)}
-                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white"
+                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white font-mono"
                     required
                   />
                 </div>
@@ -716,7 +1357,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                     disabled={formSinRetorno}
                     value={formSinRetorno ? '' : formHoraRetorno}
                     onChange={(e) => setFormHoraRetorno(e.target.value)}
-                    className={`w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white ${
+                    className={`w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white font-mono ${
                       formSinRetorno ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
                     required={!formSinRetorno}
@@ -724,7 +1365,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 </div>
               </div>
 
-              {/* SALIDA SIN RETORNO CHECKBOX */}
+              {/* Salida Sin Retorno */}
               <label className="flex items-start gap-2.5 p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer hover:bg-slate-800/50 transition-colors">
                 <input
                   type="checkbox"
@@ -734,15 +1375,15 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 />
                 <div>
                   <span className="text-xs font-bold text-slate-200">
-                    ☐ Salida sin retorno (Comisión final de jornada / No regresa a la entidad hoy)
+                    Salida sin retorno (Comisión final de jornada / No regresa a la entidad hoy)
                   </span>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Al marcar esta casilla, Garita de Vigilancia registrará la salida real y finalizará la papeleta sin exigir un marcado de retorno.
+                    Garita de Vigilancia registrará la salida física y finalizará la papeleta sin exigir retorno.
                   </p>
                 </div>
               </label>
 
-              {/* DIGITAL SIGNATURE CANVAS */}
+              {/* Digital Signature Canvas */}
               <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
@@ -799,49 +1440,74 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         </div>
       )}
 
-      {/* VIEW DETAILS PAPELETA MODAL */}
+      {/* VIEW DETAILS MODAL */}
       {selectedPapeleta && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <div className="font-mono text-indigo-400 font-bold text-sm">{selectedPapeleta.code}</div>
-                <h3 className="font-bold text-base text-white">Papeleta de Salida Institucional DRAC</h3>
+                <h3 className="font-bold text-base text-white">Ficha de Papeleta de Salida DRAC</h3>
               </div>
-              <button onClick={() => setSelectedPapeleta(null)} className="text-slate-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setSelectedPapeleta(null)}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
               <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800 space-y-1">
-                <div>Colaborador: <span className="font-bold text-white">{selectedPapeleta.employee_name}</span> (DNI: {selectedPapeleta.employee_dni})</div>
-                <div>Dependencia: <span className="text-indigo-300 font-medium">{selectedPapeleta.dependencia_name}</span></div>
-                <div>Área: <span className="text-slate-300">{selectedPapeleta.area_name}</span></div>
-                <div>Aprobador Asignado: <span className="text-amber-400 font-semibold">{selectedPapeleta.supervisor_name}</span></div>
+                <div>
+                  Colaborador: <span className="font-bold text-white">{selectedPapeleta.employee_name}</span> (DNI:{' '}
+                  {selectedPapeleta.employee_dni})
+                </div>
+                <div>
+                  Dependencia: <span className="text-indigo-300 font-medium">{selectedPapeleta.dependencia_name}</span>
+                </div>
+                <div>
+                  Área: <span className="text-slate-300">{selectedPapeleta.area_name}</span>
+                </div>
+                <div>
+                  Aprobador Asignado:{' '}
+                  <span className="text-amber-400 font-semibold">{selectedPapeleta.supervisor_name}</span>
+                </div>
               </div>
 
               <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800 space-y-1">
-                <div>Motivo: <span className="font-bold text-slate-200">{selectedPapeleta.motivo}</span></div>
-                <div>Destino: <span className="text-indigo-300 font-medium">{selectedPapeleta.destino}</span></div>
-                <div>Descripción: <span className="text-slate-300">{selectedPapeleta.descripcion}</span></div>
+                <div>
+                  Motivo: <span className="font-bold text-slate-200">{selectedPapeleta.motivo}</span>
+                </div>
+                <div>
+                  Destino: <span className="text-indigo-300 font-medium">{selectedPapeleta.destino}</span>
+                </div>
+                <div>
+                  Descripción: <span className="text-slate-300">{selectedPapeleta.descripcion}</span>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-[#090A0D] rounded-lg border border-slate-800">
                   <div className="font-bold text-slate-400 text-[10px]">PROGRAMADO</div>
                   <div className="text-white font-mono mt-1">{selectedPapeleta.fecha}</div>
-                  <div className="text-slate-300 font-mono">{selectedPapeleta.hora_estimada_salida} ➔ {selectedPapeleta.hora_estimada_retorno}</div>
+                  <div className="text-slate-300 font-mono">
+                    {selectedPapeleta.hora_estimada_salida} ➔ {selectedPapeleta.hora_estimada_retorno}
+                  </div>
                 </div>
 
                 <div className="p-3 bg-[#090A0D] rounded-lg border border-slate-800">
                   <div className="font-bold text-slate-400 text-[10px]">REAL GARITA</div>
-                  <div className="text-emerald-400 font-mono mt-1">Salida: {selectedPapeleta.hora_real_salida || 'Sin registrar'}</div>
-                  <div className="text-purple-400 font-mono">Retorno: {selectedPapeleta.hora_real_retorno || 'Sin registrar'}</div>
+                  <div className="text-emerald-400 font-mono mt-1">
+                    Salida: {selectedPapeleta.hora_real_salida || 'Sin registrar'}
+                  </div>
+                  <div className="text-purple-400 font-mono">
+                    Retorno: {selectedPapeleta.hora_real_retorno || 'Sin registrar'}
+                  </div>
                 </div>
               </div>
 
-              {/* Digital Signature rendering */}
               {selectedPapeleta.digital_signature_data && (
                 <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-lg flex items-center justify-between">
                   <span className="text-slate-400 text-[11px]">Firma Digital del Solicitante:</span>
@@ -856,6 +1522,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 
             <div className="pt-2 flex justify-end">
               <button
+                type="button"
                 onClick={() => setSelectedPapeleta(null)}
                 className="px-4 py-2 bg-slate-800 text-slate-200 text-xs font-bold rounded-lg"
               >
@@ -866,22 +1533,30 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         </div>
       )}
 
-      {/* GARITA REAL EXIT/RETURN TIME REGISTRATION MODAL */}
+      {/* VIGILANCIA GARITA: REGISTRAR SALIDA / RETORNO MODAL (WITH DNI VERIFICATION) */}
       {vigilanciaModal.isOpen && vigilanciaModal.papeleta && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                {vigilanciaModal.type === 'EXIT' ? (
-                  <Shield className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <RotateCcw className="w-5 h-5 text-purple-400" />
-                )}
+                <div
+                  className={`p-2 rounded-lg border ${
+                    vigilanciaModal.type === 'EXIT'
+                      ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-400'
+                      : 'bg-purple-950/60 border-purple-500/30 text-purple-400'
+                  }`}
+                >
+                  {vigilanciaModal.type === 'EXIT' ? (
+                    <Shield className="w-5 h-5" />
+                  ) : (
+                    <RotateCcw className="w-5 h-5" />
+                  )}
+                </div>
                 <div>
                   <h3 className="font-bold text-sm text-white">
                     {vigilanciaModal.type === 'EXIT'
-                      ? 'Garita: Registrar Salida Real'
-                      : 'Garita: Registrar Retorno Real'}
+                      ? 'Vigilancia / Garita: Registrar Salida Física'
+                      : 'Vigilancia / Garita: Registrar Retorno Físico'}
                   </h3>
                   <p className="text-[11px] text-slate-400 font-mono">
                     {vigilanciaModal.papeleta.code} — {vigilanciaModal.papeleta.employee_name}
@@ -889,47 +1564,101 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 </div>
               </div>
               <button
-                onClick={() => setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }))}
+                type="button"
+                onClick={() =>
+                  setVigilanciaModal((prev) => ({
+                    ...prev,
+                    isOpen: false,
+                    papeleta: null,
+                    dniError: null,
+                  }))
+                }
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 space-y-1">
-                <div>
-                  <span className="text-slate-400">Destino Autorizado:</span>{' '}
-                  <span className="text-white font-medium">{vigilanciaModal.papeleta.destino}</span>
+            <form onSubmit={handleVigilanciaSubmit} className="space-y-3.5 text-xs">
+              {/* Worker Verification Details Card */}
+              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Trabajador:</span>
+                  <span className="text-white font-bold">{vigilanciaModal.papeleta.employee_name}</span>
                 </div>
-                <div>
-                  <span className="text-slate-400">Horario Estimado:</span>{' '}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">DNI Registrado:</span>
+                  <span className="text-indigo-400 font-mono font-bold">{vigilanciaModal.papeleta.employee_dni}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Dependencia / Área:</span>
+                  <span className="text-slate-300">
+                    {vigilanciaModal.papeleta.dependencia_name} — {vigilanciaModal.papeleta.area_name}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Destino Autorizado:</span>
+                  <span className="text-slate-200 font-medium">{vigilanciaModal.papeleta.destino}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-800/80 pt-1">
+                  <span className="text-slate-400">Horario Solicitado:</span>
                   <span className="text-indigo-300 font-mono">
                     {vigilanciaModal.papeleta.hora_estimada_salida} ➔ {vigilanciaModal.papeleta.hora_estimada_retorno}
                   </span>
                 </div>
                 {vigilanciaModal.type === 'RETURN' && vigilanciaModal.papeleta.hora_real_salida && (
-                  <div>
-                    <span className="text-slate-400">Salida Real Registrada:</span>{' '}
-                    <span className="text-emerald-400 font-mono font-bold">
-                      {vigilanciaModal.papeleta.hora_real_salida}
-                    </span>
+                  <div className="flex items-center justify-between text-emerald-400">
+                    <span>Salida Real Sellada:</span>
+                    <span className="font-mono font-bold">{vigilanciaModal.papeleta.hora_real_salida}</span>
                   </div>
                 )}
               </div>
 
+              {/* Step: Confirm DNI in Gate */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Hora Exacta Marcada por Garita de Vigilancia (HH:MM):
+                  Confirmación de Identidad en Garita (DNI del Trabajador):
+                </label>
+                <input
+                  type="text"
+                  placeholder={`Ingrese o verifique ${vigilanciaModal.papeleta.employee_dni}`}
+                  value={vigilanciaModal.dniConfirmInput}
+                  onChange={(e) =>
+                    setVigilanciaModal((prev) => ({
+                      ...prev,
+                      dniConfirmInput: e.target.value,
+                      dniError: null,
+                    }))
+                  }
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-indigo-500"
+                />
+                {vigilanciaModal.dniError ? (
+                  <p className="text-rose-400 text-[11px] mt-1 font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {vigilanciaModal.dniError}
+                  </p>
+                ) : (
+                  <p className="text-slate-400 text-[10px] mt-1">
+                    * Opcional si ya verificó visualmente el fotocheck institucional.
+                  </p>
+                )}
+              </div>
+
+              {/* Step: Real Server Time */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Hora Real de {vigilanciaModal.type === 'EXIT' ? 'Salida' : 'Retorno'} (HH:MM):
                 </label>
                 <input
                   type="time"
                   value={vigilanciaModal.hora}
                   onChange={(e) => setVigilanciaModal((prev) => ({ ...prev, hora: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-indigo-500 font-bold"
+                  required
                 />
               </div>
 
+              {/* Step: Security Observation */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Observación de Garita (Opcional):
@@ -938,75 +1667,53 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                   type="text"
                   value={vigilanciaModal.observacion}
                   onChange={(e) => setVigilanciaModal((prev) => ({ ...prev, observacion: e.target.value }))}
-                  placeholder="Ej: Salida conforme con fotocheck institucional..."
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+                  placeholder="Ej: Salida conforme en vehículo institucional..."
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
                 />
               </div>
-            </div>
 
-            <div className="pt-3 flex justify-end gap-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }))}
-                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!vigilanciaModal.papeleta) return;
-                  if (vigilanciaModal.type === 'EXIT') {
-                    if (vigilanciaModal.papeleta.sin_retorno) {
-                      onUpdatePapeletaStatus(
-                        vigilanciaModal.papeleta.id,
-                        'MARK_COMPLETED_REAL',
-                        vigilanciaModal.observacion || 'Salida sin retorno sellada en Garita',
-                        vigilanciaModal.hora
-                      );
-                    } else {
-                      onUpdatePapeletaStatus(
-                        vigilanciaModal.papeleta.id,
-                        'MARK_OUTING_REAL',
-                        vigilanciaModal.observacion || 'Salida sellada en Garita',
-                        vigilanciaModal.hora
-                      );
-                    }
-                  } else {
-                    onUpdatePapeletaStatus(
-                      vigilanciaModal.papeleta.id,
-                      'MARK_COMPLETED_REAL',
-                      vigilanciaModal.observacion || 'Retorno sellado en Garita',
-                      vigilanciaModal.papeleta.hora_real_salida || undefined,
-                      vigilanciaModal.hora
-                    );
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVigilanciaModal((prev) => ({
+                      ...prev,
+                      isOpen: false,
+                      papeleta: null,
+                      dniError: null,
+                    }))
                   }
-                  setVigilanciaModal((prev) => ({ ...prev, isOpen: false, papeleta: null }));
-                }}
-                className={`px-4 py-1.5 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 ${
-                  vigilanciaModal.type === 'EXIT'
-                    ? 'bg-emerald-600 hover:bg-emerald-500'
-                    : 'bg-purple-600 hover:bg-purple-500'
-                }`}
-              >
-                {vigilanciaModal.type === 'EXIT' ? (
-                  <>
-                    <Shield className="w-3.5 h-3.5" />
-                    <span>Guardar Hora de Salida</span>
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Guardar Hora de Retorno</span>
-                  </>
-                )}
-              </button>
-            </div>
+                  className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-1.5 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors shadow-sm ${
+                    vigilanciaModal.type === 'EXIT'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : 'bg-purple-600 hover:bg-purple-500'
+                  }`}
+                >
+                  {vigilanciaModal.type === 'EXIT' ? (
+                    <>
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>Confirmar y Registrar Salida</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Confirmar y Registrar Retorno</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* DATA POLICY CONFIRMATION MODAL */}
+      {/* Confirmation Modal */}
       <DataPolicyConfirmModal config={confirmModalConfig} />
     </div>
   );

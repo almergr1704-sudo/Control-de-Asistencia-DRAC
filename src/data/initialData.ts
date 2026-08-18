@@ -5,6 +5,7 @@ import {
   Cargo,
   ResponsableDesignation,
   Employee,
+  Encargatura,
   Turno,
   Horario,
   DispositivoZkTeco,
@@ -597,6 +598,8 @@ export const INITIAL_DEVICES: DispositivoZkTeco[] = [];
 export const INITIAL_RAW_PUNCHES: MarcacionRaw[] = [];
 
 export const INITIAL_PAPELETAS: PapeletaSalida[] = [];
+
+export const INITIAL_ENCARGATURAS: Encargatura[] = [];
 
 export const INITIAL_PAPELETA_AUDITS: PapeletaAudit[] = [];
 

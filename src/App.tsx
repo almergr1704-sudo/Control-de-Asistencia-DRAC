@@ -8,6 +8,7 @@ import { VacationsModule } from './components/app/VacationsModule';
 import { ShiftsSchedulesModule } from './components/app/ShiftsSchedulesModule';
 import { DevicesModule } from './components/app/DevicesModule';
 import { OrgPersonnelModule } from './components/app/OrgPersonnelModule';
+import { EncargaturasModule } from './components/app/EncargaturasModule';
 import { ReportsModule } from './components/app/ReportsModule';
 import { AdminModule } from './components/app/AdminModule';
 import { ConfigModule } from './components/app/ConfigModule';
@@ -25,6 +26,7 @@ import {
   INITIAL_DEVICES,
   INITIAL_RAW_PUNCHES,
   INITIAL_PAPELETAS,
+  INITIAL_ENCARGATURAS,
   INITIAL_PAPELETA_AUDITS,
   INITIAL_VACACIONES,
   INITIAL_ATTENDANCE,
@@ -44,6 +46,7 @@ import {
   AsistenciaProcesada,
   Area,
   Employee,
+  Encargatura,
   Turno,
   Horario,
   DispositivoZkTeco,
@@ -144,6 +147,9 @@ export default function App() {
   const [papeletas, setPapeletas] = useState<PapeletaSalida[]>(() =>
     loadStored('papeletas', INITIAL_PAPELETAS)
   );
+  const [encargaturas, setEncargaturas] = useState<Encargatura[]>(() =>
+    loadStored('encargaturas', INITIAL_ENCARGATURAS)
+  );
   const [papeletaAudits, setPapeletaAudits] = useState<PapeletaAudit[]>(() =>
     loadStored('papeletaAudits', INITIAL_PAPELETA_AUDITS)
   );
@@ -172,6 +178,7 @@ export default function App() {
       localStorage.setItem('drac_data_devices', JSON.stringify(devices));
       localStorage.setItem('drac_data_rawPunches', JSON.stringify(rawPunches));
       localStorage.setItem('drac_data_papeletas', JSON.stringify(papeletas));
+      localStorage.setItem('drac_data_encargaturas', JSON.stringify(encargaturas));
       localStorage.setItem('drac_data_papeletaAudits', JSON.stringify(papeletaAudits));
       localStorage.setItem('drac_data_vacaciones', JSON.stringify(vacaciones));
       localStorage.setItem('drac_data_attendance', JSON.stringify(attendance));
@@ -192,6 +199,7 @@ export default function App() {
     devices,
     rawPunches,
     papeletas,
+    encargaturas,
     papeletaAudits,
     vacaciones,
     attendance,
@@ -359,6 +367,127 @@ export default function App() {
       })
     );
     addAuditLog('PERSONAL', 'ESTADO_EMPLEADO', empId, `Cambio de estado activo/cuenta de personal ID ${empId}`);
+  };
+
+  // BULK IMPORT BATCH HANDLERS
+  const handleBulkImportDirecciones = (
+    validDirs: DireccionOrgano[],
+    updateDirs: DireccionOrgano[],
+    summary: any
+  ) => {
+    if (validDirs.length > 0) {
+      setDireccionesOrganos((prev) => [...prev, ...validDirs]);
+    }
+    if (updateDirs.length > 0) {
+      const updateMap = new Map(updateDirs.map((d) => [d.id, d]));
+      setDireccionesOrganos((prev) => prev.map((d) => updateMap.get(d.id) || d));
+    }
+    addAuditLog(
+      'ESTRUCTURA_DRAC',
+      'CARGA_MASIVA_DIRECCIONES',
+      `bulk-dirs-${Date.now()}`,
+      `Carga masiva Excel: ${validDirs.length} nuevas Direcciones creadas, ${updateDirs.length} actualizadas.`
+    );
+  };
+
+  const handleBulkImportAreas = (
+    validAreas: Area[],
+    updateAreas: Area[],
+    summary: any
+  ) => {
+    if (validAreas.length > 0) {
+      setAreas((prev) => [...prev, ...validAreas]);
+    }
+    if (updateAreas.length > 0) {
+      const updateMap = new Map(updateAreas.map((a) => [a.id, a]));
+      setAreas((prev) => prev.map((a) => updateMap.get(a.id) || a));
+    }
+    addAuditLog(
+      'ESTRUCTURA_DRAC',
+      'CARGA_MASIVA_AREAS',
+      `bulk-areas-${Date.now()}`,
+      `Carga masiva Excel: ${validAreas.length} nuevas Áreas creadas, ${updateAreas.length} actualizadas.`
+    );
+  };
+
+  const handleBulkImportTrabajadores = (
+    validEmps: Employee[],
+    updateEmps: Employee[],
+    summary: any
+  ) => {
+    if (validEmps.length > 0) {
+      setEmployees((prev) => [...prev, ...validEmps]);
+    }
+    if (updateEmps.length > 0) {
+      const updateMap = new Map(updateEmps.map((e) => [e.id, e]));
+      setEmployees((prev) => prev.map((e) => updateMap.get(e.id) || e));
+    }
+    addAuditLog(
+      'PERSONAL',
+      'CARGA_MASIVA_TRABAJADORES',
+      `bulk-emps-${Date.now()}`,
+      `Carga masiva Excel: ${validEmps.length} trabajadores registrados con perfil base TRABAJADOR, ${updateEmps.length} actualizados.`
+    );
+  };
+
+  const handleBulkImportEncargaturas = (validEncs: Encargatura[]) => {
+    if (validEncs.length > 0) {
+      setEncargaturas((prev) => [...prev, ...validEncs]);
+      addAuditLog(
+        'ENCARGATURAS',
+        'CARGA_MASIVA_ENCARGATURAS',
+        `bulk-encs-${Date.now()}`,
+        `Carga masiva Excel: ${validEncs.length} encargaturas registradas.`
+      );
+    }
+  };
+
+  // ENCARGATURAS HANDLERS
+  const handleAddEncargatura = (newEnc: Omit<Encargatura, 'id' | 'created_at'>) => {
+    const created: Encargatura = {
+      ...newEnc,
+      id: `enc-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    setEncargaturas((prev) => [...prev, created]);
+    addAuditLog(
+      'ENCARGATURAS',
+      'CREAR_ENCARGATURA',
+      created.id,
+      `Nueva encargatura: ${created.encargado_name} asume funciones de ${created.titular_name} (${created.cargo_encargado})`
+    );
+  };
+
+  const handleEditEncargatura = (updatedEnc: Encargatura) => {
+    setEncargaturas((prev) => prev.map((e) => (e.id === updatedEnc.id ? updatedEnc : e)));
+    addAuditLog(
+      'ENCARGATURAS',
+      'EDITAR_ENCARGATURA',
+      updatedEnc.id,
+      `Actualización de encargatura ID ${updatedEnc.id}: ${updatedEnc.encargado_name}`
+    );
+  };
+
+  const handleDeleteEncargatura = (encId: string) => {
+    setEncargaturas((prev) => prev.filter((e) => e.id !== encId));
+    addAuditLog('ENCARGATURAS', 'ELIMINAR_ENCARGATURA', encId, `Eliminación de encargatura ID ${encId}`);
+  };
+
+  const handleAnularEncargatura = (encId: string, motivo: string) => {
+    setEncargaturas((prev) =>
+      prev.map((e) =>
+        e.id === encId
+          ? {
+              ...e,
+              status: 'ANULADA',
+              anulado_at: new Date().toISOString(),
+              anulado_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
+              anulacion_motivo: motivo,
+            }
+          : e
+      )
+    );
+    addAuditLog('ENCARGATURAS', 'ANULAR_ENCARGATURA', encId, `Anulación de encargatura ID ${encId}: ${motivo}`);
   };
 
   // SHIFTS / HORARIOS HANDLERS
@@ -611,7 +740,8 @@ export default function App() {
           )}
 
           {/* ORGANIZACIÓN & PERSONAL */}
-          {(activeView.startsWith('org_') || activeView.startsWith('personnel_')) && (
+          {(activeView.startsWith('org_') ||
+            (activeView.startsWith('personnel_') && activeView !== 'personnel_encargaturas')) && (
             <OrgPersonnelModule
               activeView={activeView}
               dependencias={dependencias}
@@ -641,6 +771,28 @@ export default function App() {
               onAddEmployee={handleAddEmployee}
               onEditEmployee={handleEditEmployee}
               onDeleteEmployee={handleDeleteEmployee}
+              onBulkImportDirecciones={handleBulkImportDirecciones}
+              onBulkImportAreas={handleBulkImportAreas}
+              onBulkImportTrabajadores={handleBulkImportTrabajadores}
+            />
+          )}
+
+          {/* ENCARGATURAS TEMPORALES */}
+          {activeView === 'personnel_encargaturas' && (
+            <EncargaturasModule
+              encargaturas={encargaturas}
+              onAddEncargatura={handleAddEncargatura}
+              onEditEncargatura={handleEditEncargatura}
+              onDeleteEncargatura={handleDeleteEncargatura}
+              onAnularEncargatura={handleAnularEncargatura}
+              onBulkImportEncargaturas={handleBulkImportEncargaturas}
+              employees={employees}
+              dependencias={dependencias}
+              direccionesOrganos={direccionesOrganos}
+              areas={areas}
+              papeletas={papeletas}
+              activeRole={activeRole}
+              activeUserDni={activeUserDni}
             />
           )}
 

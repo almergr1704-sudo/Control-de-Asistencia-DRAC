@@ -199,3 +199,112 @@ export function calculateAttendanceForDate(
     observations: obs,
   };
 }
+
+export interface DeviceTestResponse {
+  success: boolean;
+  status: 'ONLINE' | 'OFFLINE';
+  message: string;
+  cause?: string;
+  latency_ms?: number;
+  ip: string;
+  port: number;
+  model?: string;
+  is_private_ip?: boolean;
+  timestamp: string;
+}
+
+/**
+ * Robust network diagnostic caller for ZKTeco terminals (G3-id, uFace, K40, etc.)
+ * Prevents JSON parse errors and provides actionable diagnostic guidance for LAN/WAN.
+ */
+export async function testZkTecoConnection(
+  ip: string,
+  port: number,
+  model: string = 'G3-id',
+  timeoutMs: number = 4000
+): Promise<DeviceTestResponse> {
+  const cleanIp = (ip || '').trim();
+  const targetPort = Number(port);
+  const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+
+  if (!cleanIp || !targetPort) {
+    return {
+      success: false,
+      status: 'OFFLINE',
+      message: 'Conexión fallida',
+      cause: 'Dirección IP o puerto no especificados.',
+      ip: cleanIp,
+      port: targetPort,
+      model,
+      timestamp: nowStr,
+    };
+  }
+
+  const isPrivate =
+    cleanIp.startsWith('192.168.') ||
+    cleanIp.startsWith('10.') ||
+    cleanIp.startsWith('127.') ||
+    cleanIp === 'localhost' ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp);
+
+  try {
+    const response = await fetch('/api/zkteco/test-connection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        ip: cleanIp,
+        port: targetPort,
+        model,
+        timeoutMs,
+      }),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      return {
+        ...data,
+        is_private_ip: data.is_private_ip ?? isPrivate,
+      };
+    } else {
+      // In case an HTML proxy page or text was returned
+      let causeText = `Respuesta del servidor (${response.status}).`;
+      if (isPrivate) {
+        causeText = `IP Privada LAN (${cleanIp}): Los servidores en la nube no pueden enviar paquetes TCP directos a su red local sin VPN o port forwarding. Configure en el ZKTeco ${model}: Menú > Comunicación > Servidor Cloud/ADMS.`;
+      }
+
+      return {
+        success: false,
+        status: 'OFFLINE',
+        message: 'No se pudo conectar directamente por TCP socket',
+        cause: causeText,
+        ip: cleanIp,
+        port: targetPort,
+        model,
+        is_private_ip: isPrivate,
+        timestamp: nowStr,
+      };
+    }
+  } catch (err: any) {
+    let causeText = err?.message || 'Error de conexión de red.';
+    if (isPrivate) {
+      causeText = `IP Privada LAN (${cleanIp}): Verifique que el ZKTeco ${model} esté encendido y conectado al router de la oficina. Para sincronización continua, habilite el Servidor ADMS en el equipo.`;
+    }
+
+    return {
+      success: false,
+      status: 'OFFLINE',
+      message: 'Conexión fallida',
+      cause: causeText,
+      ip: cleanIp,
+      port: targetPort,
+      model,
+      is_private_ip: isPrivate,
+      timestamp: nowStr,
+    };
+  }
+}
+
