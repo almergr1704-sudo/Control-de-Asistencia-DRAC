@@ -25,6 +25,7 @@ import {
   History,
   Lock,
   Eye,
+  EyeOff,
   ShieldAlert,
   Power,
   Key,
@@ -57,6 +58,7 @@ import {
 } from '../../types';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { VALID_JEFE_ORGANO_TYPES, getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
+import { generateUniqueUsername, hashPassword } from '../../utils/userAuthUtils';
 import { BulkUploadModal } from './BulkUploadModal';
 import {
   BulkUploadEntityType,
@@ -861,10 +863,29 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // FORM STATES: Perfil del Sistema & Cuenta de Acceso
   const [empHasAccess, setEmpHasAccess] = useState(true);
   const [empUsername, setEmpUsername] = useState('');
+  const [empInitialPassword, setEmpInitialPassword] = useState('123456');
+  const [showInitialPassword, setShowInitialPassword] = useState(false);
   const [empAccountStatus, setEmpAccountStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [empAuthMethod, setEmpAuthMethod] = useState<'PASSWORD' | 'BIOMETRIC' | 'INSTITUTIONAL'>('PASSWORD');
   const [empRoleChangeReason, setEmpRoleChangeReason] = useState('');
   const [selectedEmpForRoleModal, setSelectedEmpForRoleModal] = useState<Employee | null>(null);
+
+  // RESET PASSWORD MODAL STATE (ADMIN / HR)
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [selectedEmpForPasswordReset, setSelectedEmpForPasswordReset] = useState<Employee | null>(null);
+  const [resetNewPassword, setResetNewPassword] = useState('123456');
+  const [showResetPasswordEye, setShowResetPasswordEye] = useState(false);
+
+  // Auto-calculated unique username based on first name + paternal surname (+ maternal surname / suffix if collision)
+  const autoCalculatedUsername = React.useMemo(() => {
+    return generateUniqueUsername(
+      empFirstName,
+      empLastNamePaterno,
+      empLastNameMaterno,
+      employees,
+      editingEmp?.id
+    );
+  }, [empFirstName, empLastNamePaterno, empLastNameMaterno, employees, editingEmp?.id]);
 
   // SUB-DIRECCIONES & AREAS FILTERED FOR EMP FORM
   const filteredDirsForEmp = direccionesOrganos.filter((d) => d.dependencia_id === empDepId);
@@ -1038,7 +1059,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   };
 
   // Employee submit
-  const handleSubmitEmployee = (e: React.FormEvent) => {
+  const handleSubmitEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanDni = empDni.trim();
     if (!cleanDni || !empFirstName || !empLastNamePaterno || !empDepId || !empAreaId) {
@@ -1060,12 +1081,17 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       return;
     }
 
-    // Auto-generate or validate Username if system access is enabled
-    let finalUsername = empUsername.trim();
+    // Automatic unique username generation based on official DRAC rules
+    let finalUsername = empUsername.trim() || autoCalculatedUsername;
     if (empHasAccess) {
       if (!finalUsername) {
-        // Generate from names: e.g. jperez
-        finalUsername = `${empFirstName.trim().charAt(0).toLowerCase()}${empLastNamePaterno.trim().toLowerCase()}`.replace(/\s+/g, '');
+        finalUsername = generateUniqueUsername(
+          empFirstName,
+          empLastNamePaterno,
+          empLastNameMaterno,
+          employees,
+          editingEmp?.id
+        );
       }
       // Check duplicate Username among employees with system access
       const usernameDuplicate = employees.find(
@@ -1075,8 +1101,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           emp.id !== editingEmp?.id
       );
       if (usernameDuplicate) {
-        alert(`⚠️ Usuario de Acceso Duplicado:\nEl nombre de usuario "${finalUsername}" ya se encuentra asignado a ${usernameDuplicate.first_name} ${usernameDuplicate.last_name}. Por favor especifique otro usuario.`);
-        return;
+        // Auto resolve suffix if conflict still occurred
+        finalUsername = generateUniqueUsername(
+          empFirstName,
+          empLastNamePaterno,
+          empLastNameMaterno,
+          employees,
+          editingEmp?.id
+        );
       }
     }
 
@@ -1182,6 +1214,12 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         role: finalPrimaryRole,
         assigned_roles: finalAssignedRoles,
         role_history: updatedRoleHistory,
+        // Mantener hash de contraseña y estado de primer ingreso
+        password_hash: editingEmp.password_hash,
+        password_salt: editingEmp.password_salt,
+        password_change_required: editingEmp.password_change_required ?? false,
+        primer_ingreso: editingEmp.primer_ingreso ?? (editingEmp.password_change_required ? 'PENDIENTE' : 'COMPLETADO'),
+        last_password_change: editingEmp.last_password_change,
         // Laboral
         hire_date: empHireDate,
         active: empActive,
@@ -1201,9 +1239,13 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           new_status: finalAccountStatus,
           changed_at: new Date().toISOString(),
           changed_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador General',
-          reason: `Registro inicial de trabajador DRAC. Perfiles asignados: ${finalAssignedRoles.join(' + ')}`,
+          reason: `Registro inicial de trabajador DRAC. Usuario asignado: @${finalUsername}. Perfiles: ${finalAssignedRoles.join(' + ')}`,
         }
       ] : [];
+
+      // Initial temporary password can be defined freely without complexity rules on registration
+      const initialPasswordToUse = empInitialPassword.trim() || '123456';
+      const { hash: initialHash, salt: initialSalt } = await hashPassword(initialPasswordToUse);
 
       onAddEmployee({
         codigo_trabajador: generatedCode,
@@ -1238,6 +1280,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         role: finalPrimaryRole,
         assigned_roles: finalAssignedRoles,
         role_history: initialRoleHistory,
+        // Credenciales iniciales con hash y forzado de cambio en primer ingreso
+        password_hash: initialHash,
+        password_salt: initialSalt,
+        password_change_required: true,
+        primer_ingreso: 'PENDIENTE',
         // Laboral
         hire_date: empHireDate,
         active: empActive,
@@ -1781,9 +1828,20 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                                   <span>Titular: {emp.unidad_dirigida_name || emp.direccion_organo_name || emp.area_name}</span>
                                 </div>
                               )}
-                              <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-                                <UserCog className="w-3 h-3 text-slate-500" />
-                                <span>@{emp.username || emp.dni}</span>
+                              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between gap-1 pt-0.5">
+                                <div className="flex items-center gap-1">
+                                  <UserCog className="w-3 h-3 text-slate-500" />
+                                  <span className="text-indigo-300 font-semibold">@{emp.username || emp.dni}</span>
+                                </div>
+                                {emp.primer_ingreso === 'PENDIENTE' || emp.password_change_required ? (
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[9px] font-semibold" title="Deberá cambiar su contraseña temporal en su primer inicio de sesión">
+                                    1er Ingreso: Pendiente
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[9px] font-semibold" title="Primer ingreso completado con contraseña segura">
+                                    1er Ingreso: Listo
+                                  </span>
+                                )}
                               </div>
                             </div>
                           ) : (
@@ -1854,6 +1912,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                                   setEmpAccountStatus(emp.account_status || (emp.active ? 'ACTIVE' : 'INACTIVE'));
                                   setEmpAuthMethod(emp.auth_method || 'PASSWORD');
                                   setEmpRoleChangeReason('');
+                                  setEmpInitialPassword('');
+                                  setShowInitialPassword(false);
                                   setShowEmpModal(true);
                                 }}
                                 className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
@@ -1861,6 +1921,20 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
+                              {hasAccess && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedEmpForPasswordReset(emp);
+                                    setResetNewPassword('123456');
+                                    setShowResetPasswordEye(false);
+                                    setShowResetPasswordModal(true);
+                                  }}
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
+                                  title="Restablecer Contraseña Temporal y Forzar 1er Ingreso"
+                                >
+                                  <Key className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
                                 onClick={() => setSelectedEmpForRoleModal(emp)}
                                 className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded transition-colors"
@@ -3780,25 +3854,76 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 {/* IF ACCESS IS ENABLED: SHOW CREDENTIALS AND SYSTEM ROLE SELECTOR */}
                 {empHasAccess && (
                   <div className="space-y-4 bg-slate-900/40 p-4 border border-slate-800 rounded-xl">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {/* USERNAME (AUTO-GENERATED) */}
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Nombre de Usuario (Username) <span className="text-rose-400">*</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-300">
+                            Usuario (@username) <span className="text-rose-400">*</span>
+                          </label>
+                          <span className="text-[9px] text-emerald-400 font-semibold bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20">
+                            Auto
+                          </span>
+                        </div>
                         <div className="relative">
                           <input
                             type="text"
                             placeholder="jperez"
-                            value={empUsername}
+                            value={empUsername || autoCalculatedUsername}
                             onChange={(e) => setEmpUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                            className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-6 pr-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                            className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-6 pr-2.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 font-bold"
                             required={empHasAccess}
                           />
-                          <span className="absolute left-2.5 top-2 text-xs text-slate-500 font-mono">@</span>
+                          <span className="absolute left-2.5 top-2 text-xs text-indigo-400 font-mono font-bold">@</span>
                         </div>
-                        <span className="text-[9px] text-slate-500 mt-0.5 block">Identificador único de inicio de sesión</span>
+                        <span className="text-[9px] text-slate-400 mt-0.5 block truncate">
+                          Generado: {autoCalculatedUsername ? `@${autoCalculatedUsername}` : 'Inicial + Apellidos'}
+                        </span>
                       </div>
 
+                      {/* INITIAL TEMPORARY PASSWORD */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-300">
+                            {editingEmp ? 'Contraseña Asignada' : 'Contraseña Inicial (Temporal)'}
+                          </label>
+                          <span className="text-[9px] text-amber-400 font-mono">1er Ingreso</span>
+                        </div>
+                        {editingEmp ? (
+                          <div className="flex items-center justify-between p-2 bg-[#060709] border border-slate-800 rounded-lg text-xs font-mono text-slate-400">
+                            <span>•••••••• (Protegida)</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                              editingEmp.primer_ingreso === 'PENDIENTE' || editingEmp.password_change_required
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                            }`}>
+                              {editingEmp.primer_ingreso === 'PENDIENTE' || editingEmp.password_change_required ? 'Pendiente' : 'Completado'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <input
+                              type={showInitialPassword ? 'text' : 'password'}
+                              placeholder="Ej: 123456"
+                              value={empInitialPassword}
+                              onChange={(e) => setEmpInitialPassword(e.target.value)}
+                              className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-3 pr-8 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowInitialPassword(!showInitialPassword)}
+                              className="absolute right-2 top-2 text-slate-500 hover:text-slate-300"
+                            >
+                              {showInitialPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        )}
+                        <span className="text-[9px] text-slate-400 mt-0.5 block">
+                          {editingEmp ? 'Hash SHA-256 institucional' : 'Definición libre sin restricciones'}
+                        </span>
+                      </div>
+
+                      {/* ACCOUNT STATUS */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-300 mb-1">Estado de la Cuenta</label>
                         <select
@@ -3807,10 +3932,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                           className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="ACTIVE">Activa (Permitir Ingreso)</option>
-                          <option value="INACTIVE">Inactiva (Bloqueado Temporalmente)</option>
+                          <option value="INACTIVE">Inactiva (Bloqueado)</option>
                         </select>
                       </div>
 
+                      {/* AUTH METHOD */}
                       <div>
                         <label className="block text-[11px] font-bold text-slate-300 mb-1">Método de Autenticación</label>
                         <select
@@ -3819,9 +3945,17 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                           className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                         >
                           <option value="PASSWORD">Contraseña Estándar</option>
-                          <option value="INSTITUTIONAL">Credenciales Institucionales DRAC</option>
-                          <option value="BIOMETRIC">PIN Biométrico ZKTeco</option>
+                          <option value="INSTITUTIONAL">Credenciales DRAC</option>
+                          <option value="BIOMETRIC">PIN ZKTeco</option>
                         </select>
+                      </div>
+                    </div>
+
+                    {/* CALLOUT: FIRST LOGIN POLICY INFORMATION */}
+                    <div className="p-2.5 bg-indigo-950/20 border border-indigo-500/20 rounded-lg flex items-start gap-2 text-[11px]">
+                      <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                      <div className="text-slate-300 leading-relaxed">
+                        <strong className="text-white">Flujo de Seguridad de Contraseñas:</strong> En el registro del trabajador se asigna una contraseña temporal libremente. En su primer inicio de sesión, el sistema <strong>bloqueará el acceso y exigirá obligatoriamente el cambio de contraseña</strong> aplicando las políticas de longitud y complejidad configuradas.
                       </div>
                     </div>
 
@@ -4574,6 +4708,129 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
             // Handled when encargaturas module is active or in App.tsx
           }}
         />
+      )}
+
+      {/* MODAL: RESTABLECER CONTRASEÑA TEMPORAL (ADMIN / RRHH) */}
+      {showResetPasswordModal && selectedEmpForPasswordReset && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Restablecer Contraseña Temporal</h3>
+                  <p className="text-[11px] text-slate-400">Credencial de acceso para servidor público DRAC</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowResetPasswordModal(false);
+                  setSelectedEmpForPasswordReset(null);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* Employee Summary Card */}
+              <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
+                  {selectedEmpForPasswordReset.first_name[0]}
+                  {selectedEmpForPasswordReset.last_name[0]}
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-white text-xs">
+                    {selectedEmpForPasswordReset.first_name} {selectedEmpForPasswordReset.last_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2 font-mono mt-0.5">
+                    <span>DNI: {selectedEmpForPasswordReset.dni}</span>
+                    <span>•</span>
+                    <span className="text-indigo-400 font-bold">@{selectedEmpForPasswordReset.username || selectedEmpForPasswordReset.dni}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Information Notice */}
+              <div className="p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-xl space-y-1 text-[11px]">
+                <div className="flex items-center gap-1.5 text-indigo-300 font-bold">
+                  <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>Flujo de Seguridad Obligatorio</span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  Al restablecer la contraseña temporal (definible libremente, ej: <code>123456</code>), el estado del usuario volverá a <strong>"Primer Ingreso: Pendiente"</strong>. Al iniciar sesión, la plataforma exigirá obligatoriamente el cambio de contraseña aplicando las directivas de seguridad.
+                </p>
+              </div>
+
+              {/* Password Input */}
+              <div className="space-y-1.5">
+                <label className="block font-bold text-slate-200 text-xs">
+                  Nueva Contraseña Temporal de Primer Acceso
+                </label>
+                <div className="relative">
+                  <input
+                    type={showResetPasswordEye ? 'text' : 'password'}
+                    value={resetNewPassword}
+                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    placeholder="Ej: 123456"
+                    className="w-full bg-[#060709] border border-slate-800 rounded-lg pl-3 pr-10 py-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPasswordEye(!showResetPasswordEye)}
+                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+                  >
+                    {showResetPasswordEye ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Puede utilizar un valor sencillo temporal; la complejidad se validará en el primer acceso del usuario.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowResetPasswordModal(false);
+                  setSelectedEmpForPasswordReset(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!resetNewPassword.trim()) {
+                    alert('Por favor ingrese una contraseña temporal válida.');
+                    return;
+                  }
+                  const { hash, salt } = await hashPassword(resetNewPassword.trim());
+                  onEditEmployee({
+                    ...selectedEmpForPasswordReset,
+                    password_hash: hash,
+                    password_salt: salt,
+                    password_change_required: true,
+                    primer_ingreso: 'PENDIENTE',
+                    last_password_change: undefined,
+                  });
+                  setShowResetPasswordModal(false);
+                  setSelectedEmpForPasswordReset(null);
+                  alert(`✅ Contraseña temporal restablecida con éxito para @${selectedEmpForPasswordReset.username || selectedEmpForPasswordReset.dni}.\nSe solicitará cambio obligatorio en su próximo inicio de sesión.`);
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Restablecer y Forzar 1er Ingreso</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

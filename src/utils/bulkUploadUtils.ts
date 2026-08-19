@@ -14,6 +14,7 @@ import {
   EncargaturaDocumentType,
 } from '../types';
 import { VALID_JEFE_ORGANO_TYPES } from './encargaturaUtils';
+import { generateUniqueUsername } from './userAuthUtils';
 
 // ==========================================
 // TIPOS Y DEFINICIONES DE CARGA MASIVA
@@ -1072,7 +1073,13 @@ export function validateTrabajadoresExcel(
     else if (assignedRoles.includes('CONTROL_ASISTENCIA')) primaryRole = 'CONTROL_ASISTENCIA';
     else if (assignedRoles.includes('SECURITY_GUARD') || assignedRoles.includes('VIGILANCIA')) primaryRole = 'SECURITY_GUARD';
 
-    const defaultUsername = rawUser || `${rawNombres.charAt(0).toLowerCase()}${rawPaterno.toLowerCase()}`;
+    const generatedUsername = generateUniqueUsername(
+      rawNombres,
+      rawPaterno,
+      rawMaterno,
+      [...existingEmployees, ...validRecords]
+    );
+    const defaultUsername = rawUser ? rawUser.toLowerCase().replace(/\s+/g, '') : generatedUsername;
     const defaultEmail = rawEmail || `${defaultUsername}@dracajamarca.gob.pe`;
     const fullLastName = `${rawPaterno} ${rawMaterno}`.trim();
 
@@ -1130,6 +1137,8 @@ export function validateTrabajadoresExcel(
         unidad_dirigida_type: isDesignatedJefe ? parentDir?.type : undefined,
         has_system_access: true,
         username: defaultUsername,
+        password_change_required: true,
+        primer_ingreso: 'PENDIENTE',
         account_status: isActive ? 'ACTIVE' : 'INACTIVE',
         auth_method: 'PASSWORD',
         role: primaryRole,

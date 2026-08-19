@@ -1,16 +1,18 @@
 import React, { useState, useMemo } from 'react';
 import { AuditLog, RoleType, Employee } from '../../types';
-import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter } from 'lucide-react';
+import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter, UserCog, Eye, EyeOff, Info, X } from 'lucide-react';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
+import { hashPassword } from '../../utils/userAuthUtils';
 
 interface AdminModuleProps {
   auditLogs: AuditLog[];
   employees: Employee[];
   activeRole: RoleType;
   subTab: 'USERS' | 'ROLES' | 'AUDIT';
+  onEditEmployee?: (emp: Employee) => void;
 }
 
 export const AdminModule: React.FC<AdminModuleProps> = ({
@@ -18,6 +20,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   employees,
   activeRole,
   subTab,
+  onEditEmployee,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'USERS' | 'ROLES' | 'AUDIT'>(subTab || 'USERS');
 
@@ -29,6 +32,11 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   const [userPageSize, setUserPageSize] = useState(15);
   const [userSortField, setUserSortField] = useState<string | null>('first_name');
   const [userSortOrder, setUserSortOrder] = useState<SortOrder>('asc');
+
+  // Password reset modal state
+  const [selectedEmpForReset, setSelectedEmpForReset] = useState<Employee | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('123456');
+  const [showResetEye, setShowResetEye] = useState(false);
 
   // AUDIT TAB SEARCH, FILTER, SORT & PAGINATION
   const [auditSearchTerm, setAuditSearchTerm] = useState('');
@@ -313,8 +321,15 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <SortableHeader
-                        label="DNI / Usuario"
+                        label="DNI"
                         field="dni"
+                        currentField={userSortField}
+                        currentOrder={userSortOrder}
+                        onSort={handleUserSort}
+                      />
+                      <SortableHeader
+                        label="Usuario (@)"
+                        field="username"
                         currentField={userSortField}
                         currentOrder={userSortOrder}
                         onSort={handleUserSort}
@@ -334,38 +349,63 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                         onSort={handleUserSort}
                       />
                       <SortableHeader
-                        label="Cargo"
-                        field="cargo_name"
-                        currentField={userSortField}
-                        currentOrder={userSortOrder}
-                        onSort={handleUserSort}
-                      />
-                      <SortableHeader
-                        label="Rol Asignado"
+                        label="Rol del Sistema"
                         field="role"
                         currentField={userSortField}
                         currentOrder={userSortOrder}
                         onSort={handleUserSort}
                       />
+                      <th className="p-3 text-slate-400">Seguridad / 1er Ingreso</th>
                       <th className="p-3 text-slate-400">Estado</th>
+                      <th className="p-3 text-right text-slate-400">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 text-slate-300">
                     {paginatedUsers.map((emp) => (
                       <tr key={emp.id} className="hover:bg-slate-900/40 transition-colors">
                         <td className="p-3 font-mono text-indigo-400 font-bold">{emp.dni}</td>
+                        <td className="p-3 font-mono text-slate-200">
+                          <span className="text-indigo-400 font-bold">@{emp.username || (emp.first_name ? `${emp.first_name.charAt(0).toLowerCase()}${emp.last_name.split(' ')[0].toLowerCase()}` : emp.dni)}</span>
+                        </td>
                         <td className="p-3 font-bold text-white">{emp.first_name} {emp.last_name}</td>
                         <td className="p-3 text-slate-400">{emp.area_name || 'Sin Asignar'}</td>
-                        <td className="p-3 text-slate-400">{emp.cargo_name || 'Servidor Público'}</td>
                         <td className="p-3 font-semibold text-indigo-300">
                           <span className="px-2 py-0.5 text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-bold">
                             {emp.role}
                           </span>
                         </td>
                         <td className="p-3">
-                          <span className="px-2 py-0.5 text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 rounded font-semibold">
-                            Activo
+                          {emp.primer_ingreso === 'PENDIENTE' || emp.password_change_required ? (
+                            <span className="px-2 py-0.5 text-[10px] bg-amber-950/60 text-amber-300 border border-amber-800/60 rounded font-semibold inline-flex items-center gap-1">
+                              <Lock className="w-2.5 h-2.5" />
+                              <span>Pendiente</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] bg-emerald-950/60 text-emerald-300 border border-emerald-800/60 rounded font-semibold inline-flex items-center gap-1">
+                              <Shield className="w-2.5 h-2.5" />
+                              <span>Completado</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 text-[10px] rounded font-semibold ${
+                            emp.active !== false ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'
+                          }`}>
+                            {emp.active !== false ? 'Activo' : 'Inactivo'}
                           </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => {
+                              setSelectedEmpForReset(emp);
+                              setResetPasswordValue('123456');
+                              setShowResetEye(false);
+                            }}
+                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
+                            title="Restablecer Contraseña Temporal y Forzar 1er Ingreso"
+                          >
+                            <Key className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -659,6 +699,118 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* MODAL: RESTABLECER CONTRASEÑA (ADMINISTRADOR) */}
+      {selectedEmpForReset && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Restablecer Contraseña Institucional</h3>
+                  <p className="text-[11px] text-slate-400">Administración Central de Cuentas DRAC</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedEmpForReset(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
+                  {selectedEmpForReset.first_name[0]}
+                  {selectedEmpForReset.last_name[0]}
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-white text-xs">
+                    {selectedEmpForReset.first_name} {selectedEmpForReset.last_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2 font-mono mt-0.5">
+                    <span>DNI: {selectedEmpForReset.dni}</span>
+                    <span>•</span>
+                    <span className="text-indigo-400 font-bold">@{selectedEmpForReset.username || selectedEmpForReset.dni}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-xl space-y-1 text-[11px]">
+                <div className="flex items-center gap-1.5 text-indigo-300 font-bold">
+                  <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>Obligatoriedad de Cambio en Primer Ingreso</span>
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  Al redefinir la contraseña temporal del usuario, su estado volverá a <strong>"Primer Ingreso: Pendiente"</strong>. Al autenticarse, se le exigirá configurar una contraseña robusta conforme a las directivas de seguridad.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block font-bold text-slate-200 text-xs">
+                  Nueva Contraseña Temporal
+                </label>
+                <div className="relative">
+                  <input
+                    type={showResetEye ? 'text' : 'password'}
+                    value={resetPasswordValue}
+                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    placeholder="Ej: 123456"
+                    className="w-full bg-[#060709] border border-slate-800 rounded-lg pl-3 pr-10 py-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetEye(!showResetEye)}
+                    className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+                  >
+                    {showResetEye ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedEmpForReset(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!resetPasswordValue.trim()) {
+                    alert('Por favor ingrese una contraseña temporal.');
+                    return;
+                  }
+                  const { hash, salt } = await hashPassword(resetPasswordValue.trim());
+                  if (onEditEmployee) {
+                    onEditEmployee({
+                      ...selectedEmpForReset,
+                      password_hash: hash,
+                      password_salt: salt,
+                      password_change_required: true,
+                      primer_ingreso: 'PENDIENTE',
+                      last_password_change: undefined,
+                    });
+                  }
+                  setSelectedEmpForReset(null);
+                  alert(`✅ Contraseña temporal restablecida con éxito para @${selectedEmpForReset.username || selectedEmpForReset.dni}.\nSe solicitará cambio obligatorio en su próximo inicio de sesión.`);
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Restablecer y Forzar 1er Ingreso</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

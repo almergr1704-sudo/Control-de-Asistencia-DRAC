@@ -222,12 +222,19 @@ export interface Employee {
   
   // Perfil y Cuenta de Acceso al Sistema
   has_system_access?: boolean; // ¿Tendrá acceso al sistema? Sí / No
-  username?: string; // Nombre de usuario para iniciar sesión
+  username?: string; // Nombre de usuario para iniciar sesión (autogenerado con regla institucional)
   account_status?: 'ACTIVE' | 'INACTIVE'; // Estado de la cuenta
   auth_method?: 'PASSWORD' | 'BIOMETRIC' | 'INSTITUTIONAL'; // Método de acceso
   role: RoleType; // Perfil primario/activo en sesión
   assigned_roles?: RoleType[]; // Conjunto de perfiles acumulativos (siempre incluye TRABAJADOR)
   role_history?: RoleHistoryEntry[]; // Historial de cambios de perfil para trazabilidad
+
+  // Seguridad & Credenciales de Acceso
+  password_hash?: string; // Hash criptográfico de la contraseña (NUNCA texto plano)
+  password_salt?: string; // Salt criptográfico aleatorio
+  password_change_required?: boolean; // true = Obliga cambio en primer ingreso (PENDIENTE)
+  primer_ingreso?: 'PENDIENTE' | 'COMPLETADO'; // Estado visible de primer ingreso
+  last_password_change?: string; // Fecha de último cambio de contraseña
   
   // Cargo y Datos Laborales
   position: string; // Nombre del Cargo institucional
@@ -569,5 +576,22 @@ export interface AuditLog {
   action: string;
   affected_record_id: string;
   details: string;
+}
+
+export interface PasswordPolicy {
+  min_length: number; // Mínimo de caracteres (ej: 8)
+  require_uppercase: boolean; // Requiere al menos una mayúscula (A-Z)
+  require_lowercase: boolean; // Requiere al menos una minúscula (a-z)
+  require_number: boolean; // Requiere al menos un número (0-9)
+  require_special_char: boolean; // Requiere caracter especial (!@#$%^&*...)
+  prevent_previous_password: boolean; // Impide reutilizar la contraseña inicial/anterior
+  force_change_first_login?: boolean; // Forzar cambio de contraseña en primer ingreso
+}
+
+export interface SecurityConfig {
+  institution_name: string;
+  default_tolerance: number;
+  require_garita_return: boolean;
+  password_policy: PasswordPolicy;
 }
 

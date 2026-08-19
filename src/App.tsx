@@ -12,6 +12,7 @@ import { EncargaturasModule } from './components/app/EncargaturasModule';
 import { ReportsModule } from './components/app/ReportsModule';
 import { AdminModule } from './components/app/AdminModule';
 import { ConfigModule } from './components/app/ConfigModule';
+import { ForcePasswordChangeModal } from './components/auth/ForcePasswordChangeModal';
 import { getViewFromHash, VIEW_TO_HASH, isViewAllowedForRole } from './utils/router';
 
 import {
@@ -1169,6 +1170,7 @@ export default function App() {
               auditLogs={auditLogs}
               employees={employees}
               activeRole={activeRole}
+              onEditEmployee={handleEditEmployee}
               subTab={
                 activeView === 'admin_roles'
                   ? 'ROLES'
@@ -1183,6 +1185,26 @@ export default function App() {
           {activeView === 'config_system' && <ConfigModule />}
         </main>
       </div>
+
+      {/* MANDATORY FORCE PASSWORD CHANGE MODAL FOR FIRST LOGIN OR RESET */}
+      {(() => {
+        const sessionEmp = employees.find((e) => e.dni === activeUserDni) || employees.find((e) => e.role === activeRole);
+        if (
+          sessionEmp &&
+          sessionEmp.has_system_access !== false &&
+          (sessionEmp.password_change_required || sessionEmp.primer_ingreso === 'PENDIENTE')
+        ) {
+          return (
+            <ForcePasswordChangeModal
+              employee={sessionEmp}
+              onPasswordChanged={(updatedEmp) => {
+                handleEditEmployee(updatedEmp);
+              }}
+            />
+          );
+        }
+        return null;
+      })()}
     </div>
   );
 }

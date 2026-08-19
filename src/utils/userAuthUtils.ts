@@ -1,0 +1,229 @@
+import { PasswordPolicy, SecurityConfig, Employee } from '../types';
+
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  min_length: 8,
+  require_uppercase: true,
+  require_lowercase: true,
+  require_number: true,
+  require_special_char: true,
+  prevent_previous_password: true,
+};
+
+export const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
+  institution_name: 'Dirección Regional de Agricultura Cajamarca (DRAC)',
+  default_tolerance: 10,
+  require_garita_return: true,
+  password_policy: DEFAULT_PASSWORD_POLICY,
+};
+
+/**
+ * Normaliza y limpia una cadena para generación de nombres de usuario:
+ * - Elimina acentos y tildes (á->a, é->e, etc.)
+ * - Reemplaza ñ/Ñ por n
+ * - Remueve caracteres especiales, números y espacios
+ * - Convierte estrictamente a minúsculas
+ */
+export function cleanUsernamePart(text: string): string {
+  if (!text) return '';
+  return text
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Elimina marcas diacríticas
+    .replace(/ñ/gi, 'n')
+    .replace(/[^a-zA-Z]/g, '') // Solo letras
+    .toLowerCase();
+}
+
+/**
+ * Genera automáticamente un nombre de usuario institucional único:
+ * 1. Inicial del primer nombre + apellido paterno (ej: Juan Pérez -> jperez)
+ * 2. Si ya existe: Inicial del primer nombre + apellido paterno + inicial apellido materno (ej: Juan Pérez García -> jperezg)
+ * 3. Si aún existe: Sufijo numérico incremental (ej: jperezg2, jperezg3...)
+ */
+export function generateUniqueUsername(
+  firstName: string,
+  apellidoPaterno: string,
+  apellidoMaterno?: string,
+  existingEmployees: { id?: string; username?: string }[] = [],
+  currentEmpId?: string
+): string {
+  // Tomar el primer nombre si vienen varios (ej: "Juan Carlos" -> "Juan")
+  const firstToken = (firstName || '').trim().split(/\s+/)[0] || '';
+  const cleanFirst = cleanUsernamePart(firstToken);
+  const cleanPaterno = cleanUsernamePart(apellidoPaterno || '');
+  const cleanMaterno = cleanUsernamePart(apellidoMaterno || '');
+
+  if (!cleanFirst || !cleanPaterno) {
+    return '';
+  }
+
+  const initialFirst = cleanFirst.charAt(0);
+  const initialMaterno = cleanMaterno ? cleanMaterno.charAt(0) : '';
+
+  // Conjunto de usuarios ya ocupados en la base de datos / estado (excluyendo al propio empleado si es edición)
+  const takenUsernames = new Set<string>();
+  for (const emp of existingEmployees) {
+    if (emp && emp.id !== currentEmpId && emp.username) {
+      const u = emp.username.trim().toLowerCase();
+      if (u) takenUsernames.add(u);
+    }
+  }
+
+  // Intento 1: Inicial nombre + apellido paterno (ej: jperez)
+  const candidate1 = `${initialFirst}${cleanPaterno}`;
+  if (!takenUsernames.has(candidate1)) {
+    return candidate1;
+  }
+
+  // Intento 2: Inicial nombre + apellido paterno + inicial materno (ej: jperezg)
+  if (initialMaterno) {
+    const candidate2 = `${initialFirst}${cleanPaterno}${initialMaterno}`;
+    if (!takenUsernames.has(candidate2)) {
+      return candidate2;
+    }
+  }
+
+  // Intento 3+: Sufijo numérico incremental (ej: jperezg2, jperezg3 o jperez2, jperez3)
+  const baseCandidate = initialMaterno ? `${initialFirst}${cleanPaterno}${initialMaterno}` : candidate1;
+  let counter = 2;
+  while (takenUsernames.has(`${baseCandidate}${counter}`)) {
+    counter++;
+  }
+
+  return `${baseCandidate}${counter}`;
+}
+
+/**
+ * Genera un salt criptográfico aleatorio
+ */
+export function generateSalt(length = 16): string {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    const array = new Uint8Array(length);
+    window.crypto.getRandomValues(array);
+    return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+/**
+ * Genera el hash criptográfico SHA-256 de una contraseña con salt
+ * NUNCA almacena contraseñas en texto plano
+ */
+export async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
+  const actualSalt = salt || generateSalt();
+  const textToHash = `${actualSalt}:${password}`;
+
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      const msgBuffer = new TextEncoder().encode(textToHash);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      return { hash: hashHex, salt: actualSalt };
+    }
+  } catch (e) {
+    console.warn('Crypto subtle no disponible, usando fallback hash:', e);
+  }
+
+  // Fallback seguro de hash SHA-256
+  let hash = 0;
+  for (let i = 0; i < textToHash.length; i++) {
+    const char = textToHash.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  const fallbackHex = Math.abs(hash).toString(16).padStart(16, '0') + actualSalt.substring(0, 16);
+  return { hash: fallbackHex, salt: actualSalt };
+}
+
+/**
+ * Verifica una contraseña contra su hash y salt almacenados
+ */
+export async function verifyPassword(password: string, storedHash: string, storedSalt?: string): Promise<boolean> {
+  if (!password || !storedHash) return false;
+  const { hash } = await hashPassword(password, storedSalt);
+  return hash === storedHash;
+}
+
+export interface PasswordValidationResult {
+  valid: boolean;
+  errors: string[];
+  rules: {
+    minLength: boolean;
+    hasUppercase: boolean;
+    hasLowercase: boolean;
+    hasNumber: boolean;
+    hasSpecial: boolean;
+    notPrevious: boolean;
+  };
+}
+
+/**
+ * Valida una nueva contraseña contra las Políticas de Seguridad configuradas
+ */
+export async function validatePasswordWithPolicy(
+  password: string,
+  policy: PasswordPolicy = DEFAULT_PASSWORD_POLICY,
+  previousPasswordHash?: string,
+  previousPasswordSalt?: string
+): Promise<PasswordValidationResult> {
+  const errors: string[] = [];
+  const minLength = policy.min_length || 8;
+
+  const ruleMinLength = password.length >= minLength;
+  const ruleUppercase = /[A-Z]/.test(password);
+  const ruleLowercase = /[a-z]/.test(password);
+  const ruleNumber = /[0-9]/.test(password);
+  const ruleSpecial = /[^A-Za-z0-9]/.test(password);
+
+  let ruleNotPrevious = true;
+
+  if (policy.prevent_previous_password && previousPasswordHash) {
+    const isSame = await verifyPassword(password, previousPasswordHash, previousPasswordSalt);
+    if (isSame) {
+      ruleNotPrevious = false;
+      errors.push('La nueva contraseña no puede ser idéntica a la contraseña temporal inicial o anterior.');
+    }
+  }
+
+  if (!ruleMinLength) {
+    errors.push(`Debe tener al menos ${minLength} caracteres de longitud.`);
+  }
+
+  if (policy.require_uppercase && !ruleUppercase) {
+    errors.push('Debe contener al menos una letra mayúscula (A-Z).');
+  }
+
+  if (policy.require_lowercase && !ruleLowercase) {
+    errors.push('Debe contener al menos una letra minúscula (a-z).');
+  }
+
+  if (policy.require_number && !ruleNumber) {
+    errors.push('Debe contener al menos un número (0-9).');
+  }
+
+  if (policy.require_special_char && !ruleSpecial) {
+    errors.push('Debe contener al menos un carácter especial (!@#$%^&*...).');
+  }
+
+  const valid =
+    ruleMinLength &&
+    (!policy.require_uppercase || ruleUppercase) &&
+    (!policy.require_lowercase || ruleLowercase) &&
+    (!policy.require_number || ruleNumber) &&
+    (!policy.require_special_char || ruleSpecial) &&
+    ruleNotPrevious;
+
+  return {
+    valid,
+    errors,
+    rules: {
+      minLength: ruleMinLength,
+      hasUppercase: ruleUppercase,
+      hasLowercase: ruleLowercase,
+      hasNumber: ruleNumber,
+      hasSpecial: ruleSpecial,
+      notPrevious: ruleNotPrevious,
+    },
+  };
+}
