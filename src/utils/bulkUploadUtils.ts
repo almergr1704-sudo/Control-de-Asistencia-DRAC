@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { VALID_JEFE_ORGANO_TYPES } from './encargaturaUtils';
 import { generateUniqueUsername } from './userAuthUtils';
+import { generateNextDracCode } from './dracCodeUtils';
 
 // ==========================================
 // TIPOS Y DEFINICIONES DE CARGA MASIVA
@@ -284,60 +285,52 @@ export function generateTemplateTrabajadores(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  // Hoja 1: Datos de ejemplo
+  // Hoja 1: Datos de ejemplo según directiva actualizada DRAC
+  // NO incluye Código DRAC ni Perfil (ambos automáticos)
   const sampleData = [
     {
-      'DNI': '40123987',
-      'Apellido Paterno': 'Silva',
-      'Apellido Materno': 'Cortez',
-      'Nombres': 'María Elena',
-      'Sexo': 'F',
+      'DNI': '12345678',
+      'Nombres': 'Juan',
+      'Apellido Paterno': 'Pérez',
+      'Apellido Materno': 'García',
+      'Dirección / Órgano': direcciones[0]?.name || 'DIRECCION REGIONAL DE AGRICULTURA',
+      'Área / Oficina': areas[0]?.name || 'DIRECCION REGIONAL DE AGRICULTURA JEFATURA',
+      'Cargo Institucional': cargos[0]?.name || 'Especialista Agrario',
+      'Sexo': 'M',
       'Fecha de Nacimiento': '1988-05-14',
       'Fecha de Ingreso': '2018-03-01',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Código Área/Oficina': areas[0]?.code || 'ARE-001',
-      'Cargo': cargos[0]?.name || 'Especialista en Recursos Humanos',
       'Tipo de vínculo': 'D.L. 276',
-      'Código trabajador': 'DRAC-2026-001',
-      'Perfil adicional': 'JEFE DE RECURSOS HUMANOS',
-      'Correo': 'msilva@dracajamarca.gob.pe',
-      'Usuario': 'msilva',
+      'Correo': 'jperez@dracajamarca.gob.pe',
       'Estado': 'ACTIVO',
     },
     {
-      'DNI': '42987654',
-      'Apellido Paterno': 'Mendoza',
-      'Apellido Materno': 'Rojas',
-      'Nombres': 'Carlos Alberto',
-      'Sexo': 'M',
+      'DNI': '23456789',
+      'Nombres': 'María',
+      'Apellido Paterno': 'López',
+      'Apellido Materno': 'Sánchez',
+      'Dirección / Órgano': direcciones[1]?.name || 'OFICINA DE ADMINISTRACION',
+      'Área / Oficina': '', // Opcional (Sin asignar)
+      'Cargo Institucional': '', // Opcional (Sin asignar)
+      'Sexo': 'F',
       'Fecha de Nacimiento': '1982-11-20',
       'Fecha de Ingreso': '2015-06-15',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Código Área/Oficina': areas[0]?.code || 'ARE-001',
-      'Cargo': 'Director de Administración',
       'Tipo de vínculo': 'D.L. 276',
-      'Código trabajador': 'DRAC-2026-002',
-      'Perfil adicional': 'JEFE INMEDIATO',
-      'Correo': 'cmendoza@dracajamarca.gob.pe',
-      'Usuario': 'cmendoza',
+      'Correo': 'mlopez@dracajamarca.gob.pe',
       'Estado': 'ACTIVO',
     },
     {
-      'DNI': '45678912',
-      'Apellido Paterno': 'Paredes',
-      'Apellido Materno': 'Sánchez',
-      'Nombres': 'Juan José',
+      'DNI': '34567890',
+      'Nombres': 'Carlos',
+      'Apellido Paterno': 'Torres',
+      'Apellido Materno': 'Díaz',
+      'Dirección / Órgano': direcciones[1]?.name || 'OFICINA DE ADMINISTRACION',
+      'Área / Oficina': 'UNIDAD FUNCIONAL DE ABASTECIMIENTOS',
+      'Cargo Institucional': 'Técnico Administrativo',
       'Sexo': 'M',
       'Fecha de Nacimiento': '1992-08-10',
       'Fecha de Ingreso': '2021-01-15',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Código Área/Oficina': areas[0]?.code || 'ARE-001',
-      'Cargo': 'Técnico Administrativo',
       'Tipo de vínculo': 'CAS D.L. 1057',
-      'Código trabajador': 'DRAC-2026-003',
-      'Perfil adicional': '', // Base TRABAJADOR automático
-      'Correo': 'jparedes@dracajamarca.gob.pe',
-      'Usuario': 'jparedes',
+      'Correo': 'ctorres@dracajamarca.gob.pe',
       'Estado': 'ACTIVO',
     },
   ];
@@ -345,59 +338,59 @@ export function generateTemplateTrabajadores(
   const wsData = XLSX.utils.json_to_sheet(sampleData);
   wsData['!cols'] = [
     { wch: 12 }, // DNI
+    { wch: 20 }, // Nombres
     { wch: 18 }, // Apellido Paterno
     { wch: 18 }, // Apellido Materno
-    { wch: 22 }, // Nombres
+    { wch: 38 }, // Dirección / Órgano
+    { wch: 38 }, // Área / Oficina
+    { wch: 30 }, // Cargo Institucional
     { wch: 8 },  // Sexo
     { wch: 18 }, // F. Nacimiento
     { wch: 18 }, // F. Ingreso
-    { wch: 25 }, // Cod Dir
-    { wch: 22 }, // Cod Area
-    { wch: 32 }, // Cargo
     { wch: 18 }, // Vinculo
-    { wch: 18 }, // Cod Trabajador
-    { wch: 26 }, // Perfil adicional
     { wch: 30 }, // Correo
-    { wch: 14 }, // Usuario
     { wch: 12 }, // Estado
   ];
   XLSX.utils.book_append_sheet(wb, wsData, 'Trabajadores');
 
-  // Hoja 2: Instrucciones
+  // Hoja 2: Instrucciones Oficiales
   const instructions = [
     ['INSTRUCCIONES OFICIALES PARA LA CARGA MASIVA DE TRABAJADORES DRAC'],
     [''],
-    ['1. PERFIL BASE AUTOMÁTICO: Todo trabajador registrado recibe de forma automática y obligatoria el perfil "TRABAJADOR".'],
-    ['   NO incluya una columna para "Trabajador", el sistema lo asignará por defecto a todos los registros.'],
+    ['1. CÓDIGO DRAC AUTOMÁTICO: El sistema genera automáticamente el código (DRAC-0001, DRAC-0002, etc.) reutilizando huecos correlativos.'],
+    ['   NO debe incluir una columna para Código DRAC en su archivo Excel.'],
     [''],
-    ['2. COLUMNA "Perfil adicional": Deje vacía si el usuario solo tiene perfil TRABAJADOR. Valores permitidos:'],
-    ['   - JEFE INMEDIATO (Validado: solo para Directores, Jefes de Órgano de Apoyo, Jefes de Agencia y Jefes de Oficina Agraria)'],
-    ['   - JEFE DE RECURSOS HUMANOS'],
-    ['   - SEGURIDAD'],
-    ['   - CONTROL DE ASISTENCIA'],
-    ['   - DIRECTOR GENERAL'],
-    ['   - ADMINISTRADOR GENERAL'],
+    ['2. PERFIL BASE AUTOMÁTICO (TRABAJADOR): Todo trabajador importado recibe automáticamente el perfil "TRABAJADOR".'],
+    ['   NO se permite asignar perfiles adicionales desde Excel. Cualquier perfil superior (Jefe, RRHH, Vigilancia, etc.) debe ser asignado posteriormente desde el sistema.'],
     [''],
-    ['3. DNI: 8 dígitos numéricos peruanos. Es el identificador único no modificable. Evita duplicados.'],
-    ['4. CÓDIGO DIRECCIÓN/ÓRGANO y CÓDIGO ÁREA/OFICINA: Deben coincidir exactamente con los códigos registrados en el sistema.'],
-    ['   Consulte la hoja "Codigos_Referencia" para ver los códigos actualmente disponibles.'],
-    ['5. FORMATO DE FECHAS: YYYY-MM-DD (Ejemplo: 1988-05-14 o formato de fecha de Excel).'],
-    ['6. MODOS DE IMPORTACIÓN: Podrá elegir en el sistema "Solo nuevos registros" o "Nuevos y actualización de datos".'],
+    ['3. CAMPOS OBLIGATORIOS:'],
+    ['   - DNI (8 dígitos numéricos peruanos, no duplicado)'],
+    ['   - Nombres'],
+    ['   - Apellido Paterno'],
+    ['   - Apellido Materno (OBLIGATORIO)'],
+    ['   - Dirección / Órgano (OBLIGATORIO - Debe coincidir con una Dirección u Órgano existente)'],
+    [''],
+    ['4. CAMPOS OPCIONALES:'],
+    ['   - Área / Oficina (Opcional - Puede dejarse en blanco si aún no está asignado)'],
+    ['   - Cargo Institucional (Opcional - Puede dejarse en blanco)'],
+    ['   - Sexo, Fechas de Nacimiento e Ingreso, Tipo de vínculo, Correo'],
+    [''],
+    ['5. GENERACIÓN AUTOMÁTICA DE USUARIO: El sistema genera el usuario según: Inicial Nombre + Apellido Paterno (+ Materno / sufijo en colisión).'],
+    ['6. FORMATO DE FECHAS: YYYY-MM-DD (Ejemplo: 1988-05-14 o formato estándar de Excel).'],
   ];
   const wsInst = XLSX.utils.aoa_to_sheet(instructions);
-  wsInst['!cols'] = [{ wch: 110 }];
+  wsInst['!cols'] = [{ wch: 115 }];
   XLSX.utils.book_append_sheet(wb, wsInst, 'Instrucciones');
 
-  // Hoja 3: Códigos de referencia actuales
+  // Hoja 3: Direcciones y Áreas de Referencia
   const refRows = [
-    ['TIPO', 'CÓDIGO', 'NOMBRE / DESCRIPCIÓN', 'CLASIFICACIÓN / INFORMACIÓN'],
-    ...direcciones.map(d => ['DIRECCIÓN / ÓRGANO', d.code, d.name, d.type]),
-    ...areas.map(a => ['ÁREA / OFICINA', a.code, a.name, `Pertenece a Dir: ${a.direccion_organo_id || ''}`]),
-    ...ALLOWED_ADDITIONAL_ROLES.map(r => ['PERFIL ADICIONAL', r.label, `Código: ${r.code}`, 'Perfil Sumativo']),
+    ['TIPO', 'NOMBRE OFICIAL EN EL SISTEMA', 'CÓDIGO', 'INFORMACIÓN ORGÁNICA'],
+    ...direcciones.map(d => ['DIRECCIÓN / ÓRGANO (Obligatorio)', d.name, d.code, d.type]),
+    ...areas.map(a => ['ÁREA / OFICINA (Opcional)', a.name, a.code, `Pertenece a: ${a.direccion_organo_name || a.direccion_organo_id || ''}`]),
     ...ALLOWED_REGIMENES.map(reg => ['RÉGIMEN LABORAL', reg, 'Modalidad Contractual DRAC', 'Vínculo']),
   ];
   const wsRef = XLSX.utils.aoa_to_sheet(refRows);
-  wsRef['!cols'] = [{ wch: 22 }, { wch: 28 }, { wch: 45 }, { wch: 35 }];
+  wsRef['!cols'] = [{ wch: 32 }, { wch: 45 }, { wch: 18 }, { wch: 35 }];
   XLSX.utils.book_append_sheet(wb, wsRef, 'Codigos_Referencia');
 
   XLSX.writeFile(wb, 'Plantilla_Trabajadores_DRAC.xlsx');
@@ -860,6 +853,7 @@ export function validateTrabajadoresExcel(
   const updateRecords: Employee[] = [];
 
   const seenDnisInFile = new Set<string>();
+  const allocatedDracCodesInBatch = new Set<string>();
   let newCount = 0;
   let updateCount = 0;
   let duplicateCount = 0;
@@ -868,20 +862,41 @@ export function validateTrabajadoresExcel(
     const rowNum = index + 2;
 
     const rawDni = String(row['DNI'] || row['dni'] || row['DOCUMENTO'] || '').trim();
+    const rawNombres = String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || '').trim();
     const rawPaterno = String(row['Apellido Paterno'] || row['Paterno'] || row['APELLIDO_PATERNO'] || '').trim();
     const rawMaterno = String(row['Apellido Materno'] || row['Materno'] || row['APELLIDO_MATERNO'] || '').trim();
-    const rawNombres = String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || '').trim();
+    const rawDirInput = String(
+      row['Dirección / Órgano'] ||
+      row['Direccion / Organo'] ||
+      row['Dirección'] ||
+      row['Direccion'] ||
+      row['Código Dirección/Órgano'] ||
+      row['Codigo Direccion'] ||
+      row['CODIGO_DIR'] ||
+      ''
+    ).trim();
+    const rawAreaInput = String(
+      row['Área / Oficina'] ||
+      row['Area / Oficina'] ||
+      row['Área'] ||
+      row['Area'] ||
+      row['Código Área/Oficina'] ||
+      row['Codigo Area'] ||
+      row['CODIGO_AREA'] ||
+      ''
+    ).trim();
+    const rawCargo = String(
+      row['Cargo Institucional'] ||
+      row['Cargo'] ||
+      row['CARGO'] ||
+      row['position'] ||
+      'Servidor Público'
+    ).trim();
     const rawSexo = String(row['Sexo'] || row['SEXO'] || 'M').trim();
     const rawBirthDate = parseExcelDate(row['Fecha de Nacimiento'] || row['F_Nacimiento'] || row['birth_date']);
     const rawHireDate = parseExcelDate(row['Fecha de Ingreso'] || row['F_Ingreso'] || row['hire_date']) || new Date().toISOString().substring(0, 10);
-    const rawDirCode = String(row['Código Dirección/Órgano'] || row['Codigo Direccion'] || row['CODIGO_DIR'] || '').trim();
-    const rawAreaCode = String(row['Código Área/Oficina'] || row['Codigo Area'] || row['CODIGO_AREA'] || '').trim();
-    const rawCargo = String(row['Cargo'] || row['CARGO'] || row['position'] || 'Trabajador').trim();
     const rawVinculo = String(row['Tipo de vínculo'] || row['Regimen'] || row['REGIMEN'] || 'D.L. 276').trim();
-    const rawEmpCode = String(row['Código trabajador'] || row['Codigo Trabajador'] || row['CODIGO_TRABAJADOR'] || '').trim();
-    const rawAdditionalRole = String(row['Perfil adicional'] || row['Perfil Adicional'] || row['ROL_ADICIONAL'] || '').trim();
     const rawEmail = String(row['Correo'] || row['Email'] || row['CORREO'] || '').trim();
-    const rawUser = String(row['Usuario'] || row['USUARIO'] || '').trim();
     const rawState = String(row['Estado'] || row['ESTADO'] || 'ACTIVO').trim();
 
     let rowHasError = false;
@@ -907,30 +922,43 @@ export function validateTrabajadoresExcel(
       rowHasError = true;
     }
 
-    // 2. Nombres y Apellidos
+    // 2. Nombres obligatorios
     if (!rawNombres) {
       errors.push({
         rowNumber: rowNum,
         field: 'Nombres',
         value: '',
-        error: 'Los nombres del trabajador son obligatorios.',
+        error: 'El campo Nombres es obligatorio.',
         severity: 'ERROR',
       });
       rowHasError = true;
     }
 
+    // 3. Apellido Paterno obligatorio
     if (!rawPaterno) {
       errors.push({
         rowNumber: rowNum,
         field: 'Apellido Paterno',
         value: '',
-        error: 'El apellido paterno es obligatorio.',
+        error: 'El campo Apellido Paterno es obligatorio.',
         severity: 'ERROR',
       });
       rowHasError = true;
     }
 
-    // 3. DNI duplicado en el mismo archivo
+    // 4. Apellido Materno — OBLIGATORIO SEGÚN REGLA DEL SISTEMA
+    if (!rawMaterno) {
+      errors.push({
+        rowNumber: rowNum,
+        field: 'Apellido Materno',
+        value: '',
+        error: 'El campo Apellido Materno es obligatorio.',
+        severity: 'ERROR',
+      });
+      rowHasError = true;
+    }
+
+    // 5. DNI duplicado en el mismo archivo
     if (seenDnisInFile.has(rawDni)) {
       errors.push({
         rowNumber: rowNum,
@@ -944,88 +972,61 @@ export function validateTrabajadoresExcel(
       seenDnisInFile.add(rawDni);
     }
 
-    // 4. Validar existencia de Dirección / Órgano en el sistema
-    let parentDir = existingDirs.find((d) => d.code.toUpperCase() === rawDirCode.toUpperCase());
-    if (!parentDir && rawDirCode) {
+    // 6. Dirección / Órgano — OBLIGATORIO
+    if (!rawDirInput) {
       errors.push({
         rowNumber: rowNum,
-        field: 'Código Dirección/Órgano',
-        value: rawDirCode,
-        error: `La Dirección u Órgano con código "${rawDirCode}" no existe en el sistema. Cárguela primero.`,
+        field: 'Dirección / Órgano',
+        value: '',
+        error: 'El campo Dirección / Órgano es obligatorio.',
         severity: 'ERROR',
       });
       rowHasError = true;
     }
 
-    // 5. Validar existencia de Área / Oficina en el sistema
-    let parentArea = existingAreas.find((a) => a.code.toUpperCase() === rawAreaCode.toUpperCase());
-    if (!parentArea && rawAreaCode) {
-      errors.push({
-        rowNumber: rowNum,
-        field: 'Código Área/Oficina',
-        value: rawAreaCode,
-        error: `El Área u Oficina con código "${rawAreaCode}" no existe en el sistema. Cárguela primero.`,
-        severity: 'ERROR',
-      });
-      rowHasError = true;
-    }
+    // Validar existencia de Dirección / Órgano en el sistema por Código o por Nombre
+    let parentDir: DireccionOrgano | undefined = undefined;
+    if (rawDirInput) {
+      parentDir = existingDirs.find(
+        (d) =>
+          d.code.toUpperCase() === rawDirInput.toUpperCase() ||
+          normalizeStr(d.name) === normalizeStr(rawDirInput)
+      );
 
-    // 6. Validación de Perfil adicional y REGLA DE JEFE INMEDIATO
-    // Todo trabajador tiene automáticamente TRABAJADOR
-    const assignedRoles: RoleType[] = ['TRABAJADOR'];
-    let isDesignatedJefe = false;
-
-    if (rawAdditionalRole) {
-      const normRole = normalizeStr(rawAdditionalRole);
-      let mappedRole: RoleType | null = null;
-
-      if (normRole === 'JEFE INMEDIATO' || normRole === 'JEFE' || normRole === 'SUPERVISOR') {
-        mappedRole = 'JEFE';
-      } else if (normRole === 'JEFE DE RECURSOS HUMANOS' || normRole === 'JEFE RRHH' || normRole === 'HR_ADMIN') {
-        mappedRole = 'HR_ADMIN';
-      } else if (normRole === 'SEGURIDAD' || normRole === 'VIGILANCIA' || normRole === 'SECURITY_GUARD') {
-        mappedRole = 'SECURITY_GUARD';
-      } else if (normRole === 'CONTROL DE ASISTENCIA' || normRole === 'CONTROL_ASISTENCIA') {
-        mappedRole = 'CONTROL_ASISTENCIA';
-      } else if (normRole === 'DIRECTOR GENERAL' || normRole === 'DIRECTOR_GENERAL') {
-        mappedRole = 'DIRECTOR_GENERAL';
-      } else if (normRole === 'ADMINISTRADOR GENERAL' || normRole === 'ADMIN_GENERAL') {
-        mappedRole = 'ADMIN_GENERAL';
-      } else {
+      if (!parentDir) {
         errors.push({
           rowNumber: rowNum,
-          field: 'Perfil adicional',
-          value: rawAdditionalRole,
-          error: `Perfil adicional "${rawAdditionalRole}" no reconocido. Valores permitidos: JEFE INMEDIATO, JEFE DE RECURSOS HUMANOS, SEGURIDAD, CONTROL DE ASISTENCIA, DIRECTOR GENERAL, ADMINISTRADOR GENERAL.`,
+          field: 'Dirección / Órgano',
+          value: rawDirInput,
+          error: `La Dirección u Órgano "${rawDirInput}" no existe en el sistema o está inactiva.`,
           severity: 'ERROR',
         });
         rowHasError = true;
       }
+    }
 
-      // REGLA CRÍTICA DE JEFE INMEDIATO: Verificar clasificación orgánica
-      if (mappedRole === 'JEFE') {
-        const organoType = parentDir?.type;
-        const isEligible = Boolean(organoType && VALID_JEFE_ORGANO_TYPES.includes(organoType));
+    // 7. Área / Oficina — OPCIONAL (No bloquea si está vacío)
+    let parentArea: Area | undefined = undefined;
+    if (rawAreaInput) {
+      parentArea = existingAreas.find(
+        (a) =>
+          a.code.toUpperCase() === rawAreaInput.toUpperCase() ||
+          normalizeStr(a.name) === normalizeStr(rawAreaInput)
+      );
 
-        if (!isEligible) {
-          errors.push({
-            rowNumber: rowNum,
-            field: 'Perfil adicional',
-            value: rawAdditionalRole,
-            error: `Error: El trabajador no cumple las condiciones para recibir el perfil Jefe Inmediato. La unidad "${parentDir?.name || 'No especificada'}" (Clasificación: ${organoType || 'Sin clasificación'}) no corresponde a Dirección, Órganos de Apoyo, Jefatura de Agencia u Oficina Agraria.`,
-            severity: 'ERROR',
-          });
-          rowHasError = true;
-        } else {
-          assignedRoles.push('JEFE');
-          isDesignatedJefe = true;
-        }
-      } else if (mappedRole) {
-        assignedRoles.push(mappedRole);
+      if (!parentArea) {
+        errors.push({
+          rowNumber: rowNum,
+          field: 'Área / Oficina',
+          value: rawAreaInput,
+          error: `El Área u Oficina especificada ("${rawAreaInput}") no existe en el sistema.`,
+          severity: 'ERROR',
+        });
+        rowHasError = true;
       }
     }
 
-    // 7. Régimen Laboral
+    // 8. Régimen Laboral
     let mappedRegimen: RegimenLaboral = 'D.L. 276';
     const normReg = normalizeStr(rawVinculo);
     if (normReg.includes('728')) mappedRegimen = 'D.L. 728';
@@ -1033,7 +1034,7 @@ export function validateTrabajadoresExcel(
     else if (normReg.includes('LOCACION') || normReg.includes('TERCERO')) mappedRegimen = 'LOCACION_SERVICIOS';
     else if (normReg.includes('276')) mappedRegimen = 'D.L. 276';
 
-    // 8. DNI existente en la base de datos
+    // 9. DNI existente en la base de datos
     const existing = existingEmployees.find((e) => e.dni === rawDni);
 
     if (existing) {
@@ -1054,9 +1055,9 @@ export function validateTrabajadoresExcel(
 
     // Resuelve Dependencia
     const dep = existingDeps.find((d) => d.id === parentDir?.dependencia_id) || existingDeps[0] || {
-      id: 'dep-sede-central',
-      code: 'SEDE-01',
-      name: 'Sede Central DRAC',
+      id: 'dep-01',
+      code: '01',
+      name: 'SEDE CENTRAL',
       type: 'SEDE_CENTRAL',
       active: true,
       created_at: new Date().toISOString(),
@@ -1064,28 +1065,23 @@ export function validateTrabajadoresExcel(
 
     const isActive = normalizeStr(rawState) !== 'INACTIVO';
 
-    // Determina el rol de sesión prioritario
-    let primaryRole: RoleType = 'TRABAJADOR';
-    if (assignedRoles.includes('ADMIN_GENERAL')) primaryRole = 'ADMIN_GENERAL';
-    else if (assignedRoles.includes('DIRECTOR_GENERAL')) primaryRole = 'DIRECTOR_GENERAL';
-    else if (assignedRoles.includes('HR_ADMIN') || assignedRoles.includes('JEFE_RRHH')) primaryRole = 'HR_ADMIN';
-    else if (assignedRoles.includes('JEFE') || assignedRoles.includes('SUPERVISOR')) primaryRole = 'SUPERVISOR';
-    else if (assignedRoles.includes('CONTROL_ASISTENCIA')) primaryRole = 'CONTROL_ASISTENCIA';
-    else if (assignedRoles.includes('SECURITY_GUARD') || assignedRoles.includes('VIGILANCIA')) primaryRole = 'SECURITY_GUARD';
+    // REGLA CRÍTICA: Todo trabajador importado mediante Excel recibe ÚNICAMENTE el perfil base TRABAJADOR
+    const primaryRole: RoleType = 'TRABAJADOR';
+    const assignedRoles: RoleType[] = ['TRABAJADOR'];
 
+    // Generación automática del usuario según: Inicial 1er nombre + Apellido Paterno (+ Materno / sufijo en colisión)
     const generatedUsername = generateUniqueUsername(
       rawNombres,
       rawPaterno,
       rawMaterno,
       [...existingEmployees, ...validRecords]
     );
-    const defaultUsername = rawUser ? rawUser.toLowerCase().replace(/\s+/g, '') : generatedUsername;
-    const defaultEmail = rawEmail || `${defaultUsername}@dracajamarca.gob.pe`;
+    const defaultEmail = rawEmail || `${generatedUsername}@dracajamarca.gob.pe`;
     const fullLastName = `${rawPaterno} ${rawMaterno}`.trim();
 
     if (existing && importMode === 'NEW_AND_UPDATE') {
       updateCount++;
-      // Protegemos campos no editables: codigo_trabajador original, dni, hire_date original si existía
+      // Protegemos código DRAC original, DNI original
       updateRecords.push({
         ...existing,
         first_name: rawNombres,
@@ -1097,24 +1093,28 @@ export function validateTrabajadoresExcel(
         dependencia_name: dep.name,
         direccion_organo_id: parentDir?.id || existing.direccion_organo_id,
         direccion_organo_name: parentDir?.name || existing.direccion_organo_name,
-        area_id: parentArea?.id || existing.area_id,
-        area_name: parentArea?.name || existing.area_name,
-        position: rawCargo || existing.position,
+        area_id: parentArea ? parentArea.id : existing.area_id,
+        area_name: parentArea ? parentArea.name : (existing.area_name || 'Sin Asignar'),
+        position: rawCargo || existing.position || 'Servidor Público',
         regimen_laboral: mappedRegimen,
-        role: primaryRole,
-        assigned_roles: assignedRoles,
-        is_jefe_director: isDesignatedJefe,
-        unidad_dirigida_id: isDesignatedJefe ? (parentDir?.id || parentArea?.id) : undefined,
-        unidad_dirigida_name: isDesignatedJefe ? (parentDir?.name || parentArea?.name) : undefined,
-        unidad_dirigida_type: isDesignatedJefe ? parentDir?.type : undefined,
+        role: existing.role || primaryRole,
+        assigned_roles: existing.assigned_roles && existing.assigned_roles.length > 0 ? existing.assigned_roles : assignedRoles,
         active: isActive,
         account_status: isActive ? 'ACTIVE' : 'INACTIVE',
       });
     } else {
       newCount++;
+
+      // GENERACIÓN AUTOMÁTICA DEL CÓDIGO DRAC CON REUTILIZACIÓN DE HUECOS / CORRELATIVO
+      const assignedDracCode = generateNextDracCode(
+        [...existingEmployees, ...validRecords],
+        allocatedDracCodesInBatch
+      );
+      allocatedDracCodesInBatch.add(assignedDracCode);
+
       validRecords.push({
         id: `emp-${Date.now()}-${index}`,
-        codigo_trabajador: rawEmpCode || `DRAC-2026-${String(existingEmployees.length + newCount).padStart(3, '0')}`,
+        codigo_trabajador: assignedDracCode,
         dni: rawDni,
         first_name: rawNombres,
         last_name: fullLastName,
@@ -1126,17 +1126,14 @@ export function validateTrabajadoresExcel(
         dependencia_name: dep.name,
         direccion_organo_id: parentDir?.id,
         direccion_organo_name: parentDir?.name,
-        area_id: parentArea?.id || 'area-general',
-        area_name: parentArea?.name || 'Área General',
-        position: rawCargo,
+        area_id: parentArea ? parentArea.id : undefined,
+        area_name: parentArea ? parentArea.name : 'Sin Asignar',
+        position: rawCargo || 'Servidor Público',
         regimen_laboral: mappedRegimen,
         condicion_laboral: 'NOMBRADO',
-        is_jefe_director: isDesignatedJefe,
-        unidad_dirigida_id: isDesignatedJefe ? (parentDir?.id || parentArea?.id) : undefined,
-        unidad_dirigida_name: isDesignatedJefe ? (parentDir?.name || parentArea?.name) : undefined,
-        unidad_dirigida_type: isDesignatedJefe ? parentDir?.type : undefined,
+        is_jefe_director: false,
         has_system_access: true,
-        username: defaultUsername,
+        username: generatedUsername,
         password_change_required: true,
         primer_ingreso: 'PENDIENTE',
         account_status: isActive ? 'ACTIVE' : 'INACTIVE',
@@ -1154,7 +1151,7 @@ export function validateTrabajadoresExcel(
             new_status: isActive ? 'ACTIVE' : 'INACTIVE',
             changed_at: new Date().toISOString(),
             changed_by: 'Carga Masiva Excel DRAC',
-            reason: `Importación inicial de personal DRAC mediante Excel (${fileName}). Perfiles: ${assignedRoles.join(' + ')}`,
+            reason: `Importación inicial de personal DRAC (${fileName}). Código asignado: ${assignedDracCode}. Usuario: @${generatedUsername}. Perfil: TRABAJADOR`,
           },
         ],
       });

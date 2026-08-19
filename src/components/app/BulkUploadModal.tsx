@@ -748,39 +748,35 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     <table className="w-full text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
+                          <th className="px-3 py-2">Cód. DRAC</th>
                           <th className="px-3 py-2">DNI</th>
                           <th className="px-3 py-2">Apellidos y Nombres</th>
-                          <th className="px-3 py-2">Unidad Orgánica</th>
+                          <th className="px-3 py-2">Dirección / Órgano</th>
+                          <th className="px-3 py-2">Área / Oficina</th>
                           <th className="px-3 py-2">Cargo</th>
-                          <th className="px-3 py-2">Perfiles Asignados</th>
+                          <th className="px-3 py-2">Usuario</th>
                           <th className="px-3 py-2 text-center">Acción</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800">
                         {[...validationSummary.parsedValidRecords, ...validationSummary.parsedUpdateRecords].map((item: Employee, i) => (
                           <tr key={i} className="hover:bg-slate-800/30">
+                            <td className="px-3 py-2 font-mono font-bold text-cyan-400">
+                              {item.codigo_trabajador || 'DRAC-AUTO'}
+                            </td>
                             <td className="px-3 py-2 font-mono font-bold text-emerald-300">{item.dni}</td>
                             <td className="px-3 py-2 text-white font-medium">
                               {item.last_name}, {item.first_name}
                             </td>
-                            <td className="px-3 py-2 text-slate-300 text-[11px]">
-                              <div>{item.direccion_organo_name || item.dependencia_name}</div>
-                              <div className="text-slate-500 text-[10px]">{item.area_name}</div>
+                            <td className="px-3 py-2 text-slate-200 text-[11px]">
+                              {item.direccion_organo_name || item.dependencia_name}
                             </td>
-                            <td className="px-3 py-2 text-slate-300">{item.position}</td>
-                            <td className="px-3 py-2">
-                              <div className="flex flex-wrap items-center gap-1">
-                                {(item.assigned_roles || ['TRABAJADOR']).map((r, idx) => (
-                                  <span key={idx} className="px-1.5 py-0.2 bg-slate-800 text-slate-200 border border-slate-700 text-[9px] font-bold rounded">
-                                    {r}
-                                  </span>
-                                ))}
-                                {item.is_jefe_director && (
-                                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold rounded">
-                                    JEFE TITULAR
-                                  </span>
-                                )}
-                              </div>
+                            <td className="px-3 py-2 text-slate-400 text-[11px]">
+                              {item.area_name || <span className="italic text-slate-600">Sin Asignar</span>}
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">{item.position || 'Servidor Público'}</td>
+                            <td className="px-3 py-2 font-mono text-indigo-300 text-[11px]">
+                              @{item.username || item.dni}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {validationSummary.parsedUpdateRecords.includes(item) ? (

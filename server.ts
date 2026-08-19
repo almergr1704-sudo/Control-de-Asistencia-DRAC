@@ -387,6 +387,85 @@ async function startServer() {
     }
   });
 
+  // ==============================================================
+  // API ROUTES: Generación Automática y Segura del Código DRAC
+  // ==============================================================
+
+  // POST /api/employees/generate-code - Calcula el siguiente código DRAC reutilizando huecos
+  app.post("/api/employees/generate-code", (req, res) => {
+    try {
+      const { existingCodes = [] } = req.body || {};
+      const usedNumbers = new Set<number>();
+
+      for (const code of existingCodes) {
+        if (!code) continue;
+        const str = String(code).trim().toUpperCase();
+        const match = str.match(/DRAC-(?:[0-9]{4}-)?([0-9]+)$/) || str.match(/DRAC-([0-9]+)$/) || str.match(/([0-9]+)$/);
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > 0) {
+            usedNumbers.add(num);
+          }
+        }
+      }
+
+      let nextNum = 1;
+      while (usedNumbers.has(nextNum)) {
+        nextNum++;
+      }
+
+      const generatedCode = `DRAC-${String(nextNum).padStart(4, "0")}`;
+      return res.json({
+        success: true,
+        code: generatedCode,
+        number: nextNum,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al generar código DRAC." });
+    }
+  });
+
+  // POST /api/employees/generate-batch-codes - Generación atómica para carga masiva
+  app.post("/api/employees/generate-batch-codes", (req, res) => {
+    try {
+      const { count = 1, existingCodes = [] } = req.body || {};
+      const usedNumbers = new Set<number>();
+
+      for (const code of existingCodes) {
+        if (!code) continue;
+        const str = String(code).trim().toUpperCase();
+        const match = str.match(/DRAC-(?:[0-9]{4}-)?([0-9]+)$/) || str.match(/DRAC-([0-9]+)$/) || str.match(/([0-9]+)$/);
+        if (match && match[1]) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > 0) {
+            usedNumbers.add(num);
+          }
+        }
+      }
+
+      const generatedCodes: string[] = [];
+      let currentNum = 1;
+
+      for (let i = 0; i < Number(count); i++) {
+        while (usedNumbers.has(currentNum)) {
+          currentNum++;
+        }
+        const code = `DRAC-${String(currentNum).padStart(4, "0")}`;
+        generatedCodes.push(code);
+        usedNumbers.add(currentNum);
+        currentNum++;
+      }
+
+      return res.json({
+        success: true,
+        codes: generatedCodes,
+        total: generatedCodes.length,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al generar lote de códigos DRAC." });
+    }
+  });
+
   // API ROUTE: ZKTeco Real TCP Socket Connection Test & Diagnostics
   app.post("/api/zkteco/test-connection", (req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");

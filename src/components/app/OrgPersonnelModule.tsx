@@ -59,6 +59,7 @@ import {
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { VALID_JEFE_ORGANO_TYPES, getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
 import { generateUniqueUsername, hashPassword } from '../../utils/userAuthUtils';
+import { generateNextDracCode } from '../../utils/dracCodeUtils';
 import { BulkUploadModal } from './BulkUploadModal';
 import {
   BulkUploadEntityType,
@@ -1062,8 +1063,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const handleSubmitEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanDni = empDni.trim();
-    if (!cleanDni || !empFirstName || !empLastNamePaterno || !empDepId || !empAreaId) {
-      alert('⚠️ Error de Validación:\nDebe completar el DNI, Nombres, Apellido Paterno y seleccionar Dependencia y Área válidas.');
+    if (!cleanDni || !empFirstName.trim() || !empLastNamePaterno.trim() || !empLastNameMaterno.trim() || !empDepId || !empDirId) {
+      alert('⚠️ Error de Validación:\nDebe completar obligatoriamente:\n- DNI (8 dígitos numéricos)\n- Nombres\n- Apellido Paterno\n- Apellido Materno\n- Dependencia Institucional\n- Dirección u Órgano');
       return;
     }
 
@@ -1132,7 +1133,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       (r) =>
         r.active &&
         ((r.unit_type === 'DIRECCION_ORGANO' && r.unit_id === empDirId) ||
-          (r.unit_type === 'AREA_OFICINA' && r.unit_id === empAreaId) ||
+          (empAreaId && r.unit_type === 'AREA_OFICINA' && r.unit_id === empAreaId) ||
           (r.unit_type === 'DEPENDENCIA' && r.unit_id === empDepId))
     );
 
@@ -1142,7 +1143,9 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     }
 
     const fullLastName = `${empLastNamePaterno.trim()} ${empLastNameMaterno.trim()}`.trim();
-    const generatedCode = empCode.trim() || `DRAC-2026-0${employees.length + 1}`;
+    const generatedCode = editingEmp
+      ? (editingEmp.codigo_trabajador || empCode.trim() || generateNextDracCode(employees))
+      : (empCode.trim() || generateNextDracCode(employees));
     const finalAccountStatus = !empActive ? 'INACTIVE' : (empHasAccess ? empAccountStatus : 'INACTIVE');
 
     // Ensure base profile TRABAJADOR is always present
@@ -1194,11 +1197,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         dependencia_name: selectedDep.name,
         direccion_organo_id: empDirId || undefined,
         direccion_organo_name: selectedDir?.name,
-        area_id: empAreaId,
-        area_name: selectedArea ? selectedArea.name : 'Oficina Principal',
+        area_id: empAreaId || undefined,
+        area_name: selectedArea ? selectedArea.name : undefined,
         subarea_id: empSubareaId || undefined,
         subarea_name: selectedSubarea?.name,
-        position: empCargoName.trim() || selectedCargo?.name || 'Especialista Agrario',
+        position: empCargoName.trim() || selectedCargo?.name || 'Servidor Público',
         cargo_id: empCargoId || undefined,
         regimen_laboral: empRegimen,
         condicion_laboral: empCondicion,
@@ -1260,11 +1263,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         dependencia_name: selectedDep.name,
         direccion_organo_id: empDirId || undefined,
         direccion_organo_name: selectedDir?.name,
-        area_id: empAreaId,
-        area_name: selectedArea ? selectedArea.name : 'Oficina Principal',
+        area_id: empAreaId || undefined,
+        area_name: selectedArea ? selectedArea.name : undefined,
         subarea_id: empSubareaId || undefined,
         subarea_name: selectedSubarea?.name,
-        position: empCargoName.trim() || selectedCargo?.name || 'Especialista Agrario',
+        position: empCargoName.trim() || selectedCargo?.name || 'Servidor Público',
         cargo_id: empCargoId || undefined,
         regimen_laboral: empRegimen,
         condicion_laboral: empCondicion,
@@ -1497,7 +1500,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                         return;
                       }
                       setEditingEmp(null);
-                      setEmpCode('');
+                      const nextDracCode = generateNextDracCode(employees);
+                      setEmpCode(nextDracCode);
                       setEmpDni('');
                       setEmpFirstName('');
                       setEmpLastNamePaterno('');
@@ -1505,11 +1509,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       setEmpEmail('');
                       setEmpPhone('');
                       setEmpDepId(dependencias[0]?.id || '');
-                      setEmpDirId('');
-                      setEmpAreaId(areas[0]?.id || '');
+                      setEmpDirId(direccionesOrganos.find((d) => d.dependencia_id === dependencias[0]?.id)?.id || '');
+                      setEmpAreaId('');
                       setEmpSubareaId('');
-                      setEmpCargoId(cargos[0]?.id || '');
-                      setEmpCargoName('Especialista Agrario');
+                      setEmpCargoId('');
+                      setEmpCargoName('');
                       setEmpRegimen('D.L. 276');
                       setEmpCondicion('NOMBRADO');
                       setEmpScheduleId(horarios[0]?.id || '');
@@ -3474,14 +3478,26 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Código DRAC de Trabajador</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">
+                        Código DRAC de Trabajador
+                      </label>
+                      <span className="text-[9px] font-mono font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-800/50 px-1.5 py-0.5 rounded">
+                        Generación Automática
+                      </span>
+                    </div>
                     <input
                       type="text"
-                      placeholder="DRAC-2026-001"
-                      value={empCode}
-                      onChange={(e) => setEmpCode(e.target.value)}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                      readOnly
+                      disabled
+                      placeholder="DRAC-0001"
+                      value={empCode || (editingEmp ? editingEmp.codigo_trabajador : generateNextDracCode(employees))}
+                      className="w-full bg-[#060709] border border-slate-800 rounded-lg p-2.5 text-xs text-cyan-300 font-mono cursor-not-allowed opacity-90 select-all"
+                      title="El Código DRAC se genera automáticamente con correlativo y reutilización de huecos disponibles."
                     />
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      Asignado automáticamente por el correlativo institucional DRAC.
+                    </span>
                   </div>
                 </div>
 
@@ -3515,13 +3531,16 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Apellido Materno</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">
+                      Apellido Materno <span className="text-rose-400">*</span>
+                    </label>
                     <input
                       type="text"
                       placeholder="Gómez"
                       value={empLastNameMaterno}
                       onChange={(e) => setEmpLastNameMaterno(e.target.value)}
                       className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      required
                     />
                   </div>
                 </div>
@@ -3570,6 +3589,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                         onChange={(e) => {
                           setEmpDepId(e.target.value);
                           setEmpDirId('');
+                          setEmpAreaId('');
                         }}
                         className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                         required
@@ -3583,11 +3603,17 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 mb-1">2. Dirección / Órgano</label>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        2. Dirección / Órgano <span className="text-rose-400">*</span>
+                      </label>
                       <select
                         value={empDirId}
-                        onChange={(e) => setEmpDirId(e.target.value)}
+                        onChange={(e) => {
+                          setEmpDirId(e.target.value);
+                          setEmpAreaId('');
+                        }}
                         className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                        required
                       >
                         <option value="">Seleccionar Dirección / Órgano...</option>
                         {filteredDirsForEmp.map((d) => (
@@ -3602,14 +3628,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        3. Área / Oficina <span className="text-rose-400">*</span>
+                        3. Área / Oficina (Opcional)
                       </label>
                       <select
                         value={empAreaId}
                         onChange={(e) => setEmpAreaId(e.target.value)}
                         className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                        required
                       >
+                        <option value="">[ Sin Asignar / Área General ]</option>
                         {filteredAreasForEmp.map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.name}
@@ -3640,12 +3666,12 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">
-                      Cargo Institucional (Puesto Laboral) <span className="text-rose-400">*</span>
+                      Cargo Institucional (Puesto Laboral) (Opcional)
                     </label>
                     <div className="space-y-1.5">
                       <input
                         type="text"
-                        placeholder="Ej: Especialista Agrario, Director, Jefe, etc."
+                        placeholder="Ej: Especialista Agrario, Asistente, Inspector..."
                         value={empCargoName}
                         onChange={(e) => {
                           setEmpCargoName(e.target.value);
@@ -3656,7 +3682,6 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                         }}
                         list="cargos-datalist"
                         className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                        required
                       />
                       <datalist id="cargos-datalist">
                         {cargos.map((c) => (
