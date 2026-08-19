@@ -39,6 +39,11 @@ import {
   FileSpreadsheet,
   Upload,
   Download,
+  MoreVertical,
+  ChevronRight,
+  FileText,
+  CheckCircle,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Dependencia,
@@ -55,6 +60,8 @@ import {
   DependenciaType,
   OrganoType,
   EmployeeAssignmentHistory,
+  Encargatura,
+  PapeletaSalida,
 } from '../../types';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { VALID_JEFE_ORGANO_TYPES, getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
@@ -133,14 +140,14 @@ export const SYSTEM_ROLES_CATALOG: SystemRoleDef[] = [
   },
   {
     role: 'JEFE',
-    label: 'Jefe / Responsable de Unidad',
-    badge: 'Jefe',
+    label: 'Jefe Inmediato',
+    badge: 'Jefe Inmediato',
     isDefault: false,
     isSpecial: true,
     color: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
     accentColor: 'text-amber-400',
-    description: 'Mando institucional con facultades de supervisión de equipo y otorgamiento de visto bueno (VoBo) a solicitudes de salida.',
-    scopeRule: 'El alcance de aprobación de papeletas y supervisión de asistencia se delimita automáticamente a los colaboradores pertenecientes a su Dependencia, Dirección u Órgano y Área asignadas.',
+    description: 'Perfil institucional para Directores, Jefes de Órganos de Apoyo, Jefes de Agencia y Jefes de Oficina con facultades de supervisión y visto bueno (VoBo) a solicitudes de salida.',
+    scopeRule: 'El alcance de aprobación de papeletas y supervisión de asistencia se delimita automáticamente a los colaboradores pertenecientes a su Dirección, Órgano de Apoyo, Agencia Agraria u Oficina asignada.',
     permissions: [
       'Dar Visto Bueno (VoBo) a papeletas de salida de su ámbito de responsabilidad',
       'Supervisar marcaciones, puntualidad y tardanzas de su equipo',
@@ -235,11 +242,13 @@ interface OrgPersonnelModuleProps {
   direccionesOrganos: DireccionOrgano[];
   areas: Area[];
   cargos: Cargo[];
-  responsables: ResponsableDesignation[];
+  responsables?: ResponsableDesignation[];
   employees: Employee[];
   assignmentHistory?: EmployeeAssignmentHistory[];
   horarios: Horario[];
   activeRole: RoleType;
+  encargaturas?: Encargatura[];
+  papeletas?: PapeletaSalida[];
 
   onAddDependencia: (dep: Omit<Dependencia, 'id' | 'created_at'>) => void;
   onEditDependencia: (dep: Dependencia) => void;
@@ -257,9 +266,9 @@ interface OrgPersonnelModuleProps {
   onEditCargo: (cargo: Cargo) => void;
   onDeleteCargo: (id: string) => void;
 
-  onAddResponsable: (resp: Omit<ResponsableDesignation, 'id'>) => void;
-  onEditResponsable: (resp: ResponsableDesignation) => void;
-  onDeleteResponsable: (id: string) => void;
+  onAddResponsable?: (resp: Omit<ResponsableDesignation, 'id'>) => void;
+  onEditResponsable?: (resp: ResponsableDesignation) => void;
+  onDeleteResponsable?: (id: string) => void;
 
   onAddEmployee: (employee: Omit<Employee, 'id'>) => void;
   onEditEmployee: (employee: Employee) => void;
@@ -276,11 +285,13 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   direccionesOrganos,
   areas,
   cargos,
-  responsables,
+  responsables = [],
   employees,
   assignmentHistory = [],
   horarios,
   activeRole,
+  encargaturas = [],
+  papeletas = [],
   onAddDependencia,
   onEditDependencia,
   onDeleteDependencia,
@@ -719,56 +730,198 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   }, [sortedCargosList, cargoCurrentPage, cargoPageSize]);
 
   // =========================================================================
-  // TAB 6: RESPONSABLES STATE
+  // TAB 6: JEFES Y APROBADORES (AUTOMATIZADO DESDE PERFIL JEFE INMEDIATO)
   // =========================================================================
-  const [respSearchTerm, setRespSearchTerm] = useState('');
-  const [respFilterUnitType, setRespFilterUnitType] = useState<string>('ALL');
-  const [respSortField, setRespSortField] = useState<string | null>('employee_name');
-  const [respSortOrder, setRespSortOrder] = useState<SortOrder>('asc');
-  const [respCurrentPage, setRespCurrentPage] = useState<number>(1);
-  const [respPageSize, setRespPageSize] = useState<number>(20);
+  const [jefeSearchTerm, setJefeSearchTerm] = useState('');
+  const [jefeFilterDir, setJefeFilterDir] = useState<string>('ALL');
+  const [jefeFilterSource, setJefeFilterSource] = useState<string>('ALL'); // 'ALL' | 'TITULAR' | 'ENCARGATURA'
+  const [jefeFilterStatus, setJefeFilterStatus] = useState<string>('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+  const [jefeSortField, setJefeSortField] = useState<string | null>('first_name');
+  const [jefeSortOrder, setJefeSortOrder] = useState<SortOrder>('asc');
+  const [jefeCurrentPage, setJefeCurrentPage] = useState<number>(1);
+  const [jefePageSize, setJefePageSize] = useState<number>(20);
 
-  const respActiveFilterCount = React.useMemo(() => {
+  // Detail Modal for Jefe / Aprobador
+  const [selectedJefeForDetail, setSelectedJefeForDetail] = useState<{
+    employee: Employee;
+    isDirectRole: boolean;
+    isAssignedRole: boolean;
+    isEncargado: boolean;
+    activeEncargatura?: Encargatura;
+    source: 'TITULAR' | 'ENCARGATURA';
+    dirName: string;
+    areaName: string;
+    supervisedEmployees: Employee[];
+    pendingPapeletasCount: number;
+  } | null>(null);
+
+  // Detail Modal for Employee (Directorio de Personal - Ficha Integral)
+  const [selectedEmpForDetail, setSelectedEmpForDetail] = useState<Employee | null>(null);
+  const [openEmpActionMenuId, setOpenEmpActionMenuId] = useState<string | null>(null);
+
+  const todayDateStr = new Date().toISOString().split('T')[0];
+
+  // Derived list of all Jefes and Aprobadores based strictly on system profile JEFE INMEDIATO or active encargatura
+  const allJefesAprobadoresList = React.useMemo(() => {
+    return employees
+      .map((emp) => {
+        const assignedRoles = getEmployeeAssignedRoles(emp);
+        const isDirectRole = emp.role === 'JEFE' || emp.role === 'SUPERVISOR';
+        const isAssignedRole = assignedRoles.includes('JEFE') || assignedRoles.includes('SUPERVISOR');
+
+        const activeEnc = (encargaturas || []).find(
+          (enc) =>
+            enc.encargado_employee_id === emp.id &&
+            enc.status === 'VIGENTE' &&
+            enc.start_date <= todayDateStr &&
+            enc.end_date >= todayDateStr
+        );
+
+        const isEncargado = Boolean(activeEnc);
+
+        // Strict criterion: must have profile JEFE INMEDIATO or active encargatura
+        if (!isDirectRole && !isAssignedRole && !isEncargado) {
+          return null;
+        }
+
+        const source: 'TITULAR' | 'ENCARGATURA' = isEncargado ? 'ENCARGATURA' : 'TITULAR';
+        const dirName =
+          activeEnc?.direccion_organo_name ||
+          emp.direccion_organo_name ||
+          emp.dependencia_name ||
+          'Sede Central DRAC';
+        const areaName =
+          activeEnc?.area_name ||
+          emp.area_name ||
+          (emp.is_jefe_director || isDirectRole ? 'Toda la Dirección / Unidad' : 'Área Asignada');
+
+        const supervisedList = employees.filter((sub) => {
+          if (sub.id === emp.id) return false;
+          if (sub.supervisor_id === emp.id) return true;
+          if (emp.direccion_organo_id && sub.direccion_organo_id === emp.direccion_organo_id) {
+            if (!emp.area_id || sub.area_id === emp.area_id) return true;
+          }
+          if (activeEnc && activeEnc.direccion_organo_id && sub.direccion_organo_id === activeEnc.direccion_organo_id) {
+            if (!activeEnc.area_id || sub.area_id === activeEnc.area_id) return true;
+          }
+          return false;
+        });
+
+        const pendingPapeletas = (papeletas || []).filter(
+          (p) =>
+            (p.status === 'PENDING_BOSS' || p.status === 'PENDING_HR') &&
+            (p.supervisor_id === emp.id ||
+              (emp.direccion_organo_id && p.direccion_organo_id === emp.direccion_organo_id) ||
+              (activeEnc && activeEnc.direccion_organo_id === p.direccion_organo_id))
+        ).length;
+
+        return {
+          employee: emp,
+          isDirectRole,
+          isAssignedRole,
+          isEncargado,
+          activeEncargatura: activeEnc,
+          source,
+          dirName,
+          areaName,
+          supervisedEmployees: supervisedList,
+          pendingPapeletasCount: pendingPapeletas,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [employees, encargaturas, papeletas, todayDateStr]);
+
+  const jefeActiveFilterCount = React.useMemo(() => {
     let count = 0;
-    if (respFilterUnitType !== 'ALL') count++;
+    if (jefeFilterDir !== 'ALL') count++;
+    if (jefeFilterSource !== 'ALL') count++;
+    if (jefeFilterStatus !== 'ALL') count++;
     return count;
-  }, [respFilterUnitType]);
+  }, [jefeFilterDir, jefeFilterSource, jefeFilterStatus]);
 
-  const handleResetRespFilters = () => {
-    setRespSearchTerm('');
-    setRespFilterUnitType('ALL');
-    setRespCurrentPage(1);
+  const handleResetJefeFilters = () => {
+    setJefeSearchTerm('');
+    setJefeFilterDir('ALL');
+    setJefeFilterSource('ALL');
+    setJefeFilterStatus('ALL');
+    setJefeCurrentPage(1);
   };
 
-  const filteredRespList = React.useMemo(() => {
-    return responsables.filter((r) => {
-      if (respSearchTerm.trim()) {
-        const term = respSearchTerm.toLowerCase().trim();
-        const match = `${r.employee_name} ${r.employee_dni} ${r.unit_name} ${r.title}`.toLowerCase();
-        if (!match.includes(term)) return false;
+  const handleJefeSort = (field: string) => {
+    if (jefeSortField === field) {
+      if (jefeSortOrder === 'asc') setJefeSortOrder('desc');
+      else if (jefeSortOrder === 'desc') {
+        setJefeSortField(null);
+        setJefeSortOrder(null);
       }
-      if (respFilterUnitType !== 'ALL' && r.unit_type !== respFilterUnitType) return false;
+    } else {
+      setJefeSortField(field);
+      setJefeSortOrder('asc');
+    }
+    setJefeCurrentPage(1);
+  };
+
+  const filteredJefesList = React.useMemo(() => {
+    return allJefesAprobadoresList.filter((item) => {
+      const { employee: emp, source, dirName, areaName } = item;
+      if (jefeSearchTerm.trim()) {
+        const term = jefeSearchTerm.toLowerCase().trim();
+        const searchStr = `${emp.codigo_trabajador || ''} ${emp.first_name} ${emp.last_name} ${emp.dni} ${emp.position} ${dirName} ${areaName}`.toLowerCase();
+        if (!searchStr.includes(term)) return false;
+      }
+      if (
+        jefeFilterDir !== 'ALL' &&
+        emp.direccion_organo_id !== jefeFilterDir &&
+        item.activeEncargatura?.direccion_organo_id !== jefeFilterDir
+      ) {
+        return false;
+      }
+      if (jefeFilterSource !== 'ALL' && source !== jefeFilterSource) return false;
+      if (jefeFilterStatus === 'ACTIVE' && !emp.active) return false;
+      if (jefeFilterStatus === 'INACTIVE' && emp.active) return false;
       return true;
     });
-  }, [responsables, respSearchTerm, respFilterUnitType]);
+  }, [allJefesAprobadoresList, jefeSearchTerm, jefeFilterDir, jefeFilterSource, jefeFilterStatus]);
 
-  const sortedRespList = React.useMemo(() => {
-    if (!respSortField || !respSortOrder) return filteredRespList;
-    return [...filteredRespList].sort((a, b) => {
-      let valA: any = a[respSortField as keyof ResponsableDesignation] ?? '';
-      let valB: any = b[respSortField as keyof ResponsableDesignation] ?? '';
+  const sortedJefesList = React.useMemo(() => {
+    if (!jefeSortField || !jefeSortOrder) return filteredJefesList;
+    return [...filteredJefesList].sort((a, b) => {
+      let valA: any = a.employee[jefeSortField as keyof Employee] ?? '';
+      let valB: any = b.employee[jefeSortField as keyof Employee] ?? '';
+      if (jefeSortField === 'dirName') {
+        valA = a.dirName;
+        valB = b.dirName;
+      }
+      if (jefeSortField === 'areaName') {
+        valA = a.areaName;
+        valB = b.areaName;
+      }
       if (typeof valA === 'string') valA = valA.toLowerCase();
       if (typeof valB === 'string') valB = valB.toLowerCase();
-      if (valA < valB) return respSortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return respSortOrder === 'asc' ? 1 : -1;
+      if (valA < valB) return jefeSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return jefeSortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredRespList, respSortField, respSortOrder]);
+  }, [filteredJefesList, jefeSortField, jefeSortOrder]);
 
-  const paginatedRespList = React.useMemo(() => {
-    const start = (respCurrentPage - 1) * respPageSize;
-    return sortedRespList.slice(start, start + respPageSize);
-  }, [sortedRespList, respCurrentPage, respPageSize]);
+  const paginatedJefesList = React.useMemo(() => {
+    const start = (jefeCurrentPage - 1) * jefePageSize;
+    return sortedJefesList.slice(start, start + jefePageSize);
+  }, [sortedJefesList, jefeCurrentPage, jefePageSize]);
+
+  // Backward compatibility for legacy props
+  const respSearchTerm = jefeSearchTerm;
+  const respFilterUnitType = 'ALL';
+  const respActiveFilterCount = 0;
+  const handleResetRespFilters = handleResetJefeFilters;
+  const paginatedRespList: any[] = [];
+  const filteredRespList: any[] = [];
+  const respCurrentPage = 1;
+  const respPageSize = 20;
+  const setRespSearchTerm = setJefeSearchTerm;
+  const setRespFilterUnitType = () => {};
+  const setRespCurrentPage = setJefeCurrentPage;
+  const setRespPageSize = setJefePageSize;
 
   // DATA POLICY CONFIRM MODAL STATE
   const [confirmModalConfig, setConfirmModalConfig] = useState<DataPolicyConfirmConfig>({

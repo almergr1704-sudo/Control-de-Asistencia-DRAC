@@ -1052,6 +1052,8 @@ export default function App() {
               assignmentHistory={assignmentHistory}
               horarios={horarios}
               activeRole={activeRole}
+              encargaturas={encargaturas}
+              papeletas={papeletas}
               onAddDependencia={handleAddDependencia}
               onEditDependencia={handleEditDependencia}
               onDeleteDependencia={handleDeleteDependencia}
