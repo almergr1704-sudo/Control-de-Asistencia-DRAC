@@ -135,7 +135,12 @@ export default function App() {
     const map = new Map<string, DireccionOrgano>();
     INITIAL_DIRECCIONES_ORGANOS.forEach((dir) => map.set(dir.id, dir));
     (stored || []).forEach((dir) => {
-      map.set(dir.id, { ...(map.get(dir.id) || {}), ...dir });
+      const canonical = INITIAL_DIRECCIONES_ORGANOS.find((d) => d.id === dir.id || d.code === dir.code);
+      if (canonical) {
+        map.set(canonical.id, { ...dir, ...canonical });
+      } else {
+        map.set(dir.id, dir);
+      }
     });
     return Array.from(map.values());
   });
@@ -145,7 +150,12 @@ export default function App() {
     const map = new Map<string, Area>();
     INITIAL_AREAS.forEach((area) => map.set(area.id, area));
     (stored || []).forEach((area) => {
-      map.set(area.id, { ...(map.get(area.id) || {}), ...area });
+      const canonical = INITIAL_AREAS.find((a) => a.id === area.id || a.code === area.code);
+      if (canonical) {
+        map.set(canonical.id, { ...area, ...canonical });
+      } else {
+        map.set(area.id, area);
+      }
     });
     return Array.from(map.values());
   });
