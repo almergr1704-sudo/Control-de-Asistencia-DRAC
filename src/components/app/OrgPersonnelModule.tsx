@@ -820,9 +820,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // FORM STATES: Area / Oficina
   const [areaCode, setAreaCode] = useState('');
   const [areaName, setAreaName] = useState('');
+  const [areaTipo, setAreaTipo] = useState<'AREA' | 'OFICINA'>('AREA');
   const [areaDesc, setAreaDesc] = useState('');
   const [areaDepId, setAreaDepId] = useState('');
   const [areaDirId, setAreaDirId] = useState('');
+  const [areaActive, setAreaActive] = useState(true);
   const [parentAreaId, setParentAreaId] = useState('');
 
   // FORM STATES: Cargo
@@ -954,36 +956,57 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // Area submit
   const handleSubmitArea = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!areaCode || !areaName) return;
+    const cleanName = areaName.trim();
+    if (!cleanName) {
+      alert('⚠️ Error de Validación:\nEl Nombre del Área / Oficina es obligatorio.');
+      return;
+    }
 
-    const selectedDep = dependencias.find((d) => d.id === areaDepId);
+    if (!areaDirId) {
+      alert('⚠️ Error de Validación:\nDebe seleccionar la Dirección, Órgano de Apoyo u Oficina Agraria a la que pertenece esta Área/Oficina.');
+      return;
+    }
+
     const selectedDir = direccionesOrganos.find((d) => d.id === areaDirId);
+    if (!selectedDir) {
+      alert('⚠️ Error de Validación:\nDebe seleccionar la Dirección, Órgano de Apoyo u Oficina Agraria a la que pertenece esta Área/Oficina.');
+      return;
+    }
+
+    const cleanCode = areaCode.trim() || `ARE-${String(areas.length + 1).padStart(3, '0')}`;
+    const selectedDep = dependencias.find((d) => d.id === (selectedDir.dependencia_id || areaDepId)) || dependencias[0];
     const parentArea = areas.find((a) => a.id === parentAreaId);
 
     if (editingArea) {
       onEditArea({
         ...editingArea,
-        code: areaCode.trim(),
-        name: areaName.trim(),
-        description: areaDesc.trim(),
-        dependencia_id: areaDepId || undefined,
-        dependencia_name: selectedDep?.name,
-        direccion_organo_id: areaDirId || undefined,
-        direccion_organo_name: selectedDir?.name,
+        code: cleanCode,
+        name: cleanName,
+        tipo: areaTipo,
+        description: areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`,
+        dependencia_id: selectedDir.dependencia_id || selectedDep?.id,
+        dependencia_name: selectedDir.dependencia_name || selectedDep?.name,
+        direccion_organo_id: selectedDir.id,
+        direccion_organo_name: selectedDir.name,
+        unidad_superior_id: selectedDir.id,
         parent_area_id: parentAreaId || null,
         parent_area_name: parentArea?.name,
+        active: areaActive,
       });
     } else {
       onAddArea({
-        code: areaCode.trim(),
-        name: areaName.trim(),
-        description: areaDesc.trim(),
-        dependencia_id: areaDepId || undefined,
-        dependencia_name: selectedDep?.name,
-        direccion_organo_id: areaDirId || undefined,
-        direccion_organo_name: selectedDir?.name,
+        code: cleanCode,
+        name: cleanName,
+        tipo: areaTipo,
+        description: areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`,
+        dependencia_id: selectedDir.dependencia_id || selectedDep?.id,
+        dependencia_name: selectedDir.dependencia_name || selectedDep?.name,
+        direccion_organo_id: selectedDir.id,
+        direccion_organo_name: selectedDir.name,
+        unidad_superior_id: selectedDir.id,
         parent_area_id: parentAreaId || null,
         parent_area_name: parentArea?.name,
+        active: areaActive,
       });
     }
     setShowAreaModal(false);
@@ -2384,12 +2407,22 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 {activeRole === 'HR_ADMIN' && (
                   <button
                     onClick={() => {
+                      const activeSuperiors = direccionesOrganos.filter((d) => d.active);
+                      if (activeSuperiors.length === 0) {
+                        alert(
+                          '⚠️ Estructura Requerida:\n\nPrimero deben existir las Direcciones, Órganos de Apoyo u Oficinas Agrarias en el sistema. Luego se podrán crear las Áreas y Oficinas Institucionales asociándolas obligatoriamente a una de estas unidades.'
+                        );
+                        setActiveTab('DIRECCIONES');
+                        return;
+                      }
                       setEditingArea(null);
-                      setAreaCode('');
+                      setAreaCode(`ARE-${String(areas.length + 1).padStart(3, '0')}`);
                       setAreaName('');
+                      setAreaTipo('AREA');
                       setAreaDesc('');
-                      setAreaDepId(dependencias[0]?.id || '');
-                      setAreaDirId('');
+                      setAreaDirId(activeSuperiors[0]?.id || '');
+                      setAreaDepId(activeSuperiors[0]?.dependencia_id || dependencias[0]?.id || '');
+                      setAreaActive(true);
                       setParentAreaId('');
                       setShowAreaModal(true);
                     }}
@@ -2431,29 +2464,65 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
             {paginatedAreasList.filter((a) => !a.parent_area_id).map((area) => {
               const subareas = areas.filter((a) => a.parent_area_id === area.id);
               const staffCount = employees.filter((e) => e.area_id === area.id).length;
+              const superiorUnit = direccionesOrganos.find((d) => d.id === (area.direccion_organo_id || area.unidad_superior_id));
 
               return (
                 <div key={area.id} className="bg-slate-900/30 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-indigo-400">{area.code}</span>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs font-bold text-indigo-400">{area.code}</span>
+                        <span
+                          className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded ${
+                            area.tipo === 'OFICINA' || area.name.toUpperCase().startsWith('OFICINA')
+                              ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                              : 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/20'
+                          }`}
+                        >
+                          {area.tipo || (area.name.toUpperCase().startsWith('OFICINA') ? 'OFICINA' : 'ÁREA')}
+                        </span>
+                        {!area.active && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                            INACTIVO
+                          </span>
+                        )}
+                      </div>
                       <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">
                         {staffCount} Personal
                       </span>
                     </div>
 
-                    <h4 className="font-bold text-sm text-white mb-1">{area.name}</h4>
-                    <p className="text-xs text-slate-400 mb-3">{area.description || 'Oficina Operativa DRAC'}</p>
+                    <h4 className="font-bold text-sm text-white mb-2">{area.name}</h4>
 
-                    <div className="space-y-1.5">
-                      <div className="text-[10px] uppercase font-bold text-slate-500">Subáreas ({subareas.length})</div>
-                      {subareas.map((sub) => (
-                        <div key={sub.id} className="p-2 bg-[#090A0D] rounded border border-slate-800 text-xs flex justify-between">
-                          <span className="text-slate-300">{sub.name}</span>
-                          <span className="font-mono text-[10px] text-slate-500">{sub.code}</span>
-                        </div>
-                      ))}
+                    {/* VINCULACIÓN JERÁRQUICA OBLIGATORIA */}
+                    <div className="p-2.5 bg-[#090A0D] border border-slate-800/80 rounded-lg mb-3">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                        <Building2 className="w-3 h-3 text-indigo-400 shrink-0" />
+                        <span>Pertenece a:</span>
+                      </div>
+                      <div className="text-xs font-semibold text-white truncate" title={superiorUnit?.name || area.direccion_organo_name || 'Sin especificar'}>
+                        {superiorUnit?.name || area.direccion_organo_name || 'Unidad Superior DRAC'}
+                      </div>
+                      <div className="text-[10px] text-indigo-400/80 font-mono mt-0.5">
+                        {superiorUnit ? getOrganoTypeLabel(superiorUnit.type) : 'Dirección / Órgano'}
+                      </div>
                     </div>
+
+                    {area.description && (
+                      <p className="text-xs text-slate-400 mb-3 line-clamp-2">{area.description}</p>
+                    )}
+
+                    {subareas.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] uppercase font-bold text-slate-500">Subáreas ({subareas.length})</div>
+                        {subareas.map((sub) => (
+                          <div key={sub.id} className="p-2 bg-[#090A0D] rounded border border-slate-800 text-xs flex justify-between">
+                            <span className="text-slate-300">{sub.name}</span>
+                            <span className="font-mono text-[10px] text-slate-500">{sub.code}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {activeRole === 'HR_ADMIN' && (
@@ -2463,9 +2532,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                           setEditingArea(area);
                           setAreaCode(area.code);
                           setAreaName(area.name);
+                          setAreaTipo(area.tipo || (area.name.toUpperCase().startsWith('OFICINA') ? 'OFICINA' : 'AREA'));
                           setAreaDesc(area.description || '');
                           setAreaDepId(area.dependencia_id || '');
-                          setAreaDirId(area.direccion_organo_id || '');
+                          setAreaDirId(area.direccion_organo_id || area.unidad_superior_id || '');
+                          setAreaActive(area.active ?? true);
                           setParentAreaId(area.parent_area_id || '');
                           setShowAreaModal(true);
                         }}
@@ -3159,86 +3230,181 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT AREA */}
       {showAreaModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
             <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <h3 className="font-bold text-base text-white">
-                {editingArea ? 'Editar Área / Oficina' : 'Nueva Área / Oficina DRAC'}
-              </h3>
-              <button onClick={() => setShowAreaModal(false)} className="text-slate-400 hover:text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    {editingArea ? 'Editar Área / Oficina Institucional' : 'Nueva Área / Oficina Institucional'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Estructura organizativa dependiente de la Dirección Regional de Agricultura Cajamarca
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowAreaModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmitArea} className="p-5 space-y-4">
+              {/* ALERTA DE DEPENDENCIA JERÁRQUICA OBLIGATORIA */}
+              <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 flex items-start gap-2.5">
+                <Layers className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-white block mb-0.5">Dependencia Jerárquica Obligatoria</span>
+                  <span>
+                    Toda Área u Oficina debe estar vinculada obligatoriamente a una <strong>Dirección</strong>, <strong>Órgano de Apoyo</strong> u <strong>Oficina Agraria</strong> superior.
+                  </span>
+                </div>
+              </div>
+
+              {/* 1. PERTENECE A (SELECTOR OBLIGATORIO) */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Dependencia</label>
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Pertenece a (Unidad Superior) <span className="text-rose-400">*</span>
+                </label>
                 <select
-                  value={areaDepId}
-                  onChange={(e) => setAreaDepId(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                >
-                  <option value="">Seleccionar Dependencia...</option>
-                  {dependencias.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Código Área</label>
-                <input
-                  type="text"
-                  placeholder="Ej: OFI-PER, OFI-INF"
-                  value={areaCode}
-                  onChange={(e) => setAreaCode(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
+                  value={areaDirId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAreaDirId(val);
+                    const selected = direccionesOrganos.find((d) => d.id === val);
+                    if (selected && selected.dependencia_id) {
+                      setAreaDepId(selected.dependencia_id);
+                    }
+                  }}
+                  className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                   required
-                />
+                >
+                  <option value="">-- Seleccionar unidad superior --</option>
+                  {direccionesOrganos
+                    .filter((d) => d.active || d.id === areaDirId)
+                    .map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} — [{getOrganoTypeLabel(d.type)}]
+                      </option>
+                    ))}
+                </select>
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Indica la Dirección, Órgano de Apoyo u Oficina Agraria de la cual depende directamente.
+                </span>
               </div>
 
+              {/* 2. NOMBRE DEL ÁREA / OFICINA */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Nombre de Área / Oficina</label>
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Nombre del Área / Oficina <span className="text-rose-400">*</span>
+                </label>
                 <input
                   type="text"
-                  placeholder="Ej: Oficina de Personal / Gestión de RRHH"
+                  placeholder="Ej: Área de Recursos Humanos, Oficina de Informática"
                   value={areaName}
                   onChange={(e) => setAreaName(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
+                  className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">Área Padre (Opcional - Si es Subárea)</label>
-                <select
-                  value={parentAreaId}
-                  onChange={(e) => setParentAreaId(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
-                >
-                  <option value="">Ninguna (Es Área Principal)</option>
-                  {areas.filter((a) => !a.parent_area_id).map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
+              {/* 3. TIPO Y ESTADO (GRID 2 COLS) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-200 mb-1">
+                    Tipo de Unidad <span className="text-rose-400">*</span>
+                  </label>
+                  <select
+                    value={areaTipo}
+                    onChange={(e) => setAreaTipo(e.target.value as 'AREA' | 'OFICINA')}
+                    className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="AREA">Área</option>
+                    <option value="OFICINA">Oficina</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-200 mb-1">
+                    Estado Operativo <span className="text-rose-400">*</span>
+                  </label>
+                  <select
+                    value={areaActive ? 'ACTIVO' : 'INACTIVO'}
+                    onChange={(e) => setAreaActive(e.target.value === 'ACTIVO')}
+                    className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="ACTIVO">ACTIVO (En funciones)</option>
+                    <option value="INACTIVO">INACTIVO (Desactivada)</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="pt-3 flex justify-end gap-2">
+              {/* 4. CÓDIGO Y ÁREA PADRE (GRID 2 COLS) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-200 mb-1">
+                    Código Identificador <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: ARE-001, OFI-RRHH"
+                    value={areaCode}
+                    onChange={(e) => setAreaCode(e.target.value)}
+                    className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none font-mono"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-200 mb-1">
+                    Área Padre (Opcional)
+                  </label>
+                  <select
+                    value={parentAreaId}
+                    onChange={(e) => setParentAreaId(e.target.value)}
+                    className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">Ninguna (Es Área Principal)</option>
+                    {areas
+                      .filter((a) => !a.parent_area_id && (!editingArea || a.id !== editingArea.id))
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} ({a.code})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 5. DESCRIPCIÓN */}
+              <div>
+                <label className="block text-xs font-bold text-slate-200 mb-1">
+                  Descripción o Funciones (Opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Breve descripción de las funciones técnicas o administrativas..."
+                  value={areaDesc}
+                  onChange={(e) => setAreaDesc(e.target.value)}
+                  className="w-full bg-[#090A0D] border border-slate-700 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowAreaModal(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-bold rounded-lg"
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-all shadow-md flex items-center gap-1.5"
                 >
-                  Guardar Área
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{editingArea ? 'Actualizar Área / Oficina' : 'Guardar Área / Oficina'}</span>
                 </button>
               </div>
             </form>

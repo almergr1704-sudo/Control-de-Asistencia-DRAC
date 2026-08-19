@@ -61,11 +61,13 @@ export interface Area {
   id: string;
   code: string;
   name: string;
+  tipo?: 'AREA' | 'OFICINA' | 'UNIDAD_FUNCIONAL' | 'SUB_AREA';
   description?: string;
   dependencia_id?: string;
   dependencia_name?: string;
-  direccion_organo_id?: string;
-  direccion_organo_name?: string;
+  direccion_organo_id: string; // ID de la Dirección / Órgano de Apoyo / Oficina Agraria (Obligatorio)
+  direccion_organo_name: string; // Nombre de la Dirección / Órgano de Apoyo / Oficina Agraria
+  unidad_superior_id?: string; // Alias para vinculación relacional
   parent_area_id?: string | null;
   parent_area_name?: string;
   responsible_employee_id?: string | null;

@@ -711,7 +711,8 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                         <tr>
                           <th className="px-3 py-2">Código Área</th>
                           <th className="px-3 py-2">Nombre Área / Oficina</th>
-                          <th className="px-3 py-2">Dirección / Órgano Perteneciente</th>
+                          <th className="px-3 py-2">Tipo</th>
+                          <th className="px-3 py-2">Unidad Superior (Dirección / Órgano / Oficina Agraria)</th>
                           <th className="px-3 py-2 text-center">Estado</th>
                           <th className="px-3 py-2 text-center">Acción</th>
                         </tr>
@@ -721,7 +722,14 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                           <tr key={i} className="hover:bg-slate-800/30">
                             <td className="px-3 py-2 font-mono font-bold text-blue-300">{item.code}</td>
                             <td className="px-3 py-2 text-white font-medium">{item.name}</td>
-                            <td className="px-3 py-2 text-slate-300">{item.direccion_organo_name || '—'}</td>
+                            <td className="px-3 py-2">
+                              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-slate-800 text-slate-300">
+                                {item.tipo || (item.name.toUpperCase().startsWith('OFICINA') ? 'OFICINA' : 'ÁREA')}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-300">
+                              <span className="font-semibold text-indigo-300">{item.direccion_organo_name || '—'}</span>
+                            </td>
                             <td className="px-3 py-2 text-center">
                               <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] font-bold rounded">
                                 {item.active ? 'ACTIVO' : 'INACTIVO'}

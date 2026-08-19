@@ -212,68 +212,85 @@ export function generateTemplateAreasOficinas(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  // Hoja 1: Datos
+  // Filtrar o agrupar ejemplos por tipo de unidad superior si existen
+  const dirEjemplo = direcciones.find((d) => d.type === 'DIRECCION') || direcciones[0];
+  const organoApoyoEjemplo = direcciones.find((d) => d.type === 'ORGANO_APOYO') || direcciones[1] || direcciones[0];
+  const oficinaAgrariaEjemplo = direcciones.find((d) => d.type === 'OFICINA_AGRARIA' || d.type === 'JEFATURA_AGENCIA') || direcciones[2] || direcciones[0];
+
+  // Hoja 1: Datos de ejemplo según directiva jerárquica DRAC
   const sampleData = [
     {
-      'Código Área': 'ARE-001',
-      'Nombre Área / Oficina': 'Recursos Humanos',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Nombre Dirección/Órgano': direcciones[0]?.name || 'Dirección de Administración',
-      'Tipo': 'ÁREA',
+      'Código Área / Oficina': 'ARE-001',
+      'Nombre del Área / Oficina': 'Área de Recursos Humanos',
+      'Tipo (Área / Oficina)': 'Área',
+      'Código Dirección / Órgano / Oficina Agraria': dirEjemplo?.code || 'ADMIN',
+      'Nombre Dirección / Órgano / Oficina Agraria': dirEjemplo?.name || 'OFICINA DE ADMINISTRACION',
       'Estado': 'ACTIVO',
     },
     {
-      'Código Área': 'ARE-002',
-      'Nombre Área / Oficina': 'Abastecimiento y Servicios Generales',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Nombre Dirección/Órgano': direcciones[0]?.name || 'Dirección de Administración',
-      'Tipo': 'ÁREA',
+      'Código Área / Oficina': 'ARE-002',
+      'Nombre del Área / Oficina': 'Área de Abastecimiento y Servicios',
+      'Tipo (Área / Oficina)': 'Área',
+      'Código Dirección / Órgano / Oficina Agraria': dirEjemplo?.code || 'ADMIN',
+      'Nombre Dirección / Órgano / Oficina Agraria': dirEjemplo?.name || 'OFICINA DE ADMINISTRACION',
       'Estado': 'ACTIVO',
     },
     {
-      'Código Área': 'ARE-003',
-      'Nombre Área / Oficina': 'Contabilidad y Tesorería',
-      'Código Dirección/Órgano': direcciones[0]?.code || 'DIR-001',
-      'Nombre Dirección/Órgano': direcciones[0]?.name || 'Dirección de Administración',
-      'Tipo': 'ÁREA',
+      'Código Área / Oficina': 'OFI-001',
+      'Nombre del Área / Oficina': 'Oficina de Auditoría Interna',
+      'Tipo (Área / Oficina)': 'Oficina',
+      'Código Dirección / Órgano / Oficina Agraria': organoApoyoEjemplo?.code || 'OAJ',
+      'Nombre Dirección / Órgano / Oficina Agraria': organoApoyoEjemplo?.name || 'OFICINA DE ASESORIA JURIDICA',
+      'Estado': 'ACTIVO',
+    },
+    {
+      'Código Área / Oficina': 'ARE-003',
+      'Nombre del Área / Oficina': 'Área Técnica Agraria',
+      'Tipo (Área / Oficina)': 'Área',
+      'Código Dirección / Órgano / Oficina Agraria': oficinaAgrariaEjemplo?.code || 'OAG-001',
+      'Nombre Dirección / Órgano / Oficina Agraria': oficinaAgrariaEjemplo?.name || 'Oficina Agraria Cajamarca',
       'Estado': 'ACTIVO',
     },
   ];
   const wsData = XLSX.utils.json_to_sheet(sampleData);
   wsData['!cols'] = [
-    { wch: 15 }, // Código Área
-    { wch: 38 }, // Nombre Área
-    { wch: 25 }, // Código Dirección/Órgano
-    { wch: 35 }, // Nombre Dirección/Órgano
-    { wch: 15 }, // Tipo
+    { wch: 22 }, // Código Área
+    { wch: 40 }, // Nombre Área
+    { wch: 22 }, // Tipo
+    { wch: 42 }, // Código Dirección/Órgano/Oficina Agraria
+    { wch: 45 }, // Nombre Dirección/Órgano/Oficina Agraria
     { wch: 12 }, // Estado
   ];
   XLSX.utils.book_append_sheet(wb, wsData, 'Areas_Oficinas');
 
   // Hoja 2: Instrucciones
   const instructions = [
-    ['INSTRUCCIONES OFICIALES PARA LA CARGA MASIVA DE ÁREAS Y OFICINAS DRAC'],
+    ['INSTRUCCIONES OFICIALES — CARGA MASIVA DE ÁREAS Y OFICINAS INSTITUCIONALES DRAC'],
     [''],
-    ['1. ORDEN OBLIGATORIO DE CARGA: Esta plantilla corresponde al PASO 2. Requiere que las Direcciones/Órganos ya existan.'],
-    ['2. CÓDIGO ÁREA: Código identificador único del área/oficina. Ej: ARE-001, OFI-RRHH.'],
-    ['3. NOMBRE ÁREA / OFICINA: Nombre descriptivo formal del área.'],
-    ['4. CÓDIGO DIRECCIÓN/ÓRGANO: Código exacto de la Dirección u Órgano al que pertenece (Ver hoja "Direcciones_Existentes").'],
-    ['   El sistema vincula preferentemente por CÓDIGO para evitar discrepancias de texto.'],
-    ['5. TIPO: ÁREA, OFICINA, SUBÁREA o UNIDAD.'],
-    ['6. ESTADO: ACTIVO o INACTIVO.'],
+    ['1. ORDEN JERÁRQUICO OBLIGATORIO: Esta plantilla corresponde al PASO 2 de la estructura organizacional.'],
+    ['   Primero deben existir las Direcciones, Órganos de Apoyo y Oficinas Agrarias en el sistema.'],
+    ['2. DEPENDENCIA OBLIGATORIA: Toda Área u Oficina SIEMPRE debe estar asociada a una unidad superior:'],
+    ['   - Dirección (Línea o Despacho)'],
+    ['   - Órgano de Apoyo (OCI, Asesoría, Planificación, etc.)'],
+    ['   - Oficina Agraria / Jefatura de Agencia'],
+    ['   No se permite crear o importar Áreas u Oficinas huérfanas sin unidad superior.'],
+    ['3. CÓDIGO DE DIRECCIÓN / ÓRGANO / OFICINA AGRARIA: Ingrese el código exacto de la unidad superior (Ver hoja "Unidades_Superiores_Existentes").'],
+    ['4. NOMBRE DEL ÁREA / OFICINA: Denominación oficial del Área u Oficina.'],
+    ['5. TIPO: "Área" u "Oficina".'],
+    ['6. ESTADO: "ACTIVO" o "INACTIVO".'],
   ];
   const wsInst = XLSX.utils.aoa_to_sheet(instructions);
-  wsInst['!cols'] = [{ wch: 95 }];
+  wsInst['!cols'] = [{ wch: 105 }];
   XLSX.utils.book_append_sheet(wb, wsInst, 'Instrucciones');
 
-  // Hoja 3: Direcciones Existentes en el Sistema para copiar códigos
+  // Hoja 3: Unidades Superiores Existentes en el Sistema
   const dirRows = [
-    ['Código Dirección/Órgano', 'Nombre Oficial de la Dirección / Órgano', 'Clasificación Orgánica'],
-    ...direcciones.map(d => [d.code, d.name, d.type]),
+    ['Código Unidad Superior', 'Nombre Oficial de la Dirección / Órgano / Oficina Agraria', 'Clasificación Orgánica', 'Estado'],
+    ...direcciones.map((d) => [d.code, d.name, d.type, d.active ? 'ACTIVO' : 'INACTIVO']),
   ];
   const wsDirs = XLSX.utils.aoa_to_sheet(dirRows);
-  wsDirs['!cols'] = [{ wch: 25 }, { wch: 45 }, { wch: 25 }];
-  XLSX.utils.book_append_sheet(wb, wsDirs, 'Direcciones_Existentes');
+  wsDirs['!cols'] = [{ wch: 25 }, { wch: 55 }, { wch: 25 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, wsDirs, 'Unidades_Superiores_Existentes');
 
   XLSX.writeFile(wb, 'Plantilla_Areas_Oficinas_DRAC.xlsx');
 }
@@ -695,11 +712,46 @@ export function validateAreasExcel(
 
   rows.forEach((row, index) => {
     const rowNum = index + 2;
-    const rawAreaCode = String(row['Código Área'] || row['Codigo Area'] || row['CODIGO_AREA'] || row['code'] || '').trim();
-    const rawAreaName = String(row['Nombre Área / Oficina'] || row['Nombre Area'] || row['NOMBRE_AREA'] || row['name'] || '').trim();
-    const rawDirCode = String(row['Código Dirección/Órgano'] || row['Codigo Direccion'] || row['CODIGO_DIR'] || row['dir_code'] || '').trim();
-    const rawDirName = String(row['Nombre Dirección/Órgano'] || row['Direccion'] || '').trim();
-    const rawType = String(row['Tipo'] || row['TIPO'] || 'ÁREA').trim();
+    const rawAreaCode = String(
+      row['Código Área / Oficina'] ||
+      row['Código Área'] ||
+      row['Codigo Area'] ||
+      row['CODIGO_AREA'] ||
+      row['code'] ||
+      ''
+    ).trim();
+
+    const rawAreaName = String(
+      row['Nombre del Área / Oficina'] ||
+      row['Nombre Área / Oficina'] ||
+      row['Nombre Área'] ||
+      row['Nombre Area'] ||
+      row['NOMBRE_AREA'] ||
+      row['name'] ||
+      ''
+    ).trim();
+
+    const rawDirCode = String(
+      row['Código Dirección / Órgano / Oficina Agraria'] ||
+      row['Código de Dirección/Órgano/Oficina Agraria a la que pertenece'] ||
+      row['Código Dirección/Órgano'] ||
+      row['Codigo Direccion'] ||
+      row['CODIGO_DIR'] ||
+      row['dir_code'] ||
+      row['Código Unidad Superior'] ||
+      ''
+    ).trim();
+
+    const rawDirName = String(
+      row['Nombre Dirección / Órgano / Oficina Agraria'] ||
+      row['Nombre Dirección/Órgano'] ||
+      row['Pertenece a'] ||
+      row['Direccion'] ||
+      row['Unidad Superior'] ||
+      ''
+    ).trim();
+
+    const rawType = String(row['Tipo (Área / Oficina)'] || row['Tipo'] || row['TIPO'] || 'ÁREA').trim();
     const rawState = String(row['Estado'] || row['ESTADO'] || 'ACTIVO').trim();
 
     let rowHasError = false;
@@ -718,7 +770,7 @@ export function validateAreasExcel(
     if (!rawAreaName) {
       errors.push({
         rowNumber: rowNum,
-        field: 'Nombre Área / Oficina',
+        field: 'Nombre del Área / Oficina',
         value: '',
         error: 'El nombre del Área u Oficina es obligatorio.',
         severity: 'ERROR',
@@ -726,31 +778,32 @@ export function validateAreasExcel(
       rowHasError = true;
     }
 
-    // Validación de pertenencia obligatoria a Dirección / Órgano
+    // Validación de pertenencia obligatoria a Dirección, Órgano de Apoyo u Oficina Agraria
     if (!rawDirCode && !rawDirName) {
       errors.push({
         rowNumber: rowNum,
-        field: 'Código Dirección/Órgano',
+        field: 'Código Dirección / Órgano / Oficina Agraria',
         value: '',
-        error: 'Debe especificar el código de la Dirección u Órgano al que pertenece el área.',
+        error: 'Debe seleccionar la Dirección, Órgano de Apoyo u Oficina Agraria a la que pertenece esta Área/Oficina.',
         severity: 'ERROR',
       });
       rowHasError = true;
     }
 
-    // Busca la Dirección/Órgano en el sistema
+    // Busca la Dirección / Órgano / Oficina Agraria en el catálogo del sistema
     const parentDir = existingDirs.find(
       (d) =>
-        d.code.toUpperCase() === rawDirCode.toUpperCase() ||
-        (rawDirName && normalizeStr(d.name) === normalizeStr(rawDirName))
+        (rawDirCode && d.code.toUpperCase() === rawDirCode.toUpperCase()) ||
+        (rawDirName && normalizeStr(d.name) === normalizeStr(rawDirName)) ||
+        (rawDirCode && d.id === rawDirCode)
     );
 
     if (!parentDir && (rawDirCode || rawDirName)) {
       errors.push({
         rowNumber: rowNum,
-        field: 'Código Dirección/Órgano',
+        field: 'Código Dirección / Órgano / Oficina Agraria',
         value: rawDirCode || rawDirName,
-        error: `La Dirección u Órgano referenciada ("${rawDirCode || rawDirName}") no existe en el sistema. Primero debe cargar las Direcciones/Órganos.`,
+        error: 'Debe seleccionar la Dirección, Órgano de Apoyo u Oficina Agraria a la que pertenece esta Área/Oficina. La unidad indicada no existe o no está registrada.',
         severity: 'ERROR',
       });
       rowHasError = true;
@@ -787,17 +840,22 @@ export function validateAreasExcel(
       }
     }
 
-    if (rowHasError) return;
+    if (rowHasError || !parentDir) return;
 
     const isActive = normalizeStr(rawState) !== 'INACTIVO';
+    const isOficina = normalizeStr(rawType).includes('OFICINA') || normalizeStr(rawAreaName).startsWith('OFICINA');
 
     if (existing && importMode === 'NEW_AND_UPDATE') {
       updateCount++;
       updateRecords.push({
         ...existing,
         name: rawAreaName,
-        direccion_organo_id: parentDir?.id || existing.direccion_organo_id,
-        direccion_organo_name: parentDir?.name || existing.direccion_organo_name,
+        tipo: isOficina ? 'OFICINA' : 'AREA',
+        dependencia_id: parentDir.dependencia_id || existing.dependencia_id,
+        dependencia_name: parentDir.dependencia_name || existing.dependencia_name,
+        direccion_organo_id: parentDir.id,
+        direccion_organo_name: parentDir.name,
+        unidad_superior_id: parentDir.id,
         active: isActive,
       });
     } else {
@@ -806,11 +864,13 @@ export function validateAreasExcel(
         id: `area-${Date.now()}-${index}`,
         code: rawAreaCode,
         name: rawAreaName,
-        description: `Área/Oficina tipo ${rawType}`,
-        dependencia_id: parentDir?.dependencia_id || existingDeps[0]?.id || '',
-        dependencia_name: parentDir?.dependencia_name || existingDeps[0]?.name || '',
-        direccion_organo_id: parentDir?.id,
-        direccion_organo_name: parentDir?.name,
+        tipo: isOficina ? 'OFICINA' : 'AREA',
+        description: `${isOficina ? 'Oficina' : 'Área'} adscrita a ${parentDir.name}`,
+        dependencia_id: parentDir.dependencia_id || existingDeps[0]?.id || '',
+        dependencia_name: parentDir.dependencia_name || existingDeps[0]?.name || 'Sede Central DRAC',
+        direccion_organo_id: parentDir.id,
+        direccion_organo_name: parentDir.name,
+        unidad_superior_id: parentDir.id,
         active: isActive,
         created_at: new Date().toISOString(),
       });
