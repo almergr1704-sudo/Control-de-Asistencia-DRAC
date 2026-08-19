@@ -117,18 +117,38 @@ export default function App() {
   // State Entities - DRAC Structure
   const [dependencias, setDependencias] = useState<Dependencia[]>(() => {
     const raw = loadStored<Dependencia[]>('dependencias', INITIAL_DEPENDENCIAS);
-    // Migración automática: transformar dependencias con tipo obsoleto OFICINA_AGRARIA a AGENCIA_AGRARIA sin perder datos históricos
-    return (raw || []).map((dep: any) => {
+    // Migración automática y merge con INITIAL_DEPENDENCIAS
+    const existing = (raw || []).map((dep: any) => {
       if (dep.type === 'OFICINA_AGRARIA') {
         return { ...dep, type: 'AGENCIA_AGRARIA' as const };
       }
       return dep;
     });
+    const map = new Map<string, Dependencia>();
+    INITIAL_DEPENDENCIAS.forEach((d) => map.set(d.id, d));
+    existing.forEach((d) => map.set(d.id, { ...(map.get(d.id) || {}), ...d }));
+    return Array.from(map.values());
   });
-  const [direccionesOrganos, setDireccionesOrganos] = useState<DireccionOrgano[]>(() =>
-    loadStored('direccionesOrganos', INITIAL_DIRECCIONES_ORGANOS)
-  );
-  const [areas, setAreas] = useState<Area[]>(() => loadStored('areas', INITIAL_AREAS));
+
+  const [direccionesOrganos, setDireccionesOrganos] = useState<DireccionOrgano[]>(() => {
+    const stored = loadStored<DireccionOrgano[]>('direccionesOrganos', INITIAL_DIRECCIONES_ORGANOS);
+    const map = new Map<string, DireccionOrgano>();
+    INITIAL_DIRECCIONES_ORGANOS.forEach((dir) => map.set(dir.id, dir));
+    (stored || []).forEach((dir) => {
+      map.set(dir.id, { ...(map.get(dir.id) || {}), ...dir });
+    });
+    return Array.from(map.values());
+  });
+
+  const [areas, setAreas] = useState<Area[]>(() => {
+    const stored = loadStored<Area[]>('areas', INITIAL_AREAS);
+    const map = new Map<string, Area>();
+    INITIAL_AREAS.forEach((area) => map.set(area.id, area));
+    (stored || []).forEach((area) => {
+      map.set(area.id, { ...(map.get(area.id) || {}), ...area });
+    });
+    return Array.from(map.values());
+  });
   const [cargos, setCargos] = useState<Cargo[]>(() => loadStored('cargos', INITIAL_CARGOS));
   const [responsables, setResponsables] = useState<ResponsableDesignation[]>(() =>
     loadStored('responsables', INITIAL_RESPONSABLES)
