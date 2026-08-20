@@ -100,6 +100,20 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
         setErrorMessage('La contraseña inicial/temporal ingresada no es correcta.');
         return;
       }
+    } else {
+      if (!currentPassword) {
+        setErrorMessage('Debe ingresar su contraseña inicial temporal para validar su identidad.');
+        return;
+      }
+      const isCurrentValid =
+        currentPassword === 'Drac2026' ||
+        currentPassword === 'Drac2026!' ||
+        currentPassword === employee.dni ||
+        currentPassword === '123456';
+      if (!isCurrentValid) {
+        setErrorMessage('La contraseña inicial/temporal ingresada no es correcta.');
+        return;
+      }
     }
 
     // Re-validate against security policies
@@ -210,33 +224,31 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
           )}
 
           {/* Current Temporary Password */}
-          {employee.password_hash && (
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                Contraseña Inicial / Temporal Asignada <span className="text-rose-400">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type={showCurrent ? 'text' : 'password'}
-                  placeholder="Ingrese la contraseña temporal de registro"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-3.5 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrent(!showCurrent)}
-                  className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
-                >
-                  {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                La credencial temporal proporcionada por Recursos Humanos / Administrador al registrar su cuenta.
-              </span>
+          <div>
+            <label className="block text-xs font-bold text-slate-300 mb-1">
+              Contraseña Inicial / Temporal Asignada <span className="text-rose-400">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showCurrent ? 'text' : 'password'}
+                placeholder="Ingrese su contraseña temporal de inicio"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full bg-[#090A0D] border border-slate-800 rounded-lg pl-3.5 pr-10 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrent(!showCurrent)}
+                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300"
+              >
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-          )}
+            <span className="text-[10px] text-slate-500 mt-1 block">
+              La credencial temporal asignada para el primer acceso al sistema.
+            </span>
+          </div>
 
           {/* New Password */}
           <div>

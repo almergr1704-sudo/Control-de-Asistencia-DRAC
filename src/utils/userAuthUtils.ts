@@ -214,8 +214,12 @@ export async function authenticateUser(
     isValid = await verifyPassword(cleanPass, emp.password_hash, emp.password_salt);
   } else {
     // Si aún no tiene hash criptográfico (migración de cuentas iniciales)
-    // Se valida contra DNI o clave temporal por defecto
-    isValid = cleanPass === emp.dni || cleanPass === '123456' || cleanPass === 'Drac2026!';
+    // Se valida contra Drac2026, DNI o clave temporal por defecto
+    isValid =
+      cleanPass === 'Drac2026' ||
+      cleanPass === 'Drac2026!' ||
+      cleanPass === emp.dni ||
+      cleanPass === '123456';
   }
 
   if (!isValid) {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, RoleType } from '../../types';
 import { authenticateUser, getEmployeeAssignedRoles } from '../../utils/userAuthUtils';
-import { Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Building2, KeyRound, CheckCircle2, ChevronRight, UserCheck, Sparkles, ShieldAlert } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Building2, KeyRound, ChevronRight } from 'lucide-react';
 
 interface LoginPageProps {
   employees: Employee[];
@@ -19,7 +19,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showDemoAccounts, setShowDemoAccounts] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,16 +158,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Ej: jperez o 10000007"
+                    placeholder="Ej: admin o DNI"
                     required
                     autoFocus
                     autoComplete="username"
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all font-mono"
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Regla de usuario: inicial de nombre + apellido paterno (ej: <code className="text-slate-300">jperez</code>)
-                </p>
               </div>
 
               {/* Contraseña */}
@@ -221,100 +217,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 )}
               </button>
             </form>
-
-            {/* Quick Demo Access Switcher */}
-            <div className="mt-6 pt-5 border-t border-slate-800/80">
-              <button
-                type="button"
-                onClick={() => setShowDemoAccounts(!showDemoAccounts)}
-                className="w-full text-xs text-slate-400 hover:text-emerald-400 flex items-center justify-center gap-1.5 transition-colors py-1 cursor-pointer font-medium"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{showDemoAccounts ? 'Ocultar accesos rápidos de prueba' : 'Ver credenciales y usuarios de prueba DRAC'}</span>
-              </button>
-
-              {showDemoAccounts && (
-                <div className="mt-3 p-3 bg-slate-900/90 border border-slate-800 rounded-xl space-y-2 text-xs animate-in fade-in duration-200">
-                  <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1 flex items-center justify-between">
-                    <span>Cuentas por Rol Institucional:</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">Clave: Drac2026!</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('cmendoza')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">Carlos Mendoza</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@cmendoza · Admin General</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('msilva')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">María Silva</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@msilva · Jefe RRHH</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('fcastillo')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">Fernando Castillo</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@fcastillo · Jefe Administr.</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('jperez')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">Juan Pérez García</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@jperez · Trabajador</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('atorres')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-amber-300 group-hover:text-amber-200">Ana Lucía Torres</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@atorres · Primer Ingreso</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('mquispe')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">Manuel Quispe</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@mquispe · Vigilancia</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('jmorales')}
-                      className="text-left p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="font-semibold text-slate-200 group-hover:text-emerald-400">Jorge Morales</div>
-                      <div className="text-[11px] text-slate-400 font-mono">@jmorales · Asistencia</div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDemoUser('pgomez')}
-                      className="text-left p-2 rounded-lg bg-rose-950/20 hover:bg-rose-950/40 border border-rose-800/40 hover:border-rose-600/60 transition-all group"
-                    >
-                      <div className="font-semibold text-rose-300 group-hover:text-rose-200">Pedro Gómez</div>
-                      <div className="text-[11px] text-rose-400/80 font-mono">@pgomez · [Inactivo]</div>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Security Notice */}
