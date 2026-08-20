@@ -1285,33 +1285,39 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           ) : (
             <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm space-y-3">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs table-fixed">
                   <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                     <tr>
-                      <SortableHeader
-                        label="Marcador ZKTeco / Dependencia"
-                        field="device_sn"
-                        currentField={punchSortField}
-                        currentOrder={punchSortOrder}
-                        onSort={handlePunchSort}
-                      />
-                      <SortableHeader
-                        label="Colaborador / Dependencia Origen"
-                        field="employee_dni"
-                        currentField={punchSortField}
-                        currentOrder={punchSortOrder}
-                        onSort={handlePunchSort}
-                      />
-                      <SortableHeader
-                        label="Timestamp"
-                        field="timestamp"
-                        currentField={punchSortField}
-                        currentOrder={punchSortOrder}
-                        onSort={handlePunchSort}
-                      />
-                      <th className="px-4 py-3 text-slate-400">Tipo</th>
-                      <th className="px-4 py-3 text-slate-400">Validación de Sede</th>
-                      <th className="px-4 py-3 text-slate-400">Trazabilidad / Motivo</th>
+                      <th className="w-[200px] px-3.5 py-3">
+                        <SortableHeader
+                          label="Marcador ZKTeco / Dependencia"
+                          field="device_sn"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[220px] px-3.5 py-3">
+                        <SortableHeader
+                          label="Colaborador / Sede Origen"
+                          field="employee_dni"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[150px] px-3.5 py-3">
+                        <SortableHeader
+                          label="Timestamp"
+                          field="timestamp"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[100px] px-3 py-3 text-slate-400">Tipo</th>
+                      <th className="w-[170px] px-3.5 py-3 text-slate-400">Validación de Sede</th>
+                      <th className="w-[220px] px-3.5 py-3 text-slate-400">Trazabilidad / Motivo</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-sans">
@@ -1533,17 +1539,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           ) : (
             <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm space-y-3">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs table-fixed">
                   <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                     <tr>
-                      <th className="px-4 py-3">Colaborador / DNI</th>
-                      <th className="px-4 py-3">Dependencia Origen</th>
-                      <th className="px-4 py-3">Dependencia Autorizada</th>
-                      <th className="px-4 py-3">Marcador Específico</th>
-                      <th className="px-4 py-3">Periodo Vigencia</th>
-                      <th className="px-4 py-3">Documento &amp; Motivo</th>
-                      <th className="px-4 py-3">Estado</th>
-                      <th className="px-4 py-3 text-right">Acciones</th>
+                      <th className="w-[180px] px-3.5 py-3">Colaborador / DNI</th>
+                      <th className="w-[140px] px-3.5 py-3">Sede Origen</th>
+                      <th className="w-[150px] px-3.5 py-3">Sede Autorizada</th>
+                      <th className="w-[160px] px-3.5 py-3">Marcador Específico</th>
+                      <th className="w-[120px] px-3.5 py-3">Vigencia</th>
+                      <th className="w-[180px] px-3.5 py-3">Documento & Motivo</th>
+                      <th className="w-[85px] px-3 py-3 text-center">Estado</th>
+                      <th className="w-[80px] px-3 py-3 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-sans">

@@ -7,6 +7,24 @@ import { createServer as createViteServer } from "vite";
 const DB_DIR = path.join(process.cwd(), "data");
 const DEVICES_FILE = path.join(DB_DIR, "devices.json");
 const AUTH_FILE = path.join(DB_DIR, "punch-authorizations.json");
+const AUDIT_FILE = path.join(DB_DIR, "audit-logs.json");
+
+// Helper to load audit logs from persistent storage
+async function getStoredAuditLogs(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(AUDIT_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save audit logs to persistent storage
+async function saveStoredAuditLogs(logs: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(AUDIT_FILE, JSON.stringify(logs, null, 2), "utf-8");
+}
 
 // Helper to load devices from persistent storage
 async function getStoredDevices(): Promise<any[]> {
@@ -614,6 +632,78 @@ async function startServer() {
         });
       }
     }
+  });
+
+  // ==============================================================
+  // API ROUTES: Auditoría del Sistema DRAC & Registro de Eventos
+  // ==============================================================
+
+  // GET /api/audit-logs
+  app.get("/api/audit-logs", async (req, res) => {
+    try {
+      const logs = await getStoredAuditLogs();
+      return res.json({ success: true, data: logs });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al leer registros de auditoría." });
+    }
+  });
+
+  // POST /api/audit-logs
+  app.post("/api/audit-logs", async (req, res) => {
+    try {
+      const log = req.body || {};
+      const newLog = {
+        id: log.id || `audlog-${Date.now()}`,
+        timestamp: log.timestamp || new Date().toISOString(),
+        user_id: log.user_id || "ANONIMO",
+        user_name: log.user_name || "Sistema DRAC",
+        role: log.role || "SISTEMA",
+        module: log.module || "SEGURIDAD",
+        action: log.action || "EVENTO",
+        affected_record_id: log.affected_record_id || "-",
+        details: log.details || "",
+      };
+
+      const existingLogs = await getStoredAuditLogs();
+      existingLogs.unshift(newLog);
+      // Keep last 1000 logs
+      if (existingLogs.length > 1000) {
+        existingLogs.length = 1000;
+      }
+      await saveStoredAuditLogs(existingLogs);
+
+      return res.status(201).json({ success: true, data: newLog });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al registrar auditoría." });
+    }
+  });
+
+  // POST /api/auth/validate-access - Backend role verification endpoint
+  app.post("/api/auth/validate-access", (req, res) => {
+    const { role, viewId } = req.body || {};
+    if (!role || !viewId) {
+      return res.status(400).json({ success: false, allowed: false, message: "Parámetros incompletos" });
+    }
+
+    // Role verification
+    let allowed = false;
+    if (role === 'ADMIN_GENERAL' || role === 'HR_ADMIN') {
+      allowed = true;
+    } else if (role === 'TRABAJADOR' || role === 'EMPLOYEE') {
+      allowed = ['dash_overview', 'attendance_list', 'attendance_punches', 'vacations_requests', 'vacations_history', 'papeletas_new', 'papeletas_my', 'papeletas_history'].includes(viewId);
+    } else if (role === 'JEFE' || role === 'SUPERVISOR') {
+      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('shifts_') && !viewId.startsWith('devices_');
+    } else if (role === 'JEFE_RRHH') {
+      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('devices_');
+    } else if (role === 'VIGILANCIA' || role === 'SECURITY_GUARD') {
+      allowed = viewId === 'dash_overview' || viewId.startsWith('security_') || viewId === 'attendance_list';
+    } else if (role === 'DIRECTOR_GENERAL') {
+      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('shifts_') && !viewId.startsWith('devices_');
+    } else if (role === 'CONTROL_ASISTENCIA') {
+      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('org_') && !viewId.startsWith('shifts_');
+    }
+
+    return res.json({ success: true, allowed });
   });
 
   // Vite middleware for development

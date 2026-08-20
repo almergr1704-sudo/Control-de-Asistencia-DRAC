@@ -1596,7 +1596,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           }`}
         >
           <Crown className="w-3.5 h-3.5" />
-          <span>Jefes / Aprobadores ({responsables.length})</span>
+          <span>Jefes / Aprobadores ({allJefesAprobadoresList.length})</span>
         </button>
 
         <button
@@ -1875,180 +1875,140 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           {/* Table */}
           <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs table-fixed">
                 <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                   <tr>
-                    <SortableHeader
-                      label="Cód. DRAC / Trabajador"
-                      field="first_name"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    <SortableHeader
-                      label="DNI / PIN ZKTeco"
-                      field="dni"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    <SortableHeader
-                      label="Dependencia & Ubicación DRAC"
-                      field="dependencia_name"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    <SortableHeader
-                      label="Cargo Institucional (Puesto)"
-                      field="position"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    <SortableHeader
-                      label="Perfil Sistema & Cuenta"
-                      field="role"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    <th className="px-4 py-3 text-slate-400">Jefe Inmediato (VoBo)</th>
-                    <SortableHeader
-                      label="Estado"
-                      field="active"
-                      currentField={empSortField}
-                      currentOrder={empSortOrder}
-                      onSort={handleEmpSort}
-                    />
-                    {activeRole === 'HR_ADMIN' && <th className="px-4 py-3 text-right text-slate-400">Acciones</th>}
+                    <th className="w-[125px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Cód. / DNI"
+                        field="dni"
+                        currentField={empSortField}
+                        currentOrder={empSortOrder}
+                        onSort={handleEmpSort}
+                      />
+                    </th>
+                    <th className="w-[230px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Trabajador / Usuario"
+                        field="first_name"
+                        currentField={empSortField}
+                        currentOrder={empSortOrder}
+                        onSort={handleEmpSort}
+                      />
+                    </th>
+                    <th className="w-[150px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Dependencia"
+                        field="dependencia_name"
+                        currentField={empSortField}
+                        currentOrder={empSortOrder}
+                        onSort={handleEmpSort}
+                      />
+                    </th>
+                    <th className="w-[220px] px-3.5 py-3">
+                      <span className="text-slate-400 font-medium">Dirección / Área</span>
+                    </th>
+                    <th className="w-[180px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Cargo / Régimen"
+                        field="position"
+                        currentField={empSortField}
+                        currentOrder={empSortOrder}
+                        onSort={handleEmpSort}
+                      />
+                    </th>
+                    <th className="w-[85px] px-3 py-3 text-center">
+                      <SortableHeader
+                        label="Estado"
+                        field="active"
+                        currentField={empSortField}
+                        currentOrder={empSortOrder}
+                        onSort={handleEmpSort}
+                      />
+                    </th>
+                    <th className="w-[95px] px-3 py-3 text-right text-slate-400">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {paginatedEmployeesList.map((emp) => {
                     const assignedRolesList = getEmployeeAssignedRoles(emp);
-                    const roleConfig = SYSTEM_ROLES_CATALOG.find((r) => r.role === emp.role) || SYSTEM_ROLES_CATALOG[0];
                     const hasAccess = emp.has_system_access !== false;
+                    const isMenuOpen = openEmpActionMenuId === emp.id;
 
                     return (
                       <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/20">
+                        {/* CÓDIGO DRAC & DNI */}
+                        <td className="px-3.5 py-3 font-mono">
+                          <div className="text-indigo-400 font-bold text-[11px] truncate" title={`Código DRAC: ${emp.codigo_trabajador || 'DRAC-2026'}`}>
+                            {emp.codigo_trabajador || 'DRAC-2026'}
+                          </div>
+                          <div className="text-slate-300 font-semibold text-xs mt-0.5">{emp.dni}</div>
+                          <div className="text-[10px] text-slate-500 truncate">PIN: {emp.zkteco_pin || emp.dni}</div>
+                        </td>
+
+                        {/* TRABAJADOR */}
+                        <td className="px-3.5 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-[11px] border border-indigo-500/20 shrink-0">
                               {emp.first_name[0]}
                               {emp.last_name[0]}
                             </div>
-                            <div>
-                              <div className="font-bold text-white">
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="font-bold text-white text-xs truncate cursor-pointer hover:text-indigo-300 transition-colors"
+                                title={`${emp.first_name} ${emp.last_name}`}
+                                onClick={() => setSelectedEmpForDetail(emp)}
+                              >
                                 {emp.first_name} {emp.last_name}
                               </div>
-                              <div className="text-[10px] font-mono text-indigo-400">
-                                {emp.codigo_trabajador || 'DRAC-2026'}
+                              <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                                <UserCog className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                                <span className="text-indigo-300 font-semibold truncate">@{emp.username || emp.dni}</span>
                               </div>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 font-mono">
-                          <div className="text-slate-200 font-bold">{emp.dni}</div>
-                          <div className="text-[10px] text-slate-500">PIN: {emp.zkteco_pin || emp.dni}</div>
+                        {/* DEPENDENCIA */}
+                        <td className="px-3.5 py-3">
+                          <div className="font-semibold text-slate-200 text-xs truncate" title={emp.dependencia_name}>
+                            {emp.dependencia_name}
+                          </div>
+                          <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-slate-800 text-slate-400 rounded text-[9px] border border-slate-700 truncate max-w-full">
+                            {emp.dependencia_id === 'DEP-01' ? 'Sede Central' : 'Agencia Agraria'}
+                          </span>
                         </td>
 
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-slate-200">{emp.dependencia_name}</div>
-                          <div className="text-[10px] text-slate-400">
-                            {emp.direccion_organo_name ? `${emp.direccion_organo_name} ➔ ` : ''}
-                            {emp.area_name}
+                        {/* DIRECCIÓN / ÁREA */}
+                        <td className="px-3.5 py-3">
+                          <div className="font-medium text-slate-200 text-xs truncate" title={emp.direccion_organo_name || 'Sin Dirección / Órgano'}>
+                            {emp.direccion_organo_name || 'Sin Dirección'}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5" title={emp.area_name || 'Sin Área'}>
+                            ↳ {emp.area_name || 'Sin Área'}
                           </div>
                         </td>
 
-                        {/* CARGO INSTITUCIONAL */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5 text-slate-200 font-medium">
-                            <Briefcase className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span>{emp.position}</span>
+                        {/* CARGO & RÉGIMEN */}
+                        <td className="px-3.5 py-3">
+                          <div className="flex items-center gap-1 text-slate-200 font-medium text-xs truncate" title={emp.position}>
+                            <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{emp.position}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded text-[9px] font-mono border border-slate-700">
+                          <div className="flex items-center gap-1 mt-0.5 truncate">
+                            <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded text-[9px] font-mono border border-slate-700 shrink-0">
                               {emp.regimen_laboral}
                             </span>
-                            <span className="text-[9px] text-slate-500">{emp.condicion_laboral}</span>
+                            <span className="text-[9px] text-slate-500 truncate" title={emp.condicion_laboral}>
+                              {emp.condicion_laboral}
+                            </span>
                           </div>
                         </td>
 
-                        {/* PERFIL DEL SISTEMA & CUENTA */}
-                        <td className="px-4 py-3">
-                          {hasAccess ? (
-                            <div className="space-y-1.5 max-w-xs">
-                              <div className="flex flex-wrap items-center gap-1">
-                                {assignedRolesList.map((r, idx) => {
-                                  const rDef = SYSTEM_ROLES_CATALOG.find((x) => x.role === r) || SYSTEM_ROLES_CATALOG[0];
-                                  return (
-                                    <React.Fragment key={r}>
-                                      {idx > 0 && <span className="text-[10px] text-slate-500 font-bold">+</span>}
-                                      <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border inline-flex items-center gap-1 ${rDef.color}`}>
-                                        <Shield className="w-2.5 h-2.5" />
-                                        <span>{rDef.badge}</span>
-                                      </span>
-                                    </React.Fragment>
-                                  );
-                                })}
-                                <span
-                                  className={`w-2 h-2 rounded-full inline-block ml-0.5 ${
-                                    emp.account_status === 'INACTIVE' || !emp.active
-                                      ? 'bg-rose-500'
-                                      : 'bg-emerald-400 ring-2 ring-emerald-400/20'
-                                  }`}
-                                  title={emp.account_status === 'INACTIVE' || !emp.active ? 'Cuenta Inactiva' : 'Cuenta Activa'}
-                                />
-                              </div>
-                              {emp.is_jefe_director && (
-                                <div className="text-[9px] text-amber-300 font-medium flex items-center gap-1">
-                                  <Crown className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                                  <span>Titular: {emp.unidad_dirigida_name || emp.direccion_organo_name || emp.area_name}</span>
-                                </div>
-                              )}
-                              <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between gap-1 pt-0.5">
-                                <div className="flex items-center gap-1">
-                                  <UserCog className="w-3 h-3 text-slate-500" />
-                                  <span className="text-indigo-300 font-semibold">@{emp.username || emp.dni}</span>
-                                </div>
-                                {emp.primer_ingreso === 'PENDIENTE' || emp.password_change_required ? (
-                                  <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[9px] font-semibold" title="Deberá cambiar su contraseña temporal en su primer inicio de sesión">
-                                    1er Ingreso: Pendiente
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[9px] font-semibold" title="Primer ingreso completado con contraseña segura">
-                                    1er Ingreso: Listo
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-0.5">
-                              <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-800/80 text-slate-400 border border-slate-700/60 inline-flex items-center gap-1">
-                                <Lock className="w-3 h-3 text-slate-500" />
-                                <span>Sin Cuenta / Solo Biométrico</span>
-                              </span>
-                              <div className="text-[9px] text-slate-500 italic">No inicia sesión</div>
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {emp.supervisor_name ? (
-                            <div className="text-amber-400 font-semibold flex items-center gap-1 text-[11px]">
-                              <Crown className="w-3 h-3 text-amber-400 shrink-0" />
-                              <span>{emp.supervisor_name}</span>
-                            </div>
-                          ) : (
-                            <div className="text-slate-500 italic text-[11px]">Asignación Jerárquica Directa</div>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3">
+                        {/* ESTADO */}
+                        <td className="px-3 py-3 text-center">
                           <span
-                            className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                            className={`px-2 py-0.5 text-[9px] font-bold rounded-full border inline-block ${
                               emp.active
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                 : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
@@ -2058,101 +2018,150 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                           </span>
                         </td>
 
-                        {activeRole === 'HR_ADMIN' && (
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => {
-                                  setEditingEmp(emp);
-                                  setEmpCode(emp.codigo_trabajador);
-                                  setEmpDni(emp.dni);
-                                  setEmpFirstName(emp.first_name);
-                                  setEmpLastNamePaterno(emp.apellido_paterno || emp.last_name.split(' ')[0] || '');
-                                  setEmpLastNameMaterno(emp.apellido_materno || emp.last_name.split(' ')[1] || '');
-                                  setEmpEmail(emp.email);
-                                  setEmpPhone(emp.phone);
-                                  setEmpDepId(emp.dependencia_id);
-                                  setEmpDirId(emp.direccion_organo_id || '');
-                                  setEmpAreaId(emp.area_id);
-                                  setEmpSubareaId(emp.subarea_id || '');
-                                  setEmpCargoId(emp.cargo_id || '');
-                                  setEmpCargoName(emp.position);
-                                  setEmpRegimen(emp.regimen_laboral);
-                                  setEmpCondicion(emp.condicion_laboral);
-                                  setEmpScheduleId(emp.schedule_id || '');
-                                  setEmpHireDate(emp.hire_date);
-                                  setEmpActive(emp.active);
-                                  setEmpZkTecoPin(emp.zkteco_pin || emp.dni);
-                                  setEmpHasAccess(emp.has_system_access !== false);
-                                  setEmpUsername(emp.username || (emp.first_name ? `${emp.first_name.charAt(0).toLowerCase()}${(emp.apellido_paterno || emp.last_name.split(' ')[0] || '').toLowerCase()}` : emp.dni));
-                                  setEmpRole(emp.role || 'TRABAJADOR');
-                                  const existingRoles = getEmployeeAssignedRoles(emp);
-                                  setEmpAssignedRoles(existingRoles);
-                                  setEmpIsJefeDirector(Boolean(emp.is_jefe_director || existingRoles.includes('JEFE')));
-                                  setEmpAccountStatus(emp.account_status || (emp.active ? 'ACTIVE' : 'INACTIVE'));
-                                  setEmpAuthMethod(emp.auth_method || 'PASSWORD');
-                                  setEmpRoleChangeReason('');
-                                  setEmpInitialPassword('');
-                                  setShowInitialPassword(false);
-                                  setShowEmpModal(true);
-                                }}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
-                                title="Editar Trabajador y Perfil de Acceso"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              {hasAccess && (
+                        {/* ACCIONES COMPACTAS */}
+                        <td className="px-3 py-3 text-right">
+                          <div className="relative inline-flex items-center justify-end gap-1">
+                            {/* Ver Ficha Integral */}
+                            <button
+                              onClick={() => setSelectedEmpForDetail(emp)}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded transition-colors"
+                              title="Ver Ficha Integral del Colaborador"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+
+                            {activeRole === 'HR_ADMIN' && (
+                              <>
                                 <button
                                   onClick={() => {
-                                    setSelectedEmpForPasswordReset(emp);
-                                    setResetNewPassword('123456');
-                                    setShowResetPasswordEye(false);
-                                    setShowResetPasswordModal(true);
+                                    setEditingEmp(emp);
+                                    setEmpCode(emp.codigo_trabajador);
+                                    setEmpDni(emp.dni);
+                                    setEmpFirstName(emp.first_name);
+                                    setEmpLastNamePaterno(emp.apellido_paterno || emp.last_name.split(' ')[0] || '');
+                                    setEmpLastNameMaterno(emp.apellido_materno || emp.last_name.split(' ')[1] || '');
+                                    setEmpEmail(emp.email);
+                                    setEmpPhone(emp.phone);
+                                    setEmpDepId(emp.dependencia_id);
+                                    setEmpDirId(emp.direccion_organo_id || '');
+                                    setEmpAreaId(emp.area_id);
+                                    setEmpSubareaId(emp.subarea_id || '');
+                                    setEmpCargoId(emp.cargo_id || '');
+                                    setEmpCargoName(emp.position);
+                                    setEmpRegimen(emp.regimen_laboral);
+                                    setEmpCondicion(emp.condicion_laboral);
+                                    setEmpScheduleId(emp.schedule_id || '');
+                                    setEmpHireDate(emp.hire_date);
+                                    setEmpActive(emp.active);
+                                    setEmpZkTecoPin(emp.zkteco_pin || emp.dni);
+                                    setEmpHasAccess(emp.has_system_access !== false);
+                                    setEmpUsername(emp.username || (emp.first_name ? `${emp.first_name.charAt(0).toLowerCase()}${(emp.apellido_paterno || emp.last_name.split(' ')[0] || '').toLowerCase()}` : emp.dni));
+                                    setEmpRole(emp.role || 'TRABAJADOR');
+                                    const existingRoles = getEmployeeAssignedRoles(emp);
+                                    setEmpAssignedRoles(existingRoles);
+                                    setEmpIsJefeDirector(Boolean(emp.is_jefe_director || existingRoles.includes('JEFE')));
+                                    setEmpAccountStatus(emp.account_status || (emp.active ? 'ACTIVE' : 'INACTIVE'));
+                                    setEmpAuthMethod(emp.auth_method || 'PASSWORD');
+                                    setEmpRoleChangeReason('');
+                                    setEmpInitialPassword('');
+                                    setShowInitialPassword(false);
+                                    setShowEmpModal(true);
                                   }}
-                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
-                                  title="Restablecer Contraseña Temporal y Forzar 1er Ingreso"
+                                  className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
+                                  title="Editar Trabajador"
                                 >
-                                  <Key className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                              )}
-                              <button
-                                onClick={() => setSelectedEmpForRoleModal(emp)}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded transition-colors"
-                                title="Ver Perfil de Acceso & Trazabilidad de Roles"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => setSelectedEmpForHistory(emp)}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
-                                title="Ver Historial de Asignaciones Orgánicas"
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setConfirmModalConfig({
-                                    isOpen: true,
-                                    title: emp.active ? 'Desactivar Trabajador DRAC' : 'Reactivar Trabajador DRAC',
-                                    message: `¿Desea cambiar el estado del colaborador ${emp.first_name} ${emp.last_name}? Al desactivar al trabajador, su cuenta de acceso al sistema pasará automáticamente a INACTIVA y sus registros históricos quedarán resguardados para auditoría.`,
-                                    actionType: 'DEACTIVATE',
-                                    entityName: `DNI: ${emp.dni} - ${emp.position}`,
-                                    confirmText: emp.active ? 'Desactivar Registro' : 'Reactivar Registro',
-                                    onConfirm: () => {
-                                      onDeleteEmployee(emp.id);
-                                      setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                                    },
-                                    onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                                  });
-                                }}
-                                className="p-1.5 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded transition-colors"
-                                title={emp.active ? 'Desactivar Trabajador' : 'Reactivar Trabajador'}
-                              >
-                                <Power className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
+
+                                {/* Dropdown Menú 3 Puntos */}
+                                <div className="relative">
+                                  <button
+                                    onClick={() => setOpenEmpActionMenuId(isMenuOpen ? null : emp.id)}
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded transition-colors"
+                                    title="Más Opciones"
+                                  >
+                                    <MoreVertical className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {isMenuOpen && (
+                                    <>
+                                      <div
+                                        className="fixed inset-0 z-20"
+                                        onClick={() => setOpenEmpActionMenuId(null)}
+                                      />
+                                      <div className="absolute right-0 top-full mt-1 w-48 bg-[#0F1115] border border-slate-700 rounded-xl shadow-2xl z-30 py-1.5 text-left text-xs divide-y divide-slate-800">
+                                        <div className="py-1">
+                                          {hasAccess && (
+                                            <button
+                                              onClick={() => {
+                                                setOpenEmpActionMenuId(null);
+                                                setSelectedEmpForPasswordReset(emp);
+                                                setResetNewPassword('123456');
+                                                setShowResetPasswordEye(false);
+                                                setShowResetPasswordModal(true);
+                                              }}
+                                              className="w-full px-3 py-2 text-left hover:bg-slate-800/80 text-amber-300 flex items-center gap-2 transition-colors"
+                                            >
+                                              <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                              <span>Restablecer Clave</span>
+                                            </button>
+                                          )}
+                                          <button
+                                            onClick={() => {
+                                              setOpenEmpActionMenuId(null);
+                                              setSelectedEmpForRoleModal(emp);
+                                            }}
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-800/80 text-cyan-300 flex items-center gap-2 transition-colors"
+                                          >
+                                            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                            <span>Perfil & Roles RBAC</span>
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setOpenEmpActionMenuId(null);
+                                              setSelectedEmpForHistory(emp);
+                                            }}
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-800/80 text-indigo-300 flex items-center gap-2 transition-colors"
+                                          >
+                                            <History className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                            <span>Historial Traslados</span>
+                                          </button>
+                                        </div>
+
+                                        <div className="py-1">
+                                          <button
+                                            onClick={() => {
+                                              setOpenEmpActionMenuId(null);
+                                              setConfirmModalConfig({
+                                                isOpen: true,
+                                                title: emp.active ? 'Desactivar Trabajador DRAC' : 'Reactivar Trabajador DRAC',
+                                                message: `¿Desea cambiar el estado del colaborador ${emp.first_name} ${emp.last_name}? Al desactivar al trabajador, su cuenta de acceso al sistema pasará automáticamente a INACTIVA y sus registros históricos quedarán resguardados para auditoría.`,
+                                                actionType: 'DEACTIVATE',
+                                                entityName: `DNI: ${emp.dni} - ${emp.position}`,
+                                                confirmText: emp.active ? 'Desactivar Registro' : 'Reactivar Registro',
+                                                onConfirm: () => {
+                                                  onDeleteEmployee(emp.id);
+                                                  setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                                                },
+                                                onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                                              });
+                                            }}
+                                            className={`w-full px-3 py-2 text-left hover:bg-slate-800/80 flex items-center gap-2 transition-colors ${
+                                              emp.active ? 'text-rose-400 hover:text-rose-300' : 'text-emerald-400 hover:text-emerald-300'
+                                            }`}
+                                          >
+                                            <Power className="w-3.5 h-3.5 shrink-0" />
+                                            <span>{emp.active ? 'Desactivar Cuenta' : 'Reactivar Cuenta'}</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
@@ -2860,125 +2869,333 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         </div>
       )}
 
-      {/* TAB 6: DESIGNACIÓN DE JEFES Y DIRECTORES */}
+      {/* TAB 6: JEFES Y APROBADORES (AUTOMATIZADO DESDE PERFIL JEFE INMEDIATO) */}
       {activeTab === 'RESPONSABLES' && (
         <div className="space-y-4">
+          {/* Header & Metrics Banner */}
+          <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 rounded-2xl p-5 shadow-lg">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/40">
+                    <Crown className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>Jefes Inmediatos y Aprobadores Institucionales (VoBo)</span>
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold rounded-full">
+                        Sincronización Automática
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-300">
+                      Nómina generada en tiempo real a partir de los colaboradores con perfil asignado <strong className="text-amber-300">Jefe Inmediato</strong> o <strong className="text-indigo-300">Encargaturas de Funciones Vigentes</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metric Badges */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="px-3 py-2 bg-slate-900/80 border border-amber-500/30 rounded-xl text-center min-w-[100px]">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Total Jefes</div>
+                  <div className="text-lg font-extrabold text-amber-400">{allJefesAprobadoresList.length}</div>
+                </div>
+                <div className="px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-center min-w-[100px]">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Titulares</div>
+                  <div className="text-lg font-extrabold text-emerald-400">
+                    {allJefesAprobadoresList.filter((j) => j.source === 'TITULAR').length}
+                  </div>
+                </div>
+                <div className="px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-center min-w-[100px]">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Encargados (e)</div>
+                  <div className="text-lg font-extrabold text-indigo-400">
+                    {allJefesAprobadoresList.filter((j) => j.source === 'ENCARGATURA').length}
+                  </div>
+                </div>
+                <div className="px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-xl text-center min-w-[100px]">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Activos</div>
+                  <div className="text-lg font-extrabold text-white">
+                    {allJefesAprobadoresList.filter((j) => j.employee.active).length}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Filter Bar */}
           <AdvancedSearchFilter
-            searchTerm={respSearchTerm}
+            searchTerm={jefeSearchTerm}
             onSearchChange={(val) => {
-              setRespSearchTerm(val);
-              setRespCurrentPage(1);
+              setJefeSearchTerm(val);
+              setJefeCurrentPage(1);
             }}
-            searchPlaceholder="🔍 Buscar por nombre del jefe, DNI o unidad designada..."
-            activeFilterCount={respActiveFilterCount}
-            onResetFilters={handleResetRespFilters}
-            extraActions={
-              activeRole === 'HR_ADMIN' ? (
-                <button
-                  onClick={() => {
-                    if (employees.length === 0) {
-                      alert('Error: Debe registrar personal primero antes de designar Jefes.');
-                      return;
-                    }
-                    setEditingResp(null);
-                    setRespEmpId(employees[0]?.id || '');
-                    setRespTitle('DIRECTOR');
-                    setRespUnitType('DIRECCION_ORGANO');
-                    setRespUnitId(direccionesOrganos[0]?.id || dependencias[0]?.id || '');
-                    setRespStartDate(new Date().toISOString().split('T')[0]);
-                    setShowRespModal(true);
-                  }}
-                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Designar Jefe / Director</span>
-                </button>
-              ) : null
-            }
+            searchPlaceholder="🔍 Buscar por nombre del jefe, DNI, cargo, dirección o área..."
+            activeFilterCount={jefeActiveFilterCount}
+            onResetFilters={handleResetJefeFilters}
           >
-            <FilterField label="Tipo de Unidad">
+            <FilterField label="Dirección / Órgano">
               <FilterSelect
-                value={respFilterUnitType}
+                value={jefeFilterDir}
                 onChange={(val) => {
-                  setRespFilterUnitType(val);
-                  setRespCurrentPage(1);
+                  setJefeFilterDir(val);
+                  setJefeCurrentPage(1);
                 }}
-                placeholder="Todos los Tipos de Unidad"
+                placeholder="Todas las Direcciones / Órganos"
+                options={direccionesOrganos.map((d) => ({ value: d.id, label: d.name }))}
+              />
+            </FilterField>
+
+            <FilterField label="Tipo de Asignación">
+              <FilterSelect
+                value={jefeFilterSource}
+                onChange={(val) => {
+                  setJefeFilterSource(val);
+                  setJefeCurrentPage(1);
+                }}
+                placeholder="Todos los Orígenes"
                 options={[
-                  { value: 'DEPENDENCIA', label: 'Dependencia' },
-                  { value: 'DIRECCION_ORGANO', label: 'Dirección / Órgano' },
-                  { value: 'AREA_OFICINA', label: 'Área / Oficina' },
+                  { value: 'TITULAR', label: 'Titular con Perfil Jefe Inmediato' },
+                  { value: 'ENCARGATURA', label: 'Encargatura de Funciones Vigente (e)' },
+                ]}
+              />
+            </FilterField>
+
+            <FilterField label="Estado del Personal">
+              <FilterSelect
+                value={jefeFilterStatus}
+                onChange={(val) => {
+                  setJefeFilterStatus(val);
+                  setJefeCurrentPage(1);
+                }}
+                placeholder="Todos los Estados"
+                options={[
+                  { value: 'ACTIVE', label: 'Personal Activo' },
+                  { value: 'INACTIVE', label: 'Personal Inactivo' },
                 ]}
               />
             </FilterField>
           </AdvancedSearchFilter>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {paginatedRespList.map((resp) => (
-              <div key={resp.id} className="bg-slate-900/30 border border-amber-500/30 rounded-xl p-5 shadow-sm flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-[10px] rounded">
-                      {resp.title}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">Desde: {resp.start_date}</span>
-                  </div>
+          {/* Responsive Table */}
+          <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs table-fixed">
+                <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
+                  <tr>
+                    <th className="w-[110px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Cód. / DNI"
+                        field="dni"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[230px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Trabajador / Aprobador"
+                        field="first_name"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[190px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Cargo Institucional"
+                        field="position"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[210px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Dirección / Órgano"
+                        field="dirName"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[170px] px-3.5 py-3">
+                      <SortableHeader
+                        label="Área / Oficina"
+                        field="areaName"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[85px] px-3 py-3 text-center">
+                      <SortableHeader
+                        label="Estado"
+                        field="active"
+                        currentField={jefeSortField}
+                        currentOrder={jefeSortOrder}
+                        onSort={handleJefeSort}
+                      />
+                    </th>
+                    <th className="w-[95px] px-3 py-3 text-right text-slate-400">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {paginatedJefesList.map((item) => {
+                    const {
+                      employee: emp,
+                      source,
+                      dirName,
+                      areaName,
+                      isEncargado,
+                      supervisedEmployees,
+                      pendingPapeletasCount,
+                    } = item;
 
-                  <h4 className="font-bold text-base text-white">{resp.employee_name}</h4>
-                  <div className="text-xs text-indigo-300 mt-1 font-semibold">
-                    Unidad Asignada: {resp.unit_name} ({resp.unit_type})
-                  </div>
-                </div>
+                    return (
+                      <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
+                        {/* CÓDIGO DRAC & DNI */}
+                        <td className="px-3.5 py-3 font-mono">
+                          <div
+                            className="text-amber-400 font-bold text-[11px] truncate"
+                            title={`Código DRAC: ${emp.codigo_trabajador || 'DRAC-2026'}`}
+                          >
+                            {emp.codigo_trabajador || 'DRAC-2026'}
+                          </div>
+                          <div className="text-slate-300 font-semibold text-xs mt-0.5">{emp.dni}</div>
+                          {isEncargado ? (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 rounded text-[9px] font-bold">
+                              Encargado (e)
+                            </span>
+                          ) : (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded text-[9px] font-bold">
+                              Titular
+                            </span>
+                          )}
+                        </td>
 
-                {activeRole === 'HR_ADMIN' && (
-                  <button
-                    onClick={() => {
-                      setConfirmModalConfig({
-                        isOpen: true,
-                        title: 'Anular Designación de Jefatura',
-                        message: `¿Desea anular la designación de jefatura de "${resp.employee_name}"? Las papeletas previamente aprobadas por esta jefatura conservarán la firma y trazabilidad válida.`,
-                        actionType: 'ANNUL',
-                        entityName: `${resp.title} - ${resp.unit_name}`,
-                        confirmText: 'Anular Designación',
-                        onConfirm: () => {
-                          onDeleteResponsable(resp.id);
-                          setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                        },
-                        onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                      });
-                    }}
-                    className="p-1.5 bg-slate-800 hover:bg-rose-900 text-rose-400 rounded"
-                    title="Anular Designación"
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            ))}
+                        {/* TRABAJADOR */}
+                        <td className="px-3.5 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center font-bold text-[11px] border border-amber-500/30 shrink-0">
+                              {emp.first_name[0]}
+                              {emp.last_name[0]}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="font-bold text-white text-xs truncate cursor-pointer hover:text-amber-300 transition-colors flex items-center gap-1"
+                                title={`${emp.first_name} ${emp.last_name}`}
+                                onClick={() => setSelectedJefeForDetail(item)}
+                              >
+                                <span className="truncate">{emp.first_name} {emp.last_name}</span>
+                                <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1 mt-0.5 truncate">
+                                <UserCog className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                                <span className="text-indigo-300 font-semibold truncate">@{emp.username || emp.dni}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* CARGO INSTITUCIONAL */}
+                        <td className="px-3.5 py-3">
+                          <div className="flex items-center gap-1 text-slate-200 font-medium text-xs truncate" title={emp.position}>
+                            <Briefcase className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{emp.position}</span>
+                          </div>
+                          <div className="flex items-center gap-1 mt-0.5 truncate">
+                            <span className="px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded text-[9px] font-mono border border-slate-700 shrink-0">
+                              {emp.regimen_laboral}
+                            </span>
+                            <span className="text-[9px] text-slate-500 truncate">{emp.condicion_laboral}</span>
+                          </div>
+                        </td>
+
+                        {/* DIRECCIÓN / ÓRGANO */}
+                        <td className="px-3.5 py-3">
+                          <div className="font-medium text-slate-200 text-xs truncate" title={dirName}>
+                            {dirName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5" title={emp.dependencia_name}>
+                            {emp.dependencia_name}
+                          </div>
+                        </td>
+
+                        {/* ÁREA / OFICINA */}
+                        <td className="px-3.5 py-3">
+                          <div className="font-medium text-amber-300 text-xs truncate" title={areaName}>
+                            {areaName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {supervisedEmployees.length} servidor(es) a cargo
+                          </div>
+                        </td>
+
+                        {/* ESTADO */}
+                        <td className="px-3 py-3 text-center">
+                          <span
+                            className={`px-2 py-0.5 text-[9px] font-bold rounded-full border inline-block ${
+                              emp.active
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}
+                          >
+                            {emp.active ? 'ACTIVO' : 'INACTIVO'}
+                          </span>
+                        </td>
+
+                        {/* ACCIONES */}
+                        <td className="px-3 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Ver Ámbito de Aprobación */}
+                            <button
+                              onClick={() => setSelectedJefeForDetail(item)}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
+                              title="Ver Ámbito de Aprobación VoBo & Equipo Supervisado"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Ver Roles y Permisos RBAC */}
+                            <button
+                              onClick={() => setSelectedEmpForRoleModal(emp)}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 rounded transition-colors"
+                              title="Ver y Gestionar Perfil & Roles RBAC"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {filteredJefesList.length === 0 && (
+                <EmptyState
+                  icon={Crown}
+                  title="No se encontraron jefes o aprobadores con los criterios seleccionados"
+                  description="Ajuste los filtros de búsqueda por nombre, cargo, dirección o tipo de asignación."
+                  isFiltered={Boolean(jefeSearchTerm.trim()) || jefeActiveFilterCount > 0}
+                  onAction={handleResetJefeFilters}
+                />
+              )}
+            </div>
+
+            {filteredJefesList.length > 0 && (
+              <DataTablePagination
+                currentPage={jefeCurrentPage}
+                pageSize={jefePageSize}
+                totalItems={filteredJefesList.length}
+                onPageChange={setJefeCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setJefePageSize(newSize);
+                  setJefeCurrentPage(1);
+                }}
+              />
+            )}
           </div>
-
-          {filteredRespList.length === 0 && (
-            <EmptyState
-              icon={Crown}
-              title="No hay designaciones con los criterios de búsqueda"
-              description="Ajuste los filtros o agregue designaciones de jefatura."
-              isFiltered={Boolean(respSearchTerm.trim()) || respActiveFilterCount > 0}
-              onAction={handleResetRespFilters}
-            />
-          )}
-
-          {filteredRespList.length > 0 && (
-            <DataTablePagination
-              currentPage={respCurrentPage}
-              pageSize={respPageSize}
-              totalItems={filteredRespList.length}
-              onPageChange={setRespCurrentPage}
-              onPageSizeChange={(newSize) => {
-                setRespPageSize(newSize);
-                setRespCurrentPage(1);
-              }}
-            />
-          )}
         </div>
       )}
 
@@ -5002,6 +5219,364 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg"
               >
                 Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FICHA INTEGRAL DEL SERVIDOR DRAC */}
+      {selectedEmpForDetail && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-base border border-indigo-500/30">
+                  {selectedEmpForDetail.first_name[0]}
+                  {selectedEmpForDetail.last_name[0]}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base text-white">
+                      {selectedEmpForDetail.first_name} {selectedEmpForDetail.last_name}
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                        selectedEmpForDetail.active
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      }`}
+                    >
+                      {selectedEmpForDetail.active ? 'ACTIVO' : 'INACTIVO'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-400 flex items-center gap-3 font-mono mt-0.5">
+                    <span className="text-indigo-400 font-bold">
+                      Cód: {selectedEmpForDetail.codigo_trabajador || 'DRAC-2026'}
+                    </span>
+                    <span>•</span>
+                    <span>DNI: {selectedEmpForDetail.dni}</span>
+                    <span>•</span>
+                    <span className="text-cyan-400 font-semibold">@{selectedEmpForDetail.username || selectedEmpForDetail.dni}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedEmpForDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+              {/* Sección 1: Ubicación Orgánica Institucional */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-indigo-400 font-bold uppercase tracking-wider text-[10px]">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Ubicación Orgánica en la DRAC</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Dependencia Jerárquica:</span>
+                    <span className="font-semibold text-white text-xs mt-0.5 block">{selectedEmpForDetail.dependencia_name}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Dirección / Órgano:</span>
+                    <span className="font-semibold text-white text-xs mt-0.5 block">
+                      {selectedEmpForDetail.direccion_organo_name || 'Sin Dirección Asignada'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Área / Oficina Agraria:</span>
+                    <span className="font-semibold text-white text-xs mt-0.5 block">{selectedEmpForDetail.area_name || 'Sin Área'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Subárea / Sector:</span>
+                    <span className="font-semibold text-slate-300 text-xs mt-0.5 block">
+                      {selectedEmpForDetail.subarea_name || 'N/A (Asignación General)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 2: Régimen y Cargo Laboral */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-emerald-400 font-bold uppercase tracking-wider text-[10px]">
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Situación Laboral & Cargo</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                  <div className="md:col-span-2">
+                    <span className="text-slate-400 text-[11px] block">Cargo Institucional (Puesto):</span>
+                    <span className="font-bold text-white text-xs mt-0.5 block">{selectedEmpForDetail.position}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Régimen Laboral:</span>
+                    <span className="px-2 py-0.5 bg-slate-800 text-indigo-300 font-mono font-bold rounded border border-slate-700 inline-block mt-0.5 text-[11px]">
+                      {selectedEmpForDetail.regimen_laboral}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Condición Laboral:</span>
+                    <span className="font-semibold text-slate-300 text-xs mt-0.5 block">{selectedEmpForDetail.condicion_laboral}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Fecha de Ingreso:</span>
+                    <span className="font-mono text-slate-300 text-xs mt-0.5 block">{selectedEmpForDetail.hire_date || 'No registrada'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">PIN Biométrico ZKTeco:</span>
+                    <span className="font-mono text-emerald-400 font-bold text-xs mt-0.5 block">
+                      {selectedEmpForDetail.zkteco_pin || selectedEmpForDetail.dni}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Gobernanza RBAC y VoBo */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider text-[10px]">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Perfil del Sistema, Seguridad & Aprobadores</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Perfil Principal & Secundarios:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {getEmployeeAssignedRoles(selectedEmpForDetail).map((r) => {
+                        const rDef = SYSTEM_ROLES_CATALOG.find((x) => x.role === r) || SYSTEM_ROLES_CATALOG[0];
+                        return (
+                          <span
+                            key={r}
+                            className={`px-2 py-0.5 text-[10px] font-bold rounded border inline-flex items-center gap-1 ${rDef.color}`}
+                          >
+                            <Shield className="w-2.5 h-2.5" />
+                            <span>{rDef.badge}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Jefe Inmediato Asignado (VoBo):</span>
+                    <div className="font-bold text-amber-300 text-xs mt-1 flex items-center gap-1.5">
+                      <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{selectedEmpForDetail.supervisor_name || 'Asignación Jerárquica Directa'}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Estado de Primer Ingreso:</span>
+                    <div className="mt-1">
+                      {selectedEmpForDetail.primer_ingreso === 'PENDIENTE' || selectedEmpForDetail.password_change_required ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-semibold inline-block">
+                          Pendiente de cambio de clave
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold inline-block">
+                          Contraseña definitiva activa
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px] block">Correo Institucional & Teléfono:</span>
+                    <span className="text-slate-300 text-xs mt-0.5 block">
+                      {selectedEmpForDetail.email || 'Sin correo'} {selectedEmpForDetail.phone ? `• Tel: ${selectedEmpForDetail.phone}` : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setSelectedEmpForDetail(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+              >
+                Cerrar
+              </button>
+              {activeRole === 'HR_ADMIN' && (
+                <button
+                  onClick={() => {
+                    const emp = selectedEmpForDetail;
+                    setSelectedEmpForDetail(null);
+                    setEditingEmp(emp);
+                    setEmpCode(emp.codigo_trabajador);
+                    setEmpDni(emp.dni);
+                    setEmpFirstName(emp.first_name);
+                    setEmpLastNamePaterno(emp.apellido_paterno || emp.last_name.split(' ')[0] || '');
+                    setEmpLastNameMaterno(emp.apellido_materno || emp.last_name.split(' ')[1] || '');
+                    setEmpEmail(emp.email);
+                    setEmpPhone(emp.phone);
+                    setEmpDepId(emp.dependencia_id);
+                    setEmpDirId(emp.direccion_organo_id || '');
+                    setEmpAreaId(emp.area_id);
+                    setEmpSubareaId(emp.subarea_id || '');
+                    setEmpCargoId(emp.cargo_id || '');
+                    setEmpCargoName(emp.position);
+                    setEmpRegimen(emp.regimen_laboral);
+                    setEmpCondicion(emp.condicion_laboral);
+                    setEmpScheduleId(emp.schedule_id || '');
+                    setEmpHireDate(emp.hire_date);
+                    setEmpActive(emp.active);
+                    setEmpZkTecoPin(emp.zkteco_pin || emp.dni);
+                    setEmpHasAccess(emp.has_system_access !== false);
+                    setEmpUsername(emp.username || (emp.first_name ? `${emp.first_name.charAt(0).toLowerCase()}${(emp.apellido_paterno || emp.last_name.split(' ')[0] || '').toLowerCase()}` : emp.dni));
+                    setEmpRole(emp.role || 'TRABAJADOR');
+                    const existingRoles = getEmployeeAssignedRoles(emp);
+                    setEmpAssignedRoles(existingRoles);
+                    setEmpIsJefeDirector(Boolean(emp.is_jefe_director || existingRoles.includes('JEFE')));
+                    setEmpAccountStatus(emp.account_status || (emp.active ? 'ACTIVE' : 'INACTIVE'));
+                    setEmpAuthMethod(emp.auth_method || 'PASSWORD');
+                    setEmpRoleChangeReason('');
+                    setEmpInitialPassword('');
+                    setShowInitialPassword(false);
+                    setShowEmpModal(true);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-indigo-600/20"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Editar Datos del Servidor</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: FICHA DE ÁMBITO DE APROBACIÓN VOBO (JEFATURA) */}
+      {selectedJefeForDetail && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-amber-500/30 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-base border border-amber-500/30">
+                  <Crown className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base text-white">
+                      {selectedJefeForDetail.employee.first_name} {selectedJefeForDetail.employee.last_name}
+                    </h3>
+                    {selectedJefeForDetail.isEncargado ? (
+                      <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold rounded-full">
+                        Encargado (e)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded-full">
+                        Jefe Titular
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400 flex items-center gap-2 font-mono mt-0.5">
+                    <span>{selectedJefeForDetail.employee.position}</span>
+                    <span>•</span>
+                    <span className="text-amber-400 font-bold">{selectedJefeForDetail.dirName}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedJefeForDetail(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+              {/* Resumen de Métricas de Aprobación */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Equipo a Cargo</div>
+                  <div className="text-lg font-extrabold text-amber-400 mt-0.5">
+                    {selectedJefeForDetail.supervisedEmployees.length}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Papeletas por Visar</div>
+                  <div className="text-lg font-extrabold text-indigo-400 mt-0.5">
+                    {selectedJefeForDetail.pendingPapeletasCount}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Dirección / Órgano</div>
+                  <div className="text-[11px] font-bold text-white mt-1 truncate" title={selectedJefeForDetail.dirName}>
+                    {selectedJefeForDetail.dirName}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center">
+                  <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Área / Oficina</div>
+                  <div className="text-[11px] font-bold text-white mt-1 truncate" title={selectedJefeForDetail.areaName}>
+                    {selectedJefeForDetail.areaName}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Personal Bajo su Ámbito de VoBo */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider text-[10px]">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Personal Supervisado para VoBo de Papeletas y Permisos ({selectedJefeForDetail.supervisedEmployees.length})</span>
+                  </div>
+                </div>
+
+                {selectedJefeForDetail.supervisedEmployees.length === 0 ? (
+                  <div className="p-6 bg-slate-900/30 border border-slate-800 rounded-xl text-center text-slate-400 text-xs">
+                    No se registran servidores subordinados directamente en esta área u oficina actualmente.
+                  </div>
+                ) : (
+                  <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800">
+                    {selectedJefeForDetail.supervisedEmployees.map((subEmp) => (
+                      <div key={subEmp.id} className="p-3 flex items-center justify-between hover:bg-slate-800/40 transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-xs border border-indigo-500/20 shrink-0">
+                            {subEmp.first_name[0]}
+                            {subEmp.last_name[0]}
+                          </div>
+                          <div>
+                            <div className="font-bold text-white text-xs">
+                              {subEmp.first_name} {subEmp.last_name}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              DNI: {subEmp.dni} • Cargo: {subEmp.position}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 bg-slate-800 text-slate-300 font-mono text-[9px] rounded border border-slate-700">
+                            {subEmp.regimen_laboral}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
+                              subEmp.active
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}
+                          >
+                            {subEmp.active ? 'ACTIVO' : 'INACTIVO'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-end">
+              <button
+                onClick={() => setSelectedJefeForDetail(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+              >
+                Cerrar Ficha de Jefatura
               </button>
             </div>
           </div>

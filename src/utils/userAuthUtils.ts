@@ -1,4 +1,4 @@
-import { PasswordPolicy, SecurityConfig, Employee } from '../types';
+import { PasswordPolicy, SecurityConfig, Employee, RoleType } from '../types';
 
 export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
   min_length: 8,
@@ -145,6 +145,117 @@ export async function verifyPassword(password: string, storedHash: string, store
   return hash === storedHash;
 }
 
+export interface AuthResult {
+  success: boolean;
+  code?: 'SUCCESS' | 'NOT_FOUND' | 'USER_INACTIVE' | 'NO_ACCESS' | 'INVALID_CREDENTIALS' | 'ERROR';
+  message: string;
+  employee?: Employee;
+  requiresPasswordChange?: boolean;
+}
+
+/**
+ * Autentica un usuario contra el Directorio de Personal de la DRAC
+ */
+export async function authenticateUser(
+  identifier: string,
+  password: string,
+  employees: Employee[]
+): Promise<AuthResult> {
+  const cleanId = (identifier || '').trim().toLowerCase();
+  const cleanPass = password || '';
+
+  if (!cleanId || !cleanPass) {
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: 'Debe ingresar su usuario o DNI y contraseña.',
+    };
+  }
+
+  // Búsqueda por username exacto (o @username), DNI o correo institucional
+  const targetUser = cleanId.startsWith('@') ? cleanId.substring(1) : cleanId;
+  const emp = employees.find((e) => {
+    const u = (e.username || '').toLowerCase();
+    const dni = (e.dni || '').trim();
+    const email = (e.email || '').toLowerCase();
+    return u === targetUser || dni === targetUser || email === targetUser;
+  });
+
+  if (!emp) {
+    return {
+      success: false,
+      code: 'NOT_FOUND',
+      message: 'El usuario o DNI ingresado no se encuentra registrado en el Directorio de Personal.',
+    };
+  }
+
+  // 1. Verificación de Estado Activo
+  if (emp.active === false || emp.account_status === 'INACTIVE') {
+    return {
+      success: false,
+      code: 'USER_INACTIVE',
+      message: 'Su usuario se encuentra inactivo. Comuníquese con el administrador del sistema.',
+    };
+  }
+
+  // 2. Verificación de Acceso al Sistema
+  if (emp.has_system_access === false) {
+    return {
+      success: false,
+      code: 'NO_ACCESS',
+      message: 'Su registro no tiene habilitado el acceso al sistema informático.',
+    };
+  }
+
+  // 3. Verificación Criptográfica de Contraseña
+  let isValid = false;
+
+  if (emp.password_hash) {
+    isValid = await verifyPassword(cleanPass, emp.password_hash, emp.password_salt);
+  } else {
+    // Si aún no tiene hash criptográfico (migración de cuentas iniciales)
+    // Se valida contra DNI o clave temporal por defecto
+    isValid = cleanPass === emp.dni || cleanPass === '123456' || cleanPass === 'Drac2026!';
+  }
+
+  if (!isValid) {
+    return {
+      success: false,
+      code: 'INVALID_CREDENTIALS',
+      message: 'Contraseña incorrecta. Verifique sus credenciales e intente nuevamente.',
+    };
+  }
+
+  const requiresPasswordChange =
+    Boolean(emp.password_change_required) || emp.primer_ingreso === 'PENDIENTE';
+
+  return {
+    success: true,
+    code: 'SUCCESS',
+    message: 'Inicio de sesión exitoso.',
+    employee: emp,
+    requiresPasswordChange,
+  };
+}
+
+/**
+ * Obtiene los roles acumulativos asignados al empleado
+ */
+export function getEmployeeAssignedRoles(emp: Employee): RoleType[] {
+  const roles: RoleType[] = [];
+  if (emp.role) roles.push(emp.role);
+  if (Array.isArray(emp.assigned_roles)) {
+    emp.assigned_roles.forEach((r) => {
+      if (!roles.includes(r)) roles.push(r);
+    });
+  }
+  // Base TRABAJADOR siempre presente
+  if (!roles.includes('TRABAJADOR') && !roles.includes('EMPLOYEE')) {
+    roles.push('TRABAJADOR');
+  }
+  return roles;
+}
+
 export interface PasswordValidationResult {
   valid: boolean;
   errors: string[];
@@ -154,12 +265,64 @@ export interface PasswordValidationResult {
     hasLowercase: boolean;
     hasNumber: boolean;
     hasSpecial: boolean;
-    notPrevious: boolean;
+    notPrevious?: boolean;
   };
 }
 
 /**
- * Valida una nueva contraseña contra las Políticas de Seguridad configuradas
+ * Validación sincrónica rápida de políticas de contraseña
+ */
+export function validatePasswordPolicy(
+  password: string,
+  policy: PasswordPolicy = DEFAULT_PASSWORD_POLICY
+): PasswordValidationResult {
+  const errors: string[] = [];
+  const minLength = policy.min_length || 8;
+
+  const ruleMinLength = (password || '').length >= minLength;
+  const ruleUppercase = /[A-Z]/.test(password || '');
+  const ruleLowercase = /[a-z]/.test(password || '');
+  const ruleNumber = /[0-9]/.test(password || '');
+  const ruleSpecial = /[^A-Za-z0-9]/.test(password || '');
+
+  if (!ruleMinLength) {
+    errors.push(`Debe tener al menos ${minLength} caracteres de longitud.`);
+  }
+  if (policy.require_uppercase && !ruleUppercase) {
+    errors.push('Debe contener al menos una letra mayúscula (A-Z).');
+  }
+  if (policy.require_lowercase && !ruleLowercase) {
+    errors.push('Debe contener al menos una letra minúscula (a-z).');
+  }
+  if (policy.require_number && !ruleNumber) {
+    errors.push('Debe contener al menos un número (0-9).');
+  }
+  if (policy.require_special_char && !ruleSpecial) {
+    errors.push('Debe contener al menos un carácter especial (!@#$%^&*...).');
+  }
+
+  const valid =
+    ruleMinLength &&
+    (!policy.require_uppercase || ruleUppercase) &&
+    (!policy.require_lowercase || ruleLowercase) &&
+    (!policy.require_number || ruleNumber) &&
+    (!policy.require_special_char || ruleSpecial);
+
+  return {
+    valid,
+    errors,
+    rules: {
+      minLength: ruleMinLength,
+      hasUppercase: ruleUppercase,
+      hasLowercase: ruleLowercase,
+      hasNumber: ruleNumber,
+      hasSpecial: ruleSpecial,
+    },
+  };
+}
+
+/**
+ * Valida una nueva contraseña contra las Políticas de Seguridad configuradas (con chequeo de contraseña previa)
  */
 export async function validatePasswordWithPolicy(
   password: string,

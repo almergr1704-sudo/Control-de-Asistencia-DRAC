@@ -297,45 +297,51 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
 
       {/* Vacations Table */}
       <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="w-full">
-          <table className="w-full text-left text-xs border-collapse">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse table-fixed">
             <thead className="bg-[#090A0D] text-slate-400 font-medium border-b border-slate-800">
               <tr>
-                <th className="w-8 px-2 py-3 text-center">#</th>
-                <SortableHeader
-                  label="Empleado / DNI"
-                  field="employee_name"
-                  currentSortField={sortField}
-                  currentSortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-                <SortableHeader
-                  label="Tipo"
-                  field="tipo"
-                  currentSortField={sortField}
-                  currentSortOrder={sortOrder}
-                  onSort={handleSort}
-                  className="w-32"
-                />
-                <SortableHeader
-                  label="Período de Descanso"
-                  field="start_date"
-                  currentSortField={sortField}
-                  currentSortOrder={sortOrder}
-                  onSort={handleSort}
-                />
-                <SortableHeader
-                  label="Días"
-                  field="total_days"
-                  currentSortField={sortField}
-                  currentSortOrder={sortOrder}
-                  onSort={handleSort}
-                  align="center"
-                  className="w-20 text-center"
-                />
-                <th className="px-3 py-3 hidden sm:table-cell">Aprobado por RRHH</th>
-                <th className="px-3 py-3">Observaciones / Sustento</th>
-                {isEditorRole && <th className="px-3 py-3 text-right w-24">Acciones</th>}
+                <th className="w-[40px] px-2 py-3 text-center">#</th>
+                <th className="w-[220px] px-3 py-3">
+                  <SortableHeader
+                    label="Empleado / DNI"
+                    field="employee_name"
+                    currentSortField={sortField}
+                    currentSortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                </th>
+                <th className="w-[120px] px-3 py-3">
+                  <SortableHeader
+                    label="Tipo"
+                    field="tipo"
+                    currentSortField={sortField}
+                    currentSortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                </th>
+                <th className="w-[180px] px-3 py-3">
+                  <SortableHeader
+                    label="Período de Descanso"
+                    field="start_date"
+                    currentSortField={sortField}
+                    currentSortOrder={sortOrder}
+                    onSort={handleSort}
+                  />
+                </th>
+                <th className="w-[80px] px-3 py-3 text-center">
+                  <SortableHeader
+                    label="Días"
+                    field="total_days"
+                    currentSortField={sortField}
+                    currentSortOrder={sortOrder}
+                    onSort={handleSort}
+                    align="center"
+                  />
+                </th>
+                <th className="w-[140px] px-3 py-3 hidden sm:table-cell">Aprobado RRHH</th>
+                <th className="w-[180px] px-3 py-3">Observaciones</th>
+                {isEditorRole && <th className="w-[85px] px-3 py-3 text-right">Acciones</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">

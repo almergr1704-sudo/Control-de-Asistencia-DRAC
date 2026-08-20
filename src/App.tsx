@@ -13,7 +13,11 @@ import { ReportsModule } from './components/app/ReportsModule';
 import { AdminModule } from './components/app/AdminModule';
 import { ConfigModule } from './components/app/ConfigModule';
 import { ForcePasswordChangeModal } from './components/auth/ForcePasswordChangeModal';
+import { LoginPage } from './components/auth/LoginPage';
+import { UserProfileModal } from './components/auth/UserProfileModal';
+import { UnauthorizedView } from './components/common/UnauthorizedView';
 import { getViewFromHash, VIEW_TO_HASH, isViewAllowedForRole } from './utils/router';
+import { getEmployeeAssignedRoles } from './utils/userAuthUtils';
 
 import {
   INITIAL_DEPENDENCIAS,
@@ -63,11 +67,72 @@ import {
 export default function App() {
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
 
-  // Active User / Role - Default to HR_ADMIN for full operational access
-  const [activeRole, setActiveRole] = useState<RoleType>('HR_ADMIN');
-  const [activeUserDni, setActiveUserDni] = useState<string>('40123987'); // María Silva (RRHH)
+  // Persistent Storage Helper
+  const loadStored = <T,>(key: string, fallback: T): T => {
+    try {
+      const item = localStorage.getItem(`drac_data_${key}`);
+      if (!item) return fallback;
+      const parsed = JSON.parse(item);
+      return parsed;
+    } catch {
+      return fallback;
+    }
+  };
 
-  const [activeView, setActiveView] = useState<string>(() => getViewFromHash(window.location.hash, 'HR_ADMIN'));
+  // State Entities - DRAC Structure
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const stored = loadStored<Employee[]>('employees', INITIAL_EMPLOYEES);
+    if (!stored || stored.length === 0) return INITIAL_EMPLOYEES;
+    // Merge missing seeds with existing
+    const map = new Map<string, Employee>();
+    INITIAL_EMPLOYEES.forEach((e) => map.set(e.id, e));
+    stored.forEach((e) => {
+      const initialMatch = INITIAL_EMPLOYEES.find((i) => i.id === e.id || i.dni === e.dni || i.username === e.username);
+      if (initialMatch) {
+        map.set(e.id, { ...initialMatch, ...e });
+      } else {
+        map.set(e.id, e);
+      }
+    });
+    return Array.from(map.values());
+  });
+
+  // User Session Management
+  const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
+    try {
+      const stored = localStorage.getItem('drac_auth_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.currentUser) {
+          return parsed.currentUser;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [activeRole, setActiveRole] = useState<RoleType>(() => {
+    try {
+      const stored = localStorage.getItem('drac_auth_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.activeRole) return parsed.activeRole;
+      }
+    } catch {}
+    return 'ADMIN_GENERAL';
+  });
+
+  const [activeUserDni, setActiveUserDni] = useState<string>(() => {
+    return currentUser?.dni || '10000001';
+  });
+
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  const [activeView, setActiveView] = useState<string>(() =>
+    getViewFromHash(window.location.hash, activeRole)
+  );
 
   const handleNavigate = (viewId: string) => {
     if (!isViewAllowedForRole(viewId, activeRole)) return;
@@ -80,10 +145,82 @@ export default function App() {
 
   const handleRoleChange = (role: RoleType) => {
     setActiveRole(role);
+    if (currentUser) {
+      localStorage.setItem(
+        'drac_auth_session',
+        JSON.stringify({
+          currentUser,
+          activeRole: role,
+        })
+      );
+    }
     const allowedView = getViewFromHash(window.location.hash, role);
     setActiveView(allowedView);
     window.location.hash = VIEW_TO_HASH[allowedView] || '#/dashboard';
   };
+
+  const handleLoginSuccess = (
+    employee: Employee,
+    selectedRole: RoleType,
+    requiresPasswordChange: boolean
+  ) => {
+    setCurrentUser(employee);
+    setActiveRole(selectedRole);
+    setActiveUserDni(employee.dni);
+    localStorage.setItem(
+      'drac_auth_session',
+      JSON.stringify({
+        currentUser: employee,
+        activeRole: selectedRole,
+        loginTime: new Date().toISOString(),
+      })
+    );
+    const targetHash = VIEW_TO_HASH['dash_overview'] || '#/dashboard';
+    window.location.hash = targetHash;
+    setActiveView('dash_overview');
+  };
+
+  const handleLogout = () => {
+    if (currentUser) {
+      const newLog: AuditLog = {
+        id: `audlog-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: currentUser.dni,
+        user_name: `${currentUser.first_name} ${currentUser.last_name}`,
+        role: activeRole,
+        module: 'AUTENTICACION',
+        action: 'LOGOUT',
+        affected_record_id: currentUser.dni,
+        details: `Cierre de sesión de ${currentUser.first_name} ${currentUser.last_name} (@${currentUser.username || currentUser.dni})`,
+      };
+      setAuditLogs((prev) => [newLog, ...prev]);
+    }
+    setCurrentUser(null);
+    localStorage.removeItem('drac_auth_session');
+    window.location.hash = '#/dashboard';
+  };
+
+  // Check if active user gets deactivated or changed
+  useEffect(() => {
+    if (currentUser) {
+      const freshRecord = employees.find(
+        (e) => e.id === currentUser.id || e.dni === currentUser.dni
+      );
+      if (freshRecord) {
+        if (freshRecord.active === false || freshRecord.account_status === 'INACTIVE') {
+          // Invalidate session immediately
+          setCurrentUser(null);
+          localStorage.removeItem('drac_auth_session');
+        } else if (
+          freshRecord.password_change_required !== currentUser.password_change_required ||
+          freshRecord.primer_ingreso !== currentUser.primer_ingreso ||
+          freshRecord.role !== currentUser.role
+        ) {
+          setCurrentUser(freshRecord);
+        }
+      }
+    }
+  }, [employees]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -92,7 +229,7 @@ export default function App() {
     };
 
     window.addEventListener('hashchange', handleHashChange);
-    
+
     if (!window.location.hash || window.location.hash === '#/') {
       window.location.hash = VIEW_TO_HASH[activeView] || '#/dashboard';
     }
@@ -101,18 +238,6 @@ export default function App() {
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, [activeRole]);
-
-  // Persistent Storage Helper
-  const loadStored = <T,>(key: string, fallback: T): T => {
-    try {
-      const item = localStorage.getItem(`drac_data_${key}`);
-      if (!item) return fallback;
-      const parsed = JSON.parse(item);
-      return parsed;
-    } catch {
-      return fallback;
-    }
-  };
 
   // State Entities - DRAC Structure
   const [dependencias, setDependencias] = useState<Dependencia[]>(() => {
@@ -162,9 +287,6 @@ export default function App() {
   const [cargos, setCargos] = useState<Cargo[]>(() => loadStored('cargos', INITIAL_CARGOS));
   const [responsables, setResponsables] = useState<ResponsableDesignation[]>(() =>
     loadStored('responsables', INITIAL_RESPONSABLES)
-  );
-  const [employees, setEmployees] = useState<Employee[]>(() =>
-    loadStored('employees', INITIAL_EMPLOYEES)
   );
   const [assignmentHistory, setAssignmentHistory] = useState<EmployeeAssignmentHistory[]>(() =>
     loadStored('assignmentHistory', [])
@@ -1001,6 +1123,32 @@ export default function App() {
     }
   };
 
+  // Unauthenticated user -> Show Institutional Login Page
+  if (!currentUser) {
+    return (
+      <LoginPage
+        employees={employees}
+        onLoginSuccess={handleLoginSuccess}
+        onRecordAudit={(action, details, dni, name) => {
+          const newLog: AuditLog = {
+            id: `audlog-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            user_id: dni || 'ANONIMO',
+            user_name: name || 'Usuario DRAC',
+            role: 'ADMIN_GENERAL',
+            module: 'AUTENTICACION',
+            action,
+            affected_record_id: dni || '-',
+            details,
+          };
+          setAuditLogs((prev) => [newLog, ...prev]);
+        }}
+      />
+    );
+  }
+
+  const isCurrentViewAllowed = isViewAllowedForRole(activeView, activeRole);
+
   return (
     <div className="min-h-screen bg-[#07080A] text-slate-100 font-sans antialiased flex">
       {/* 1. Left Vertical Navigation Menu */}
@@ -1018,219 +1166,280 @@ export default function App() {
         <Header
           activeRole={activeRole}
           setActiveRole={handleRoleChange}
-          activeUserDni={activeUserDni}
-          setActiveUserDni={setActiveUserDni}
+          currentUser={currentUser}
+          onOpenProfile={() => setIsProfileModalOpen(true)}
+          onLogout={handleLogout}
           onResetData={handleResetAllData}
           onToggleSidebarMobile={() => setIsOpenMobile(true)}
         />
 
         {/* Content Workspace Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {/* DASHBOARD */}
-          {activeView === 'dash_overview' && (
-            <OperationalDashboard
-              attendance={attendance}
-              employees={employees}
-              papeletas={papeletas}
-              vacaciones={vacaciones}
+          {/* Security Guard: 403 Unauthorized View */}
+          {!isCurrentViewAllowed ? (
+            <UnauthorizedView
+              attemptedView={activeView}
               activeRole={activeRole}
-              onNavigate={handleNavigate}
+              onNavigateHome={() => handleNavigate('dash_overview')}
             />
-          )}
+          ) : (
+            <>
+              {/* DASHBOARD */}
+              {activeView === 'dash_overview' && (
+                <OperationalDashboard
+                  attendance={attendance}
+                  employees={employees}
+                  papeletas={papeletas}
+                  vacaciones={vacaciones}
+                  activeRole={activeRole}
+                  onNavigate={handleNavigate}
+                />
+              )}
 
-          {/* ORGANIZACIÓN & PERSONAL */}
-          {(activeView.startsWith('org_') ||
-            (activeView.startsWith('personnel_') && activeView !== 'personnel_encargaturas')) && (
-            <OrgPersonnelModule
-              activeView={activeView}
-              dependencias={dependencias}
-              direccionesOrganos={direccionesOrganos}
-              areas={areas}
-              cargos={cargos}
-              responsables={responsables}
-              employees={employees}
-              assignmentHistory={assignmentHistory}
-              horarios={horarios}
-              activeRole={activeRole}
-              encargaturas={encargaturas}
-              papeletas={papeletas}
-              onAddDependencia={handleAddDependencia}
-              onEditDependencia={handleEditDependencia}
-              onDeleteDependencia={handleDeleteDependencia}
-              onAddDireccionOrgano={handleAddDireccionOrgano}
-              onEditDireccionOrgano={handleEditDireccionOrgano}
-              onDeleteDireccionOrgano={handleDeleteDireccionOrgano}
-              onAddArea={handleAddArea}
-              onEditArea={handleEditArea}
-              onDeleteArea={handleDeleteArea}
-              onAddCargo={handleAddCargo}
-              onEditCargo={handleEditCargo}
-              onDeleteCargo={handleDeleteCargo}
-              onAddResponsable={handleAddResponsable}
-              onEditResponsable={handleEditResponsable}
-              onDeleteResponsable={handleDeleteResponsable}
-              onAddEmployee={handleAddEmployee}
-              onEditEmployee={handleEditEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-              onBulkImportDirecciones={handleBulkImportDirecciones}
-              onBulkImportAreas={handleBulkImportAreas}
-              onBulkImportTrabajadores={handleBulkImportTrabajadores}
-            />
-          )}
+              {/* ORGANIZACIÓN & PERSONAL */}
+              {(activeView.startsWith('org_') ||
+                (activeView.startsWith('personnel_') && activeView !== 'personnel_encargaturas')) && (
+                <OrgPersonnelModule
+                  activeView={activeView}
+                  dependencias={dependencias}
+                  direccionesOrganos={direccionesOrganos}
+                  areas={areas}
+                  cargos={cargos}
+                  responsables={responsables}
+                  employees={employees}
+                  assignmentHistory={assignmentHistory}
+                  horarios={horarios}
+                  activeRole={activeRole}
+                  encargaturas={encargaturas}
+                  papeletas={papeletas}
+                  onAddDependencia={handleAddDependencia}
+                  onEditDependencia={handleEditDependencia}
+                  onDeleteDependencia={handleDeleteDependencia}
+                  onAddDireccionOrgano={handleAddDireccionOrgano}
+                  onEditDireccionOrgano={handleEditDireccionOrgano}
+                  onDeleteDireccionOrgano={handleDeleteDireccionOrgano}
+                  onAddArea={handleAddArea}
+                  onEditArea={handleEditArea}
+                  onDeleteArea={handleDeleteArea}
+                  onAddCargo={handleAddCargo}
+                  onEditCargo={handleEditCargo}
+                  onDeleteCargo={handleDeleteCargo}
+                  onAddResponsable={handleAddResponsable}
+                  onEditResponsable={handleEditResponsable}
+                  onDeleteResponsable={handleDeleteResponsable}
+                  onAddEmployee={handleAddEmployee}
+                  onEditEmployee={handleEditEmployee}
+                  onDeleteEmployee={handleDeleteEmployee}
+                  onBulkImportDirecciones={handleBulkImportDirecciones}
+                  onBulkImportAreas={handleBulkImportAreas}
+                  onBulkImportTrabajadores={handleBulkImportTrabajadores}
+                />
+              )}
 
-          {/* ENCARGATURAS TEMPORALES */}
-          {activeView === 'personnel_encargaturas' && (
-            <EncargaturasModule
-              encargaturas={encargaturas}
-              onAddEncargatura={handleAddEncargatura}
-              onEditEncargatura={handleEditEncargatura}
-              onDeleteEncargatura={handleDeleteEncargatura}
-              onAnularEncargatura={handleAnularEncargatura}
-              onBulkImportEncargaturas={handleBulkImportEncargaturas}
-              employees={employees}
-              dependencias={dependencias}
-              direccionesOrganos={direccionesOrganos}
-              areas={areas}
-              papeletas={papeletas}
-              activeRole={activeRole}
-              activeUserDni={activeUserDni}
-            />
-          )}
+              {/* ENCARGATURAS TEMPORALES */}
+              {activeView === 'personnel_encargaturas' && (
+                <EncargaturasModule
+                  encargaturas={encargaturas}
+                  onAddEncargatura={handleAddEncargatura}
+                  onEditEncargatura={handleEditEncargatura}
+                  onDeleteEncargatura={handleDeleteEncargatura}
+                  onAnularEncargatura={handleAnularEncargatura}
+                  onBulkImportEncargaturas={handleBulkImportEncargaturas}
+                  employees={employees}
+                  dependencias={dependencias}
+                  direccionesOrganos={direccionesOrganos}
+                  areas={areas}
+                  papeletas={papeletas}
+                  activeRole={activeRole}
+                  activeUserDni={activeUserDni}
+                />
+              )}
 
-          {/* TURNOS & HORARIOS */}
-          {activeView.startsWith('shifts_') && (
-            <ShiftsSchedulesModule
-              activeView={activeView}
-              turnos={turnos}
-              horarios={horarios}
-              activeRole={activeRole}
-              onAddTurno={handleAddTurno}
-              onEditTurno={handleEditTurno}
-              onDeleteTurno={handleDeleteTurno}
-              onAddHorario={handleAddHorario}
-              onEditHorario={handleEditHorario}
-              onDeleteHorario={handleDeleteHorario}
-            />
-          )}
+              {/* TURNOS & HORARIOS */}
+              {activeView.startsWith('shifts_') && (
+                <ShiftsSchedulesModule
+                  activeView={activeView}
+                  turnos={turnos}
+                  horarios={horarios}
+                  activeRole={activeRole}
+                  onAddTurno={handleAddTurno}
+                  onEditTurno={handleEditTurno}
+                  onDeleteTurno={handleDeleteTurno}
+                  onAddHorario={handleAddHorario}
+                  onEditHorario={handleEditHorario}
+                  onDeleteHorario={handleDeleteHorario}
+                />
+              )}
 
-          {/* ASISTENCIA */}
-          {activeView.startsWith('attendance_') && (
-            <AttendanceModule
-              activeView={activeView}
-              attendanceData={attendance}
-              activeRole={activeRole}
-              activeUserDni={activeUserDni}
-              onEditAttendanceRecord={handleEditAttendanceRecord}
-            />
-          )}
+              {/* ASISTENCIA */}
+              {activeView.startsWith('attendance_') && (
+                <AttendanceModule
+                  activeView={activeView}
+                  attendanceData={attendance}
+                  activeRole={activeRole}
+                  activeUserDni={activeUserDni}
+                  onEditAttendanceRecord={handleEditAttendanceRecord}
+                />
+              )}
 
-          {/* BIOMÉTRICOS ZKTECO */}
-          {activeView.startsWith('devices_') && (
-            <DevicesModule
-              activeView={activeView}
-              devices={devices}
-              rawPunches={rawPunches}
-              employees={employees}
-              dependencias={dependencias}
-              punchAuthorizations={punchAuthorizations}
-              activeRole={activeRole}
-              onAddDevice={handleAddDevice}
-              onEditDevice={handleEditDevice}
-              onDeleteDevice={handleDeleteDevice}
-              onSimulatePunch={handleSimulatePunch}
-              onAddPunchAuthorization={handleAddPunchAuthorization}
-              onRevokePunchAuthorization={handleRevokePunchAuthorization}
-              onDeletePunchAuthorization={handleDeletePunchAuthorization}
-            />
-          )}
+              {/* BIOMÉTRICOS ZKTECO */}
+              {activeView.startsWith('devices_') && (
+                <DevicesModule
+                  activeView={activeView}
+                  devices={devices}
+                  rawPunches={rawPunches}
+                  employees={employees}
+                  dependencias={dependencias}
+                  punchAuthorizations={punchAuthorizations}
+                  activeRole={activeRole}
+                  onAddDevice={handleAddDevice}
+                  onEditDevice={handleEditDevice}
+                  onDeleteDevice={handleDeleteDevice}
+                  onSimulatePunch={handleSimulatePunch}
+                  onAddPunchAuthorization={handleAddPunchAuthorization}
+                  onRevokePunchAuthorization={handleRevokePunchAuthorization}
+                  onDeletePunchAuthorization={handleDeletePunchAuthorization}
+                />
+              )}
 
-          {/* VACACIONES */}
-          {activeView.startsWith('vacations_') && (
-            <VacationsModule
-              activeView={activeView}
-              vacaciones={vacaciones}
-              employees={employees}
-              activeRole={activeRole}
-              onAddVacation={handleAddVacation}
-              onEditVacation={handleEditVacation}
-              onDeleteVacation={handleDeleteVacation}
-            />
-          )}
+              {/* VACACIONES */}
+              {activeView.startsWith('vacations_') && (
+                <VacationsModule
+                  activeView={activeView}
+                  vacaciones={vacaciones}
+                  employees={employees}
+                  activeRole={activeRole}
+                  onAddVacation={handleAddVacation}
+                  onEditVacation={handleEditVacation}
+                  onDeleteVacation={handleDeleteVacation}
+                />
+              )}
 
-          {/* PAPELETAS & VIGILANCIA / GARITA */}
-          {(activeView.startsWith('papeletas_') || activeView.startsWith('security_')) && (
-            <PapeletasModule
-              activeView={activeView}
-              papeletas={papeletas}
-              papeletaAudits={papeletaAudits}
-              employees={employees}
-              activeRole={activeRole}
-              activeUserDni={activeUserDni}
-              onUpdatePapeletaStatus={handleUpdatePapeletaStatus}
-              onCreatePapeleta={handleCreatePapeleta}
-            />
-          )}
+              {/* PAPELETAS & VIGILANCIA / GARITA */}
+              {(activeView.startsWith('papeletas_') || activeView.startsWith('security_')) && (
+                <PapeletasModule
+                  activeView={activeView}
+                  papeletas={papeletas}
+                  papeletaAudits={papeletaAudits}
+                  employees={employees}
+                  activeRole={activeRole}
+                  activeUserDni={activeUserDni}
+                  onUpdatePapeletaStatus={handleUpdatePapeletaStatus}
+                  onCreatePapeleta={handleCreatePapeleta}
+                />
+              )}
 
-          {/* REPORTES */}
-          {activeView.startsWith('reports_') && (
-            <ReportsModule
-              attendance={attendance}
-              papeletas={papeletas}
-              vacaciones={vacaciones}
-              employees={employees}
-              reportType={
-                activeView === 'reports_tardiness'
-                  ? 'TARDINESS'
-                  : activeView === 'reports_absences'
-                  ? 'ABSENCES'
-                  : activeView === 'reports_overtime'
-                  ? 'OVERTIME'
-                  : activeView === 'reports_vacations'
-                  ? 'VACATIONS'
-                  : activeView === 'reports_papeletas'
-                  ? 'PAPELETAS'
-                  : activeView === 'reports_exits'
-                  ? 'EXITS'
-                  : 'ATTENDANCE'
-              }
-            />
-          )}
+              {/* REPORTES */}
+              {activeView.startsWith('reports_') && (
+                <ReportsModule
+                  attendance={attendance}
+                  papeletas={papeletas}
+                  vacaciones={vacaciones}
+                  employees={employees}
+                  reportType={
+                    activeView === 'reports_tardiness'
+                      ? 'TARDINESS'
+                      : activeView === 'reports_absences'
+                      ? 'ABSENCES'
+                      : activeView === 'reports_overtime'
+                      ? 'OVERTIME'
+                      : activeView === 'reports_vacations'
+                      ? 'VACATIONS'
+                      : activeView === 'reports_papeletas'
+                      ? 'PAPELETAS'
+                      : activeView === 'reports_exits'
+                      ? 'EXITS'
+                      : 'ATTENDANCE'
+                  }
+                />
+              )}
 
-          {/* ADMINISTRACIÓN */}
-          {activeView.startsWith('admin_') && (
-            <AdminModule
-              auditLogs={auditLogs}
-              employees={employees}
-              activeRole={activeRole}
-              onEditEmployee={handleEditEmployee}
-              subTab={
-                activeView === 'admin_roles'
-                  ? 'ROLES'
-                  : activeView === 'admin_audit'
-                  ? 'AUDIT'
-                  : 'USERS'
-              }
-            />
-          )}
+              {/* ADMINISTRACIÓN */}
+              {activeView.startsWith('admin_') && (
+                <AdminModule
+                  auditLogs={auditLogs}
+                  employees={employees}
+                  activeRole={activeRole}
+                  onEditEmployee={handleEditEmployee}
+                  subTab={
+                    activeView === 'admin_roles'
+                      ? 'ROLES'
+                      : activeView === 'admin_audit'
+                      ? 'AUDIT'
+                      : 'USERS'
+                  }
+                />
+              )}
 
-          {/* CONFIGURACIÓN */}
-          {activeView === 'config_system' && <ConfigModule />}
+              {/* CONFIGURACIÓN */}
+              {activeView === 'config_system' && <ConfigModule />}
+            </>
+          )}
         </main>
       </div>
 
+      {/* USER PROFILE & PASSWORD MODAL */}
+      {isProfileModalOpen && (
+        <UserProfileModal
+          employee={currentUser}
+          activeRole={activeRole}
+          onClose={() => setIsProfileModalOpen(false)}
+          onUpdateEmployee={(updated) => {
+            handleEditEmployee(updated);
+            setCurrentUser(updated);
+            localStorage.setItem(
+              'drac_auth_session',
+              JSON.stringify({
+                currentUser: updated,
+                activeRole,
+              })
+            );
+          }}
+          onRecordAudit={(action, details) => {
+            const newLog: AuditLog = {
+              id: `audlog-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              user_id: currentUser.dni,
+              user_name: `${currentUser.first_name} ${currentUser.last_name}`,
+              role: activeRole,
+              module: 'SEGURIDAD',
+              action,
+              affected_record_id: currentUser.dni,
+              details,
+            };
+            setAuditLogs((prev) => [newLog, ...prev]);
+          }}
+        />
+      )}
+
       {/* MANDATORY FORCE PASSWORD CHANGE MODAL FOR FIRST LOGIN OR RESET */}
       {(() => {
-        const sessionEmp = employees.find((e) => e.dni === activeUserDni) || employees.find((e) => e.role === activeRole);
+        const sessionEmp =
+          (currentUser &&
+            employees.find(
+              (e) => e.id === currentUser.id || e.dni === currentUser.dni
+            )) ||
+          currentUser;
+
         if (
           sessionEmp &&
           sessionEmp.has_system_access !== false &&
-          (sessionEmp.password_change_required || sessionEmp.primer_ingreso === 'PENDIENTE')
+          (sessionEmp.password_change_required ||
+            sessionEmp.primer_ingreso === 'PENDIENTE')
         ) {
           return (
             <ForcePasswordChangeModal
               employee={sessionEmp}
               onPasswordChanged={(updatedEmp) => {
                 handleEditEmployee(updatedEmp);
+                setCurrentUser(updatedEmp);
+                localStorage.setItem(
+                  'drac_auth_session',
+                  JSON.stringify({
+                    currentUser: updatedEmp,
+                    activeRole,
+                  })
+                );
               }}
             />
           );
