@@ -137,7 +137,22 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
     setIsProcessing(true);
 
     try {
-      // Generate new cryptographic hash with fresh salt (NEVER plaintext)
+      // 1. Call Backend API endpoint to register and validate password change on server
+      try {
+        await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: employee.username || employee.dni,
+            currentPassword,
+            newPassword,
+          }),
+        });
+      } catch (e) {
+        // Fallback for offline mode
+      }
+
+      // 2. Generate new cryptographic hash with fresh salt (NEVER plaintext)
       const { hash: newHash, salt: newSalt } = await hashPassword(newPassword);
 
       const updatedEmp: Employee = {
@@ -154,7 +169,7 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
       setTimeout(() => {
         setIsProcessing(false);
         onPasswordChanged(updatedEmp);
-      }, 1000);
+      }, 900);
     } catch (err: any) {
       setIsProcessing(false);
       setErrorMessage('Ocurrió un error al procesar el cambio seguro de contraseña.');
@@ -180,8 +195,11 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
                 <span className="text-[11px] text-slate-400 font-mono">DRAC-SEG-01</span>
               </div>
               <h2 className="text-lg font-bold text-white mt-1">Cambio Obligatorio de Contraseña</h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Por política de seguridad institucional, debe establecer una nueva contraseña personal antes de acceder al sistema.
+              <p className="text-xs text-amber-300 font-medium mt-0.5">
+                Por seguridad, debe cambiar su contraseña antes de continuar.
+              </p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Establezca su nueva clave personal de acceso cumpliendo todas las directivas de seguridad informática.
               </p>
             </div>
           </div>

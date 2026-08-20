@@ -172,7 +172,7 @@ export const DEFAULT_ADMIN_USER: Employee = {
   area_name: 'OFICINA DE ADMINISTRACION',
   position: 'Administrador General del Sistema',
   cargo_id: 'crg-07',
-  regimen_laboral: 'D.L. 276',
+  regimen_laboral: 'D. LEG. 276',
   condicion_laboral: 'NOMBRADO',
   role: 'ADMIN_GENERAL',
   assigned_roles: ['TRABAJADOR', 'ADMIN_GENERAL'],

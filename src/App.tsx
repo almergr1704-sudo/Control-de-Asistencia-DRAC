@@ -1159,6 +1159,35 @@ export default function App() {
     );
   }
 
+  // MANDATORY SECURITY GATE: If user has pending password change, NEVER render system dashboard/modules
+  const activeSessionEmp =
+    employees.find((e) => e.id === currentUser.id || e.dni === currentUser.dni) || currentUser;
+
+  const requiresPasswordChange =
+    activeSessionEmp.has_system_access !== false &&
+    (Boolean(activeSessionEmp.password_change_required) ||
+      activeSessionEmp.primer_ingreso === 'PENDIENTE');
+
+  if (requiresPasswordChange) {
+    return (
+      <ForcePasswordChangeModal
+        employee={activeSessionEmp}
+        onCancelLogout={handleLogout}
+        onPasswordChanged={(updatedEmp) => {
+          handleEditEmployee(updatedEmp);
+          setCurrentUser(updatedEmp);
+          localStorage.setItem(
+            'drac_auth_session',
+            JSON.stringify({
+              currentUser: updatedEmp,
+              activeRole,
+            })
+          );
+        }}
+      />
+    );
+  }
+
   const isCurrentViewAllowed = isViewAllowedForRole(activeView, activeRole);
 
   return (
@@ -1423,41 +1452,6 @@ export default function App() {
           }}
         />
       )}
-
-      {/* MANDATORY FORCE PASSWORD CHANGE MODAL FOR FIRST LOGIN OR RESET */}
-      {(() => {
-        const sessionEmp =
-          (currentUser &&
-            employees.find(
-              (e) => e.id === currentUser.id || e.dni === currentUser.dni
-            )) ||
-          currentUser;
-
-        if (
-          sessionEmp &&
-          sessionEmp.has_system_access !== false &&
-          (sessionEmp.password_change_required ||
-            sessionEmp.primer_ingreso === 'PENDIENTE')
-        ) {
-          return (
-            <ForcePasswordChangeModal
-              employee={sessionEmp}
-              onPasswordChanged={(updatedEmp) => {
-                handleEditEmployee(updatedEmp);
-                setCurrentUser(updatedEmp);
-                localStorage.setItem(
-                  'drac_auth_session',
-                  JSON.stringify({
-                    currentUser: updatedEmp,
-                    activeRole,
-                  })
-                );
-              }}
-            />
-          );
-        }
-        return null;
-      })()}
     </div>
   );
 }

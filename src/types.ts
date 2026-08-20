@@ -25,9 +25,14 @@ export type OrganoType =
   | 'OFICINA_AGRARIA';
 
 export type RegimenLaboral =
+  | 'D. LEG. 276'
+  | 'D. LEG. 728'
+  | 'D. LEG. 1057 - CAS'
+  | 'PRACTICANTE'
   | 'D.L. 276'
   | 'D.L. 728'
   | 'CAS D.L. 1057'
+  | 'LEY 30057 - SERVICIO CIVIL'
   | 'LOCACION_SERVICIOS'
   | 'OTRO';
 

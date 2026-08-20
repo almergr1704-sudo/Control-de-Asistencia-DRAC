@@ -58,11 +58,10 @@ export const ALLOWED_ORGANO_TYPES: { code: OrganoType; label: string }[] = [
 ];
 
 export const ALLOWED_REGIMENES: RegimenLaboral[] = [
-  'D.L. 276',
-  'D.L. 728',
-  'CAS D.L. 1057',
-  'LOCACION_SERVICIOS',
-  'OTRO',
+  'D. LEG. 276',
+  'D. LEG. 728',
+  'D. LEG. 1057 - CAS',
+  'PRACTICANTE',
 ];
 
 export const ALLOWED_CONDICIONES: CondicionLaboral[] = [
@@ -346,7 +345,7 @@ export function generateTemplateTrabajadores(
       'Sexo': 'M',
       'Fecha de Nacimiento': '1992-08-10',
       'Fecha de Ingreso': '2021-01-15',
-      'Tipo de vínculo': 'CAS D.L. 1057',
+      'Tipo de vínculo': 'D. LEG. 1057 - CAS',
       'Correo': 'ctorres@dracajamarca.gob.pe',
       'Estado': 'ACTIVO',
     },
@@ -1087,12 +1086,12 @@ export function validateTrabajadoresExcel(
     }
 
     // 8. Régimen Laboral
-    let mappedRegimen: RegimenLaboral = 'D.L. 276';
+    let mappedRegimen: RegimenLaboral = 'D. LEG. 276';
     const normReg = normalizeStr(rawVinculo);
-    if (normReg.includes('728')) mappedRegimen = 'D.L. 728';
-    else if (normReg.includes('1057') || normReg.includes('CAS')) mappedRegimen = 'CAS D.L. 1057';
-    else if (normReg.includes('LOCACION') || normReg.includes('TERCERO')) mappedRegimen = 'LOCACION_SERVICIOS';
-    else if (normReg.includes('276')) mappedRegimen = 'D.L. 276';
+    if (normReg.includes('PRACTIC')) mappedRegimen = 'PRACTICANTE';
+    else if (normReg.includes('728')) mappedRegimen = 'D. LEG. 728';
+    else if (normReg.includes('1057') || normReg.includes('CAS')) mappedRegimen = 'D. LEG. 1057 - CAS';
+    else if (normReg.includes('276')) mappedRegimen = 'D. LEG. 276';
 
     // 9. DNI existente en la base de datos
     const existing = existingEmployees.find((e) => e.dni === rawDni);

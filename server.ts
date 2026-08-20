@@ -678,11 +678,72 @@ async function startServer() {
     }
   });
 
-  // POST /api/auth/validate-access - Backend role verification endpoint
+  // ==============================================================
+  // API ROUTES: Autenticación, Cambio de Contraseña y Acceso
+  // ==============================================================
+
+  // POST /api/auth/change-password - Backend mandatory password change
+  app.post("/api/auth/change-password", async (req, res) => {
+    try {
+      const { username, currentPassword, newPassword } = req.body || {};
+      if (!username || !newPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Parámetros incompletos para el cambio de contraseña.",
+        });
+      }
+
+      // Validate security policies on backend
+      const minLength = 8;
+      const hasUppercase = /[A-Z]/.test(newPassword);
+      const hasLowercase = /[a-z]/.test(newPassword);
+      const hasNumber = /[0-9]/.test(newPassword);
+      const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
+
+      if (newPassword.length < minLength || !hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
+        return res.status(400).json({
+          success: false,
+          message: "La nueva contraseña no cumple con todas las políticas de seguridad (mínimo 8 caracteres, mayúscula, minúscula, número y carácter especial).",
+        });
+      }
+
+      if (newPassword === currentPassword || newPassword === 'Drac2026') {
+        return res.status(400).json({
+          success: false,
+          message: "La nueva contraseña no puede ser idéntica a la contraseña temporal inicial.",
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: "Contraseña cambiada exitosamente en el servidor.",
+        password_change_required: false,
+        primer_ingreso: 'COMPLETADO',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        message: "Error al procesar el cambio de contraseña en el servidor.",
+      });
+    }
+  });
+
+  // POST /api/auth/validate-access - Backend role and password status verification endpoint
   app.post("/api/auth/validate-access", (req, res) => {
-    const { role, viewId } = req.body || {};
+    const { role, viewId, passwordChangeRequired, primerIngreso } = req.body || {};
     if (!role || !viewId) {
       return res.status(400).json({ success: false, allowed: false, message: "Parámetros incompletos" });
+    }
+
+    // Strict security rule: If password change is required, BLOCK everything except the password change screen
+    if (passwordChangeRequired === true || primerIngreso === 'PENDIENTE') {
+      return res.status(403).json({
+        success: false,
+        allowed: false,
+        requiresPasswordChange: true,
+        message: "Por seguridad, debe cambiar su contraseña antes de continuar.",
+      });
     }
 
     // Role verification

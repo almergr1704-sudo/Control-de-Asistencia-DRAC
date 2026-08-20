@@ -455,7 +455,21 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         if (!fullSearch.includes(term)) return false;
       }
       if (empFilterDni.trim() && !emp.dni.includes(empFilterDni.trim())) return false;
-      if (empFilterRegimen !== 'ALL' && emp.regimen_laboral !== empFilterRegimen) return false;
+      if (empFilterRegimen !== 'ALL') {
+        const normFilter = empFilterRegimen.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const normEmp = (emp.regimen_laboral || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        if (normFilter === 'DLEG276' || normFilter === 'DL276') {
+          if (!normEmp.includes('276')) return false;
+        } else if (normFilter === 'DLEG728' || normFilter === 'DL728') {
+          if (!normEmp.includes('728')) return false;
+        } else if (normFilter.includes('1057') || normFilter.includes('CAS')) {
+          if (!normEmp.includes('1057') && !normEmp.includes('CAS')) return false;
+        } else if (normFilter.includes('PRACTIC')) {
+          if (!normEmp.includes('PRACTIC')) return false;
+        } else if (emp.regimen_laboral !== empFilterRegimen) {
+          return false;
+        }
+      }
       if (empFilterCondicion !== 'ALL' && emp.condicion_laboral !== empFilterCondicion) return false;
       if (empFilterCargo !== 'ALL' && emp.cargo_id !== empFilterCargo && emp.position !== empFilterCargo) return false;
       if (empFilterDep !== 'ALL' && emp.dependencia_id !== empFilterDep) return false;
@@ -1006,7 +1020,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const [empSubareaId, setEmpSubareaId] = useState('');
   const [empCargoId, setEmpCargoId] = useState('');
   const [empCargoName, setEmpCargoName] = useState('Especialista Agrario');
-  const [empRegimen, setEmpRegimen] = useState<RegimenLaboral>('D.L. 276');
+  const [empRegimen, setEmpRegimen] = useState<RegimenLaboral>('D. LEG. 276');
   const [empCondicion, setEmpCondicion] = useState<CondicionLaboral>('NOMBRADO');
   const [empRole, setEmpRole] = useState<RoleType>('TRABAJADOR');
   const [empAssignedRoles, setEmpAssignedRoles] = useState<RoleType[]>(['TRABAJADOR']);
@@ -1777,10 +1791,10 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 }}
                 placeholder="Todos los Regímenes"
                 options={[
-                  { value: 'D.L. 276', label: 'D.L. 276 — Carrera Administrativa' },
-                  { value: 'D.L. 728', label: 'D.L. 728 — Régimen Privado' },
-                  { value: 'D.L. 1057 (CAS)', label: 'D.L. 1057 — Contratación CAS' },
-                  { value: 'LOCACION DE SERVICIOS', label: 'Locación de Servicios (Terceros)' },
+                  { value: 'D. LEG. 276', label: 'D. LEG. 276' },
+                  { value: 'D. LEG. 728', label: 'D. LEG. 728' },
+                  { value: 'D. LEG. 1057 - CAS', label: 'D. LEG. 1057 - CAS' },
+                  { value: 'PRACTICANTE', label: 'PRACTICANTE' },
                 ]}
               />
             </FilterField>
@@ -4252,10 +4266,10 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       onChange={(e) => setEmpRegimen(e.target.value as RegimenLaboral)}
                       className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="D.L. 276">D.L. 276 (Carrera Administrativa)</option>
-                      <option value="D.L. 728">D.L. 728 (Actividad Privada)</option>
-                      <option value="CAS D.L. 1057">CAS D.L. 1057</option>
-                      <option value="LOCACION_SERVICIOS">Locación de Servicios</option>
+                      <option value="D. LEG. 276">D. LEG. 276</option>
+                      <option value="D. LEG. 728">D. LEG. 728</option>
+                      <option value="D. LEG. 1057 - CAS">D. LEG. 1057 - CAS</option>
+                      <option value="PRACTICANTE">PRACTICANTE</option>
                     </select>
                   </div>
                 </div>
