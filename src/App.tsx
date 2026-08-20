@@ -82,19 +82,31 @@ export default function App() {
   // State Entities - DRAC Structure
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadStored<Employee[]>('employees', INITIAL_EMPLOYEES);
-    if (!stored || stored.length === 0) return INITIAL_EMPLOYEES;
-    // Merge missing seeds with existing
-    const map = new Map<string, Employee>();
-    INITIAL_EMPLOYEES.forEach((e) => map.set(e.id, e));
-    stored.forEach((e) => {
-      const initialMatch = INITIAL_EMPLOYEES.find((i) => i.id === e.id || i.dni === e.dni || i.username === e.username);
-      if (initialMatch) {
-        map.set(e.id, { ...initialMatch, ...e });
+    let list: Employee[] = [];
+    if (!stored || stored.length === 0) {
+      list = INITIAL_EMPLOYEES;
+    } else {
+      // Preserve all existing real employees while ensuring the admin account exists
+      const hasAdmin = stored.some((e) => e.username === 'admin' || e.id === 'emp-01');
+      if (!hasAdmin) {
+        list = [INITIAL_EMPLOYEES[0], ...stored];
       } else {
-        map.set(e.id, e);
+        list = stored.map((e) => {
+          if (e.id === 'emp-01' || e.username === 'admin') {
+            return {
+              ...e,
+              username: 'admin',
+              role: 'ADMIN_GENERAL',
+              has_system_access: true,
+              account_status: 'ACTIVE',
+              active: true,
+            };
+          }
+          return e;
+        });
       }
-    });
-    return Array.from(map.values());
+    }
+    return list;
   });
 
   // User Session Management

@@ -153,6 +153,41 @@ export interface AuthResult {
   requiresPasswordChange?: boolean;
 }
 
+export const DEFAULT_ADMIN_USER: Employee = {
+  id: 'emp-01',
+  codigo_trabajador: 'DRAC-0001',
+  dni: '10000001',
+  first_name: 'Administrador',
+  last_name: 'General',
+  apellido_paterno: 'General',
+  apellido_materno: 'DRAC',
+  username: 'admin',
+  email: 'admin@drac.gob.pe',
+  phone: '976112233',
+  dependencia_id: 'dep-01',
+  dependencia_name: 'SEDE CENTRAL',
+  direccion_organo_id: 'dir-admin',
+  direccion_organo_name: 'OFICINA DE ADMINISTRACION',
+  area_id: 'area-admin-admin',
+  area_name: 'OFICINA DE ADMINISTRACION',
+  position: 'Administrador General del Sistema',
+  cargo_id: 'crg-07',
+  regimen_laboral: 'D.L. 276',
+  condicion_laboral: 'NOMBRADO',
+  role: 'ADMIN_GENERAL',
+  assigned_roles: ['TRABAJADOR', 'ADMIN_GENERAL'],
+  has_system_access: true,
+  account_status: 'ACTIVE',
+  auth_method: 'PASSWORD',
+  primer_ingreso: 'PENDIENTE',
+  password_change_required: true,
+  active: true,
+  hire_date: '2018-03-01',
+  zkteco_pin: '10000001',
+  schedule_id: 'hor-01',
+  schedule_name: 'Jornada Administrativa',
+};
+
 /**
  * Autentica un usuario contra el Directorio de Personal de la DRAC
  */
@@ -174,12 +209,31 @@ export async function authenticateUser(
 
   // Búsqueda por username exacto (o @username), DNI o correo institucional
   const targetUser = cleanId.startsWith('@') ? cleanId.substring(1) : cleanId;
-  const emp = employees.find((e) => {
+  let emp = employees.find((e) => {
     const u = (e.username || '').toLowerCase();
     const dni = (e.dni || '').trim();
     const email = (e.email || '').toLowerCase();
     return u === targetUser || dni === targetUser || email === targetUser;
   });
+
+  // Garantía para usuario admin institucional si no fue localizado en la lista cargada
+  if (!emp && (targetUser === 'admin' || targetUser === '10000001')) {
+    const adminFromList = employees.find(
+      (e) => e.id === 'emp-01' || e.role === 'ADMIN_GENERAL' || (e.dni || '').trim() === '10000001'
+    );
+    if (adminFromList) {
+      emp = {
+        ...adminFromList,
+        username: 'admin',
+        role: 'ADMIN_GENERAL',
+        has_system_access: true,
+        account_status: 'ACTIVE',
+        active: true,
+      };
+    } else {
+      emp = DEFAULT_ADMIN_USER;
+    }
+  }
 
   if (!emp) {
     return {
