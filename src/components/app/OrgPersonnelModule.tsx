@@ -44,6 +44,9 @@ import {
   FileText,
   CheckCircle,
   ExternalLink,
+  Cpu,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import {
   Dependencia,
@@ -62,7 +65,9 @@ import {
   EmployeeAssignmentHistory,
   Encargatura,
   PapeletaSalida,
+  DispositivoZkTeco,
 } from '../../types';
+import { syncEmployeeToDevice, disableUserOnDevice } from '../../utils/zktecoEngine';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { VALID_JEFE_ORGANO_TYPES, getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
 import { generateUniqueUsername, hashPassword } from '../../utils/userAuthUtils';
@@ -249,6 +254,7 @@ interface OrgPersonnelModuleProps {
   activeRole: RoleType;
   encargaturas?: Encargatura[];
   papeletas?: PapeletaSalida[];
+  devices?: DispositivoZkTeco[];
 
   onAddDependencia: (dep: Omit<Dependencia, 'id' | 'created_at'>) => void;
   onEditDependencia: (dep: Dependencia) => void;
@@ -317,6 +323,9 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const [activeTab, setActiveTab] = useState<
     'EMPLOYEES' | 'DEPENDENCIAS' | 'DIRECCIONES' | 'AREAS' | 'CARGOS' | 'RESPONSABLES' | 'CARGA_MASIVA'
   >('EMPLOYEES');
+
+  // RBAC Permission Check: ADMIN_GENERAL, HR_ADMIN, and JEFE_RRHH can manage organizational and personnel records
+  const canManageOrg = activeRole === 'ADMIN_GENERAL' || activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH';
 
   // BULK UPLOAD MODAL STATE
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -1681,7 +1690,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <span>Carga Masiva Excel</span>
                 </button>
 
-                {activeRole === 'HR_ADMIN' && (
+                {canManageOrg && (
                   <button
                     onClick={() => {
                       if (dependencias.length === 0) {
@@ -1704,7 +1713,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       setEmpSubareaId('');
                       setEmpCargoId('');
                       setEmpCargoName('');
-                      setEmpRegimen('D.L. 276');
+                      setEmpRegimen('D. LEG. 276');
                       setEmpCondicion('NOMBRADO');
                       setEmpScheduleId(horarios[0]?.id || '');
                       setEmpHireDate(new Date().toISOString().split('T')[0]);
@@ -2044,7 +2053,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                               <Eye className="w-3.5 h-3.5" />
                             </button>
 
-                            {activeRole === 'HR_ADMIN' && (
+                            {canManageOrg && (
                               <>
                                 <button
                                   onClick={() => {
@@ -2222,7 +2231,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
             activeFilterCount={depActiveFilterCount}
             onResetFilters={handleResetDepFilters}
             extraActions={
-              activeRole === 'HR_ADMIN' ? (
+              canManageOrg ? (
                 <button
                   onClick={() => {
                     setEditingDep(null);
@@ -2298,7 +2307,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     </div>
                   </div>
 
-                  {activeRole === 'HR_ADMIN' && (
+                  {canManageOrg && (
                     <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => {
@@ -2400,7 +2409,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <span>Carga Masiva Excel</span>
                 </button>
 
-                {activeRole === 'HR_ADMIN' && (
+                {canManageOrg && (
                   <button
                     onClick={() => {
                       if (dependencias.length === 0) {
@@ -2478,7 +2487,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     </div>
                   </div>
 
-                  {activeRole === 'HR_ADMIN' && (
+                  {canManageOrg && (
                     <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => {
@@ -2580,7 +2589,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <span>Carga Masiva Excel</span>
                 </button>
 
-                {activeRole === 'HR_ADMIN' && (
+                {canManageOrg && (
                   <button
                     onClick={() => {
                       const activeSuperiors = direccionesOrganos.filter((d) => d.active);
@@ -2701,7 +2710,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     )}
                   </div>
 
-                  {activeRole === 'HR_ADMIN' && (
+                  {canManageOrg && (
                     <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => {
@@ -2787,7 +2796,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
             activeFilterCount={cargoActiveFilterCount}
             onResetFilters={handleResetCargoFilters}
             extraActions={
-              activeRole === 'HR_ADMIN' ? (
+              canManageOrg ? (
                 <button
                   onClick={() => {
                     setEditingCargo(null);
@@ -2831,28 +2840,55 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <div className="font-bold text-sm text-white">{cargo.name}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{cargo.nivel || 'Nivel Escala DRAC'}</div>
                 </div>
-                {activeRole === 'HR_ADMIN' && (
-                  <button
-                    onClick={() => {
-                      setConfirmModalConfig({
-                        isOpen: true,
-                        title: 'Desactivar Cargo',
-                        message: `¿Desea desactivar el cargo "${cargo.name}"? Los contratos e historial del personal con este cargo se mantendrán intactos.`,
-                        actionType: 'DEACTIVATE',
-                        entityName: `Código: ${cargo.code} - ${cargo.name}`,
-                        confirmText: 'Desactivar Cargo',
-                        onConfirm: () => {
-                          onDeleteCargo(cargo.id);
-                          setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
-                        },
-                        onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
-                      });
-                    }}
-                    className="p-1.5 text-rose-400 hover:bg-rose-900/30 rounded"
-                    title="Desactivar Cargo"
-                  >
-                    <Power className="w-3.5 h-3.5" />
-                  </button>
+                {canManageOrg && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setEditingCargo(cargo);
+                        setCargoCode(cargo.code);
+                        setCargoName(cargo.name);
+                        setCargoNivel(cargo.nivel || 'F-3 / Ejecutivo');
+                        setShowCargoModal(true);
+                      }}
+                      className="p-1.5 text-indigo-400 hover:bg-slate-800 rounded transition-colors"
+                      title="Editar Cargo"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        const employeesWithCargo = employees.filter((e) => e.cargo_id === cargo.id || e.position.toLowerCase() === cargo.name.toLowerCase());
+                        const isDeactivating = cargo.active !== false;
+                        setConfirmModalConfig({
+                          isOpen: true,
+                          title: isDeactivating ? 'Desactivar Cargo' : 'Reactivar Cargo',
+                          message: isDeactivating
+                            ? `¿Desea desactivar el cargo "${cargo.name}"? Los contratos e historial del personal con este cargo (${employeesWithCargo.length} asignado/s) se mantendrán intactos.`
+                            : `¿Desea reactivar el cargo "${cargo.name}" para asignación a personal DRAC?`,
+                          actionType: 'DEACTIVATE',
+                          entityName: `Código: ${cargo.code} - ${cargo.name}`,
+                          confirmText: isDeactivating ? 'Desactivar Cargo' : 'Reactivar Cargo',
+                          onConfirm: () => {
+                            if (isDeactivating) {
+                              onDeleteCargo(cargo.id);
+                            } else {
+                              onEditCargo({ ...cargo, active: true });
+                            }
+                            setConfirmModalConfig((prev) => ({ ...prev, isOpen: false }));
+                          },
+                          onCancel: () => setConfirmModalConfig((prev) => ({ ...prev, isOpen: false })),
+                        });
+                      }}
+                      className={`p-1.5 rounded transition-colors ${
+                        cargo.active !== false
+                          ? 'text-rose-400 hover:bg-rose-900/30'
+                          : 'text-emerald-400 hover:bg-emerald-900/30'
+                      }`}
+                      title={cargo.active !== false ? 'Desactivar Cargo' : 'Reactivar Cargo'}
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -3817,7 +3853,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   placeholder="Ej: CRG-DIR, CRG-ESP"
                   value={cargoCode}
                   onChange={(e) => setCargoCode(e.target.value)}
-                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono"
                   required
                 />
               </div>
@@ -3832,6 +3868,21 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
                   required
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">Nivel / Escala DRAC</label>
+                <select
+                  value={cargoNivel}
+                  onChange={(e) => setCargoNivel(e.target.value)}
+                  className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white"
+                >
+                  <option value="F-5 / Directivo Superior">F-5 / Directivo Superior</option>
+                  <option value="F-3 / Ejecutivo">F-3 / Ejecutivo</option>
+                  <option value="Profesional / Especialista">Profesional / Especialista</option>
+                  <option value="Técnico / Administrativo">Técnico / Administrativo</option>
+                  <option value="Auxiliar / Operativo">Auxiliar / Operativo</option>
+                </select>
               </div>
 
               <div className="pt-3 flex justify-end gap-2">
@@ -4012,19 +4063,36 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">
-                      DNI (Documento Nacional de Identidad) <span className="text-rose-400">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-slate-300">
+                        DNI (Documento Nacional de Identidad) <span className="text-rose-400">*</span>
+                      </label>
+                      {editingEmp && (
+                        <span className="text-[10px] text-amber-400 font-mono flex items-center gap-1 font-bold">
+                          🔒 Solo Lectura
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       maxLength={8}
                       placeholder="71234567"
                       value={empDni}
-                      onChange={(e) => setEmpDni(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                      readOnly={Boolean(editingEmp)}
+                      disabled={Boolean(editingEmp)}
+                      onChange={(e) => !editingEmp && setEmpDni(e.target.value.replace(/\D/g, ''))}
+                      className={`w-full border rounded-lg p-2.5 text-xs font-mono ${
+                        editingEmp
+                          ? 'bg-[#060709] border-slate-800 text-slate-400 cursor-not-allowed opacity-90 select-all'
+                          : 'bg-[#090A0D] border-slate-800 text-white focus:outline-none focus:border-indigo-500'
+                      }`}
                       required
                     />
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">Exactamente 8 dígitos numéricos</span>
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">
+                      {editingEmp
+                        ? 'El DNI es el identificador único del trabajador y está protegido contra cambios'
+                        : 'Exactamente 8 dígitos numéricos'}
+                    </span>
                   </div>
 
                   <div>
@@ -4274,7 +4342,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1">Condición Laboral</label>
                     <select
@@ -4291,46 +4359,29 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">Horario Asignado</label>
-                    <select
-                      value={empScheduleId}
-                      onChange={(e) => setEmpScheduleId(e.target.value)}
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Fecha de Ingreso</label>
+                    <input
+                      type="date"
+                      value={empHireDate}
+                      onChange={(e) => setEmpHireDate(e.target.value)}
                       className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      {horarios.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          {h.name} {h.turn_count === 2 ? '(2 Turnos)' : '(1 Turno)'}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* LIVE PREVIEW OF SELECTED HORARIO TURNS */}
-                    {(() => {
-                      const selectedH = horarios.find((h) => h.id === empScheduleId) || horarios[0];
-                      if (!selectedH) return null;
-                      return (
-                        <div className="mt-2 p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg text-[11px] font-mono space-y-1">
-                          <div className="flex items-center justify-between text-indigo-300 font-bold">
-                            <span>Turno 1: {selectedH.turno1_name || 'Turno Principal'}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-400 border border-indigo-800">
-                              {selectedH.turn_count === 2 ? '2 Turnos' : '1 Turno'}
-                            </span>
-                          </div>
-                          {selectedH.turn_count === 2 && selectedH.turno2_name && (
-                            <div className="text-emerald-300 font-bold">
-                              Turno 2: {selectedH.turno2_name}
-                            </div>
-                          )}
-                          <div className="text-[10px] text-slate-400">
-                            Días: {selectedH.working_days?.join(', ') || 'L-V'} | Duración: {selectedH.total_duration_text || (selectedH.turn_count === 2 ? '8 horas' : '8 horas')}
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">PIN Biométrico ZKTeco</label>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">Estado Laboral</label>
+                    <select
+                      value={empActive ? 'ACTIVE' : 'INACTIVE'}
+                      onChange={(e) => setEmpActive(e.target.value === 'ACTIVE')}
+                      className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="ACTIVE">🟢 ACTIVO (En servicio)</option>
+                      <option value="INACTIVE">🔴 INACTIVO (Cese / Baja)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1">PIN Biométrico</label>
                     <input
                       type="text"
                       placeholder="Ej: 71234567"
@@ -4339,6 +4390,45 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">Horario Asignado</label>
+                  <select
+                    value={empScheduleId}
+                    onChange={(e) => setEmpScheduleId(e.target.value)}
+                    className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {horarios.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name} {h.turn_count === 2 ? '(2 Turnos)' : '(1 Turno)'}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* LIVE PREVIEW OF SELECTED HORARIO TURNS */}
+                  {(() => {
+                    const selectedH = horarios.find((h) => h.id === empScheduleId) || horarios[0];
+                    if (!selectedH) return null;
+                    return (
+                      <div className="mt-2 p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg text-[11px] font-mono space-y-1">
+                        <div className="flex items-center justify-between text-indigo-300 font-bold">
+                          <span>Turno 1: {selectedH.turno1_name || 'Turno Principal'}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-400 border border-indigo-800">
+                            {selectedH.turn_count === 2 ? '2 Turnos' : '1 Turno'}
+                          </span>
+                        </div>
+                        {selectedH.turn_count === 2 && selectedH.turno2_name && (
+                          <div className="text-emerald-300 font-bold">
+                            Turno 2: {selectedH.turno2_name}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-slate-400">
+                          Días: {selectedH.working_days?.join(', ') || 'L-V'} | Duración: {selectedH.total_duration_text || (selectedH.turn_count === 2 ? '8 horas' : '8 horas')}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -5413,7 +5503,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               >
                 Cerrar
               </button>
-              {activeRole === 'HR_ADMIN' && (
+              {canManageOrg && (
                 <button
                   onClick={() => {
                     const emp = selectedEmpForDetail;

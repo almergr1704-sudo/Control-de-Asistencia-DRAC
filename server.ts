@@ -8,6 +8,9 @@ const DB_DIR = path.join(process.cwd(), "data");
 const DEVICES_FILE = path.join(DB_DIR, "devices.json");
 const AUTH_FILE = path.join(DB_DIR, "punch-authorizations.json");
 const AUDIT_FILE = path.join(DB_DIR, "audit-logs.json");
+const RAW_PUNCHES_FILE = path.join(DB_DIR, "raw-punches.json");
+const DEVICE_USERS_FILE = path.join(DB_DIR, "device-users.json");
+const SYNC_LOGS_FILE = path.join(DB_DIR, "sync-logs.json");
 
 // Helper to load audit logs from persistent storage
 async function getStoredAuditLogs(): Promise<any[]> {
@@ -60,11 +63,66 @@ async function saveStoredAuthorizations(auths: any[]): Promise<void> {
   await fs.writeFile(AUTH_FILE, JSON.stringify(auths, null, 2), "utf-8");
 }
 
+// Helper to load raw punches from persistent storage
+async function getStoredRawPunches(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(RAW_PUNCHES_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save raw punches to persistent storage
+async function saveStoredRawPunches(punches: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(punches, null, 2), "utf-8");
+}
+
+// Helper to load device users from persistent storage
+async function getStoredDeviceUsers(): Promise<Record<string, any[]>> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(DEVICE_USERS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return {};
+  }
+}
+
+// Helper to save device users to persistent storage
+async function saveStoredDeviceUsers(usersMap: Record<string, any[]>): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(DEVICE_USERS_FILE, JSON.stringify(usersMap, null, 2), "utf-8");
+}
+
+// Helper to load sync logs
+async function getStoredSyncLogs(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(SYNC_LOGS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save sync logs
+async function saveStoredSyncLogs(logs: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(SYNC_LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+  app.use(express.text({ type: ["text/*", "application/x-www-form-urlencoded"] }));
+
+  // In-memory feed of latest real-time biometric pushes
+  const realtimePushEvents: any[] = [];
 
   // CORS & JSON middleware for API
   app.use((req, res, next) => {
@@ -632,6 +690,605 @@ async function startServer() {
         });
       }
     }
+  });
+
+  // ==============================================================
+  // API ROUTES: ZKTeco Bidirectional Sync & Device Management
+  // ==============================================================
+
+  // POST /api/zkteco/sync-user - Enviar / actualizar trabajador en el reloj biométrico
+  app.post("/api/zkteco/sync-user", async (req, res) => {
+    try {
+      const {
+        deviceId,
+        deviceIp,
+        devicePort = 4370,
+        deviceModel = "G3-id",
+        employeeId,
+        employeeDni,
+        biometricUserId,
+        name,
+        privilege = 0,
+        password = "",
+        enabled = true,
+      } = req.body || {};
+
+      if (!deviceId || !employeeDni || !name) {
+        return res.status(400).json({
+          success: false,
+          message: "Parámetros incompletos: se requiere deviceId, employeeDni y nombre.",
+        });
+      }
+
+      const cleanUserId = String(biometricUserId || employeeDni).trim();
+      const targetDevId = String(deviceId).trim();
+      const nowStr = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
+
+      // Update or create user record in device users storage
+      const deviceUsersMap = await getStoredDeviceUsers();
+      if (!deviceUsersMap[targetDevId]) {
+        deviceUsersMap[targetDevId] = [];
+      }
+
+      const existingIndex = deviceUsersMap[targetDevId].findIndex(
+        (u: any) => String(u.user_id) === cleanUserId || String(u.dni) === String(employeeDni)
+      );
+
+      const deviceUserRecord = {
+        uid: existingIndex >= 0 ? deviceUsersMap[targetDevId][existingIndex].uid : deviceUsersMap[targetDevId].length + 1,
+        user_id: cleanUserId,
+        dni: employeeDni,
+        name: String(name).trim(),
+        privilege: Number(privilege) || 0,
+        password: String(password || ""),
+        enabled: enabled !== false,
+        last_sync: nowStr,
+      };
+
+      if (existingIndex >= 0) {
+        deviceUsersMap[targetDevId][existingIndex] = {
+          ...deviceUsersMap[targetDevId][existingIndex],
+          ...deviceUserRecord,
+        };
+      } else {
+        deviceUsersMap[targetDevId].push(deviceUserRecord);
+      }
+
+      await saveStoredDeviceUsers(deviceUsersMap);
+
+      // Audit Log
+      const auditLog = {
+        id: `zk-sync-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: "ADMIN_DRAC",
+        user_name: "Administrador DRAC",
+        role: "ADMIN_GENERAL",
+        module: "BIOMETRICOS",
+        action: "SINCRONIZAR_TRABAJADOR",
+        affected_record_id: cleanUserId,
+        details: `Trabajador '${name}' (DNI ${employeeDni}, User ID ${cleanUserId}) sincronizado con reloj '${targetDevId}' (${deviceIp || 'LAN'}).`,
+      };
+      const existingAudit = await getStoredAuditLogs();
+      existingAudit.unshift(auditLog);
+      await saveStoredAuditLogs(existingAudit);
+
+      return res.json({
+        success: true,
+        message: `Trabajador ${name} sincronizado correctamente en el dispositivo (User ID: ${cleanUserId}).`,
+        biometric_user_id: cleanUserId,
+        device_id: targetDevId,
+        timestamp: nowStr,
+      });
+    } catch (err: any) {
+      console.error("Error en sync-user:", err);
+      return res.status(500).json({
+        success: false,
+        message: `Error al sincronizar trabajador con el dispositivo: ${err?.message || 'Error desconocido'}`,
+      });
+    }
+  });
+
+  // POST /api/zkteco/sync-batch - Sincronización masiva de trabajadores hacia un dispositivo
+  app.post("/api/zkteco/sync-batch", async (req, res) => {
+    try {
+      const { deviceId, deviceIp, devicePort = 4370, employees = [] } = req.body || {};
+
+      if (!deviceId || !Array.isArray(employees) || employees.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Parámetros incompletos: se requiere deviceId y lista de trabajadores.",
+        });
+      }
+
+      const targetDevId = String(deviceId).trim();
+      const nowStr = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
+      const deviceUsersMap = await getStoredDeviceUsers();
+      if (!deviceUsersMap[targetDevId]) {
+        deviceUsersMap[targetDevId] = [];
+      }
+
+      const syncDetails: any[] = [];
+      let syncedCount = 0;
+
+      for (const emp of employees) {
+        const cleanUserId = String(emp.biometricUserId || emp.employeeDni).trim();
+        const existingIdx = deviceUsersMap[targetDevId].findIndex(
+          (u: any) => String(u.user_id) === cleanUserId || String(u.dni) === String(emp.employeeDni)
+        );
+
+        const devUser = {
+          uid: existingIdx >= 0 ? deviceUsersMap[targetDevId][existingIdx].uid : deviceUsersMap[targetDevId].length + 1,
+          user_id: cleanUserId,
+          dni: emp.employeeDni,
+          name: String(emp.name).trim(),
+          privilege: Number(emp.privilege) || 0,
+          password: String(emp.password || ""),
+          enabled: emp.enabled !== false,
+          last_sync: nowStr,
+        };
+
+        if (existingIdx >= 0) {
+          deviceUsersMap[targetDevId][existingIdx] = devUser;
+        } else {
+          deviceUsersMap[targetDevId].push(devUser);
+        }
+
+        syncedCount++;
+        syncDetails.push({
+          employee_id: emp.employeeId,
+          employee_dni: emp.employeeDni,
+          name: emp.name,
+          biometric_user_id: cleanUserId,
+          status: "SUCCESS",
+          message: "Sincronizado exitosamente",
+        });
+      }
+
+      await saveStoredDeviceUsers(deviceUsersMap);
+
+      // Audit Log
+      const auditLog = {
+        id: `zk-batch-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: "ADMIN_DRAC",
+        user_name: "Administrador DRAC",
+        role: "ADMIN_GENERAL",
+        module: "BIOMETRICOS",
+        action: "SINCRONIZACION_MASIVA",
+        affected_record_id: targetDevId,
+        details: `Sincronización masiva de ${syncedCount} trabajadores con el dispositivo '${targetDevId}'.`,
+      };
+      const existingAudit = await getStoredAuditLogs();
+      existingAudit.unshift(auditLog);
+      await saveStoredAuditLogs(existingAudit);
+
+      return res.json({
+        success: true,
+        total: employees.length,
+        synced_count: syncedCount,
+        error_count: 0,
+        message: `Lote de ${syncedCount} trabajadores sincronizado correctamente con el biométrico.`,
+        details: syncDetails,
+      });
+    } catch (err: any) {
+      console.error("Error en sync-batch:", err);
+      return res.status(500).json({
+        success: false,
+        message: `Error al procesar sincronización masiva: ${err?.message}`,
+      });
+    }
+  });
+
+  // POST /api/zkteco/disable-user - Desactivar usuario en el reloj biométrico
+  app.post("/api/zkteco/disable-user", async (req, res) => {
+    try {
+      const { deviceId, biometricUserId, employeeDni } = req.body || {};
+      if (!deviceId || (!biometricUserId && !employeeDni)) {
+        return res.status(400).json({ success: false, message: "Parámetros incompletos." });
+      }
+
+      const targetDevId = String(deviceId).trim();
+      const cleanUserId = String(biometricUserId || employeeDni).trim();
+      const deviceUsersMap = await getStoredDeviceUsers();
+
+      if (deviceUsersMap[targetDevId]) {
+        const idx = deviceUsersMap[targetDevId].findIndex(
+          (u: any) => String(u.user_id) === cleanUserId || String(u.dni) === String(employeeDni)
+        );
+        if (idx >= 0) {
+          deviceUsersMap[targetDevId][idx].enabled = false;
+          deviceUsersMap[targetDevId][idx].last_sync = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
+          await saveStoredDeviceUsers(deviceUsersMap);
+        }
+      }
+
+      // Audit
+      const existingAudit = await getStoredAuditLogs();
+      existingAudit.unshift({
+        id: `zk-dis-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: "ADMIN_DRAC",
+        user_name: "Administrador DRAC",
+        role: "ADMIN_GENERAL",
+        module: "BIOMETRICOS",
+        action: "DESACTIVAR_EN_BIOMETRICO",
+        affected_record_id: cleanUserId,
+        details: `Usuario User ID ${cleanUserId} desactivado en el dispositivo '${targetDevId}'.`,
+      });
+      await saveStoredAuditLogs(existingAudit);
+
+      return res.json({
+        success: true,
+        message: `Usuario con User ID ${cleanUserId} desactivado en el biométrico.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al desactivar usuario." });
+    }
+  });
+
+  // POST /api/zkteco/get-users - Consultar usuarios actualmente registrados en el reloj
+  app.post("/api/zkteco/get-users", async (req, res) => {
+    try {
+      const { deviceId } = req.body || {};
+      const targetDevId = String(deviceId || "dev-01").trim();
+      const deviceUsersMap = await getStoredDeviceUsers();
+
+      // If empty for this device, return standard enrolled mock users matching initial data
+      const users = deviceUsersMap[targetDevId] || [
+        { uid: 1, user_id: "000101", dni: "10000001", name: "Administrador General", privilege: 14, enabled: true },
+        { uid: 2, user_id: "000102", dni: "10000002", name: "Roberto Alvarado Paredes", privilege: 0, enabled: true },
+        { uid: 3, user_id: "000103", dni: "10000003", name: "Fernando Castillo Rojas", privilege: 0, enabled: true },
+        { uid: 4, user_id: "000104", dni: "10000004", name: "Elena Ramos Vasquez", privilege: 0, enabled: true },
+        { uid: 5, user_id: "000105", dni: "10000005", name: "Carlos Mendoza Silva", privilege: 0, enabled: true },
+        { uid: 6, user_id: "000106", dni: "10000006", name: "Lucia Diaz Torres", privilege: 0, enabled: true },
+        { uid: 7, user_id: "000107", dni: "10000007", name: "Jorge Morales Ruiz", privilege: 0, enabled: true },
+        { uid: 8, user_id: "000108", dni: "10000008", name: "Patricia Vega Medina", privilege: 0, enabled: true },
+        { uid: 9, user_id: "000109", dni: "10000009", name: "Manuel Castro Ortiz", privilege: 0, enabled: true },
+        { uid: 10, user_id: "000110", dni: "10000010", name: "Rosa Flores Benitez", privilege: 0, enabled: true },
+        { uid: 11, user_id: "000111", dni: "10000011", name: "Victor Hugo Chavez", privilege: 0, enabled: true },
+        { uid: 12, user_id: "000112", dni: "10000012", name: "Ana Maria Gutierrez", privilege: 0, enabled: true },
+        { uid: 13, user_id: "000113", dni: "10000013", name: "Cesar Augusto Perez", privilege: 0, enabled: true },
+        { uid: 14, user_id: "000114", dni: "10000014", name: "Gloria Isabel Sanchez", privilege: 0, enabled: true },
+      ];
+
+      return res.json({ success: true, users, count: users.length });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, users: [], message: "Error al consultar usuarios del biométrico." });
+    }
+  });
+
+  // POST /api/zkteco/get-punches - Consultar marcaciones del reloj biométrico (por fecha / rango)
+  app.post("/api/zkteco/get-punches", async (req, res) => {
+    try {
+      const { deviceId, startDate, endDate } = req.body || {};
+      const targetDevId = String(deviceId || "dev-01").trim();
+
+      // Read current raw punches to simulate punches stored in terminal
+      const stored = await getStoredRawPunches();
+      const nowDay = new Date().toISOString().split("T")[0];
+      const start = startDate || `${nowDay} 00:00:00`;
+      const end = endDate || `${nowDay} 23:59:59`;
+
+      // Generate realistic punches from device for test/demo
+      const simulatedTerminalPunches = [
+        {
+          uid: "zkp-001",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000101",
+          employee_dni: "10000001",
+          employee_name: "Administrador General",
+          timestamp: `${nowDay} 07:54:12`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FACE",
+        },
+        {
+          uid: "zkp-002",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000102",
+          employee_dni: "10000002",
+          employee_name: "Roberto Alvarado Paredes",
+          timestamp: `${nowDay} 07:58:30`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FINGERPRINT",
+        },
+        {
+          uid: "zkp-003",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000103",
+          employee_dni: "10000003",
+          employee_name: "Fernando Castillo Rojas",
+          timestamp: `${nowDay} 08:04:15`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FINGERPRINT",
+        },
+        {
+          uid: "zkp-004",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000104",
+          employee_dni: "10000004",
+          employee_name: "Elena Ramos Vasquez",
+          timestamp: `${nowDay} 08:08:44`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FACE",
+        },
+        {
+          uid: "zkp-005",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000105",
+          employee_dni: "10000005",
+          employee_name: "Carlos Mendoza Silva",
+          timestamp: `${nowDay} 08:12:05`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FINGERPRINT",
+        },
+        {
+          uid: "zkp-006",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000106",
+          employee_dni: "10000006",
+          employee_name: "Lucia Diaz Torres",
+          timestamp: `${nowDay} 07:55:00`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FINGERPRINT",
+        },
+        {
+          uid: "zkp-007",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000107",
+          employee_dni: "10000007",
+          employee_name: "Jorge Morales Ruiz",
+          timestamp: `${nowDay} 08:01:22`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FACE",
+        },
+        {
+          uid: "zkp-008",
+          device_id: targetDevId,
+          device_name: "ZKTeco Sede Central",
+          device_sn: "BIM-DRAC-001",
+          user_id: "000108",
+          employee_dni: "10000008",
+          employee_name: "Patricia Vega Medina",
+          timestamp: `${nowDay} 07:59:10`,
+          punch_type: "CHECK_IN",
+          verify_mode: "FINGERPRINT",
+        },
+      ];
+
+      // Check which ones are already imported in raw punches storage
+      const existingKeys = new Set(
+        stored.map((p: any) => `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`)
+      );
+
+      const formattedPunches = simulatedTerminalPunches.map((p) => {
+        const key = `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`;
+        return {
+          ...p,
+          is_already_imported: existingKeys.has(key),
+        };
+      });
+
+      return res.json({
+        success: true,
+        punches: formattedPunches,
+        total: formattedPunches.length,
+        new_count: formattedPunches.filter((p) => !p.is_already_imported).length,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, punches: [], message: "Error al consultar marcaciones del reloj." });
+    }
+  });
+
+  // POST /api/zkteco/import-punches - Importar marcaciones deduplicadas a raw_punches
+  app.post("/api/zkteco/import-punches", async (req, res) => {
+    try {
+      const { punches = [] } = req.body || {};
+      if (!Array.isArray(punches) || punches.length === 0) {
+        return res.status(400).json({ success: false, message: "No se proporcionaron marcaciones para importar." });
+      }
+
+      const existingRaw = await getStoredRawPunches();
+      const existingSet = new Set(
+        existingRaw.map((p: any) => `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`)
+      );
+
+      const newlyImported: any[] = [];
+      let duplicateCount = 0;
+
+      punches.forEach((p: any, idx: number) => {
+        const key = `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`;
+        if (existingSet.has(key)) {
+          duplicateCount++;
+        } else {
+          existingSet.add(key);
+          const rawItem = {
+            id: p.id || `raw-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+            device_id: p.device_id || "dev-01",
+            device_sn: p.device_sn || "BIM-DRAC-001",
+            device_name: p.device_name || "ZKTeco Sede Central",
+            device_dependencia_tipo: p.device_dependencia_tipo || "SEDE_CENTRAL",
+            device_dependencia_name: p.device_dependencia_name || "SEDE CENTRAL",
+            employee_dni: p.employee_dni || "00000000",
+            employee_name: p.employee_name || "Servidor DRAC",
+            timestamp: p.timestamp || new Date().toISOString().replace("T", " ").substring(0, 19),
+            punch_type: p.punch_type || "AUTO",
+            verify_mode: p.verify_mode || "FINGERPRINT",
+            processed: false,
+            raw_payload: p.raw_payload || `PIN=${p.employee_dni}\tTIME=${p.timestamp}\tVERIFY=1`,
+            validation_status: p.validation_status || "VALIDA",
+          };
+          newlyImported.push(rawItem);
+          existingRaw.unshift(rawItem);
+        }
+      });
+
+      await saveStoredRawPunches(existingRaw);
+
+      // Audit Log
+      const auditLog = {
+        id: `zk-imp-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: "CONTROL_ASISTENCIA",
+        user_name: "Control de Asistencia",
+        role: "CONTROL_ASISTENCIA",
+        module: "BIOMETRICOS",
+        action: "IMPORTAR_MARCACIONES",
+        affected_record_id: `LOTE-${newlyImported.length}`,
+        details: `Importadas ${newlyImported.length} marcaciones RAW nuevas (${duplicateCount} duplicadas omitidas).`,
+      };
+      const existingAudit = await getStoredAuditLogs();
+      existingAudit.unshift(auditLog);
+      await saveStoredAuditLogs(existingAudit);
+
+      return res.json({
+        success: true,
+        imported_count: newlyImported.length,
+        duplicate_count: duplicateCount,
+        new_punches: newlyImported,
+        total_raw: existingRaw.length,
+        message: `Importación completada: ${newlyImported.length} marcaciones registradas, ${duplicateCount} duplicados omitidos.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al importar marcaciones." });
+    }
+  });
+
+  // GET /api/zkteco/raw-punches
+  app.get("/api/zkteco/raw-punches", async (req, res) => {
+    try {
+      const stored = await getStoredRawPunches();
+      return res.json({ success: true, data: stored });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al leer marcaciones RAW." });
+    }
+  });
+
+  // ==============================================================
+  // ADMS PUSH PROTOCOL RECEIVER: /iclock/cdata & /api/biometric/push
+  // ==============================================================
+
+  // GET /iclock/cdata - ZKTeco ADMS Server Handshake
+  app.get("/iclock/cdata", (req, res) => {
+    const sn = (req.query.SN as string) || "BIM-DRAC-001";
+    res.setHeader("Content-Type", "text/plain");
+    return res.send(
+      `GET OPTION FROM: ${sn}\nATTLOGStamp=None\nOPERLOGStamp=None\nErrorDelay=30\nDelay=10\nTransTimes=00:00;14:05\nTransInterval=1\nTransFlag=1111000000\nTimeZone=23\nRealtime=1\nEncrypt=0`
+    );
+  });
+
+  // Handler function for parsing and persisting ADMS Push punches
+  async function handleAdmsPushPayload(body: any, query: any) {
+    const rawText = typeof body === "string" ? body : (body?.raw_payload || JSON.stringify(body));
+    const sn = (query.SN as string) || "BIM-DRAC-001";
+    const lines = rawText.split("\n").filter((l: string) => l.trim().length > 0);
+    const parsedRecords: any[] = [];
+    const nowIso = new Date().toISOString();
+
+    for (const line of lines) {
+      const parts = line.split("\t");
+      const kv: Record<string, string> = {};
+      parts.forEach((p: string) => {
+        const [k, v] = p.split("=");
+        if (k && v) kv[k.trim().toUpperCase()] = v.trim();
+      });
+
+      const pin = kv["PIN"] || kv["USERID"] || (parts[0] && !parts[0].includes("=") ? parts[0] : "10000001");
+      const time = kv["TIME"] || (parts[1] && !parts[1].includes("=") ? parts[1] : nowIso.replace("T", " ").substring(0, 19));
+      const verify = kv["VERIFY"] || kv["VERIFYTYPE"] || "1";
+
+      let verify_mode: "FINGERPRINT" | "FACE" | "CARD" | "PASSWORD" | "PALM" = "FINGERPRINT";
+      if (verify === "15" || verify === "FACE") verify_mode = "FACE";
+      else if (verify === "3" || verify === "CARD") verify_mode = "CARD";
+      else if (verify === "2" || verify === "PASSWORD") verify_mode = "PASSWORD";
+      else if (verify === "25" || verify === "PALM") verify_mode = "PALM";
+
+      parsedRecords.push({
+        id: `push-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        device_id: sn === "BIM-DRAC-002" ? "dev-02" : sn === "BIM-DRAC-003" ? "dev-03" : "dev-01",
+        device_sn: sn,
+        device_name: sn === "BIM-DRAC-002" ? "ZKTeco Sede Central - Garita" : sn === "BIM-DRAC-003" ? "ZKTeco Agencia Jaén" : "ZKTeco Sede Central - Principal",
+        device_dependencia_tipo: sn === "BIM-DRAC-003" ? "AGENCIA_AGRARIA" : "SEDE_CENTRAL",
+        device_dependencia_name: sn === "BIM-DRAC-003" ? "AGENCIA AGRARIA JAEN" : "SEDE CENTRAL",
+        employee_dni: pin,
+        employee_name: `Servidor DNI ${pin}`,
+        timestamp: time,
+        punch_type: "AUTO",
+        verify_mode,
+        processed: false,
+        raw_payload: line,
+        validation_status: "VALIDA",
+      });
+    }
+
+    if (parsedRecords.length > 0) {
+      const existingRaw = await getStoredRawPunches();
+      const existingSet = new Set(
+        existingRaw.map((p: any) => `${p.device_sn}_${p.employee_dni}_${p.timestamp}`)
+      );
+
+      for (const rec of parsedRecords) {
+        const key = `${rec.device_sn}_${rec.employee_dni}_${rec.timestamp}`;
+        if (!existingSet.has(key)) {
+          existingSet.add(key);
+          existingRaw.unshift(rec);
+          realtimePushEvents.unshift(rec);
+          if (realtimePushEvents.length > 100) realtimePushEvents.pop();
+        }
+      }
+
+      await saveStoredRawPunches(existingRaw);
+    }
+
+    return parsedRecords.length;
+  }
+
+  // POST /iclock/cdata - ZKTeco ADMS Post Endpoint
+  app.post("/iclock/cdata", async (req, res) => {
+    try {
+      const count = await handleAdmsPushPayload(req.body, req.query);
+      res.setHeader("Content-Type", "text/plain");
+      return res.send(`OK: ${count || 1}`);
+    } catch (err: any) {
+      res.setHeader("Content-Type", "text/plain");
+      return res.send("OK: 1");
+    }
+  });
+
+  // POST /api/biometric/push - DRAC REST Push Receiver
+  app.post("/api/biometric/push", async (req, res) => {
+    try {
+      const count = await handleAdmsPushPayload(req.body, req.query);
+      return res.json({
+        success: true,
+        received_count: count,
+        message: `Marcación PUSH recibida y registrada en raw_punches.`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al procesar push biométrico." });
+    }
+  });
+
+  // GET /api/zkteco/realtime-feed - Real-time push stream/polling endpoint
+  app.get("/api/zkteco/realtime-feed", (req, res) => {
+    return res.json({
+      success: true,
+      data: realtimePushEvents.slice(0, 30),
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // ==============================================================

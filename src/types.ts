@@ -257,7 +257,23 @@ export interface Employee {
   active: boolean; // DESACTIVABLE
   schedule_id?: string;
   schedule_name?: string;
-  zkteco_pin?: string; // NON-EDITABLE after punches exist
+  zkteco_pin?: string; // PIN for ZKTeco terminal
+  
+  // ZKTeco Biometric Synchronization
+  biometric_user_id?: string; // Unique User ID in device (e.g. "000123" or numeric string)
+  biometric_sync_status?: 'SINCRONIZADO' | 'PENDIENTE' | 'ERROR' | 'NO_REGISTRADO' | 'DESACTIVADO';
+  biometric_last_sync?: string; // Date of last sync e.g. "2026-08-20 09:35:10"
+  biometric_sync_device_id?: string; // Main synced device ID
+  biometric_sync_device_name?: string; // Main synced device Name
+  biometric_sync_error?: string; // Error detail if sync failed
+  assigned_device_ids?: string[]; // IDs of biometric terminals assigned to employee
+  device_sync_records?: Record<string, {
+    user_id: string;
+    status: 'SINCRONIZADO' | 'PENDIENTE' | 'ERROR' | 'DESACTIVADO';
+    last_sync: string;
+    error_message?: string;
+    privilege?: number;
+  }>;
 }
 
 export interface Turno {
@@ -341,12 +357,25 @@ export interface DeviceTestRecord {
   serial_number?: string;
 }
 
+export interface DeviceCapabilities {
+  tcp_zk: boolean;
+  adms_push: boolean;
+  fingerprint: boolean;
+  face: boolean;
+  palm: boolean;
+  card: boolean;
+  pin: boolean;
+  user_management: boolean;
+  punch_query: boolean;
+  realtime_push: boolean;
+}
+
 export interface DispositivoZkTeco {
   id: string;
   serial_number: string;
   name: string;
   brand?: string; // Default ZKTeco
-  model?: string; // e.g. uFace 800, K40, MB20, iClock 880
+  model?: string; // e.g. G3-id, SilkBio-101TC, uFace 800, K40, MB20, iClock 880, SpeedFace-V5L
   ip_address: string;
   port: number;
   protocol: 'PUSH_ADMS' | 'UDP' | 'TCP';
@@ -360,6 +389,58 @@ export interface DispositivoZkTeco {
   status: DeviceStatus;
   firmware_version?: string;
   last_test?: DeviceTestRecord;
+  capabilities?: DeviceCapabilities;
+  enrolled_user_count?: number;
+  enrolled_fingerprint_count?: number;
+  enrolled_face_count?: number;
+  log_count?: number;
+  adms_url?: string;
+}
+
+export type BiometricSyncStatus = 'SINCRONIZADO' | 'PENDIENTE' | 'ERROR' | 'NO_REGISTRADO' | 'DESACTIVADO';
+
+export interface ZkDeviceUserComparison {
+  employee_id: string;
+  employee_dni: string;
+  employee_name: string;
+  employee_cargo: string;
+  biometric_user_id: string;
+  system_status: 'ACTIVO' | 'INACTIVO';
+  in_device: boolean;
+  device_user_id?: string;
+  device_name?: string;
+  device_privilege?: string;
+  device_enabled?: boolean;
+  status_match: 'MATCH' | 'MISSING_IN_DEVICE' | 'MISMATCH' | 'DISABLED_IN_DEVICE';
+  diagnosis: string;
+}
+
+export interface ZkPunchQueryRecord {
+  uid: string;
+  device_id: string;
+  device_name: string;
+  device_sn: string;
+  user_id: string;
+  employee_dni?: string;
+  employee_name?: string;
+  timestamp: string; // YYYY-MM-DD HH:mm:ss
+  punch_type: 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_OUT' | 'BREAK_IN' | 'AUTO';
+  verify_mode: 'FINGERPRINT' | 'FACE' | 'PALM' | 'CARD' | 'PASSWORD';
+  is_already_imported: boolean;
+}
+
+export interface ZkSyncBatchResult {
+  total: number;
+  synced_count: number;
+  error_count: number;
+  details: {
+    employee_id: string;
+    employee_dni: string;
+    name: string;
+    biometric_user_id: string;
+    status: 'SUCCESS' | 'ERROR';
+    message: string;
+  }[];
 }
 
 export type PunchValidationStatus = 'VALIDA' | 'RECHAZADA_DEPENDENCIA' | 'EXCEPCION_AUTORIZADA';

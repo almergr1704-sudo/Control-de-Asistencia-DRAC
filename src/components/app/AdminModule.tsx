@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AuditLog, RoleType, Employee } from '../../types';
-import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter, UserCog, Eye, EyeOff, Info, X } from 'lucide-react';
+import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter, UserCog, Eye, EyeOff, Info, X, Edit2 } from 'lucide-react';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from '../common/AdvancedSearchFilter';
@@ -37,6 +37,12 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   const [selectedEmpForReset, setSelectedEmpForReset] = useState<Employee | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('123456');
   const [showResetEye, setShowResetEye] = useState(false);
+
+  // User Edit Modal State
+  const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
+  const [editUserRole, setEditUserRole] = useState<string>('TRABAJADOR');
+  const [editUserActive, setEditUserActive] = useState<boolean>(true);
+  const [editUserUsername, setEditUserUsername] = useState<string>('');
 
   // AUDIT TAB SEARCH, FILTER, SORT & PAGINATION
   const [auditSearchTerm, setAuditSearchTerm] = useState('');
@@ -395,17 +401,31 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                           </span>
                         </td>
                         <td className="p-3 text-right">
-                          <button
-                            onClick={() => {
-                              setSelectedEmpForReset(emp);
-                              setResetPasswordValue('123456');
-                              setShowResetEye(false);
-                            }}
-                            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
-                            title="Restablecer Contraseña Temporal y Forzar 1er Ingreso"
-                          >
-                            <Key className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setSelectedEmpForEdit(emp);
+                                setEditUserRole(emp.role || 'TRABAJADOR');
+                                setEditUserActive(emp.active !== false);
+                                setEditUserUsername(emp.username || emp.dni);
+                              }}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded transition-colors"
+                              title="Editar Perfil y Roles de Acceso"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedEmpForReset(emp);
+                                setResetPasswordValue('123456');
+                                setShowResetEye(false);
+                              }}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded transition-colors"
+                              title="Restablecer Contraseña Temporal y Forzar 1er Ingreso"
+                            >
+                              <Key className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -810,6 +830,115 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 <span>Restablecer y Forzar 1er Ingreso</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT USER ROLES AND STATUS MODAL */}
+      {selectedEmpForEdit && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                  <UserCog className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">
+                    Editar Cuenta &amp; Rol Institucional
+                  </h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {selectedEmpForEdit.first_name} {selectedEmpForEdit.last_name} • DNI: {selectedEmpForEdit.dni}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmpForEdit(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (onEditEmployee && selectedEmpForEdit) {
+                  onEditEmployee({
+                    ...selectedEmpForEdit,
+                    role: editUserRole as RoleType,
+                    active: editUserActive,
+                    username: editUserUsername.trim() || selectedEmpForEdit.dni,
+                  });
+                }
+                setSelectedEmpForEdit(null);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Nombre de Usuario (Login)
+                </label>
+                <input
+                  type="text"
+                  value={editUserUsername}
+                  onChange={(e) => setEditUserUsername(e.target.value)}
+                  placeholder="Ej: jperez"
+                  className="w-full bg-[#060709] border border-slate-800 rounded-lg p-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Rol del Sistema (RBAC) <span className="text-rose-400">*</span>
+                </label>
+                <select
+                  value={editUserRole}
+                  onChange={(e) => setEditUserRole(e.target.value)}
+                  className="w-full bg-[#060709] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="ADMIN_GENERAL">ADMIN_GENERAL - Administrador General del Sistema</option>
+                  <option value="JEFE_RRHH">JEFE_RRHH - Jefe de Recursos Humanos</option>
+                  <option value="DIRECTOR_GENERAL">DIRECTOR_GENERAL - Director General Regional DRAC</option>
+                  <option value="JEFE">JEFE - Jefe de Dirección / Unidad (Aprobador)</option>
+                  <option value="CONTROL_ASISTENCIA">CONTROL_ASISTENCIA - Especialista de Asistencia</option>
+                  <option value="VIGILANCIA">VIGILANCIA - Seguridad y Garita</option>
+                  <option value="TRABAJADOR">TRABAJADOR - Servidor Público Base</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  Estado de la Cuenta
+                </label>
+                <select
+                  value={editUserActive ? 'ACTIVE' : 'INACTIVE'}
+                  onChange={(e) => setEditUserActive(e.target.value === 'ACTIVE')}
+                  className="w-full bg-[#060709] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="ACTIVE">🟢 Activo (Acceso Autorizado)</option>
+                  <option value="INACTIVE">🔴 Inactivo (Acceso Suspendido / Baja)</option>
+                </select>
+              </div>
+
+              <div className="pt-3 border-t border-slate-800 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEmpForEdit(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-indigo-600/20"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

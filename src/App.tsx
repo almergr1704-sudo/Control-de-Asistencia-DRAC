@@ -274,7 +274,7 @@ export default function App() {
     (stored || []).forEach((dir) => {
       const canonical = INITIAL_DIRECCIONES_ORGANOS.find((d) => d.id === dir.id || d.code === dir.code);
       if (canonical) {
-        map.set(canonical.id, { ...dir, ...canonical });
+        map.set(canonical.id, { ...canonical, ...dir });
       } else {
         map.set(dir.id, dir);
       }
@@ -289,7 +289,7 @@ export default function App() {
     (stored || []).forEach((area) => {
       const canonical = INITIAL_AREAS.find((a) => a.id === area.id || a.code === area.code);
       if (canonical) {
-        map.set(canonical.id, { ...area, ...canonical });
+        map.set(canonical.id, { ...canonical, ...area });
       } else {
         map.set(area.id, area);
       }
@@ -420,18 +420,28 @@ export default function App() {
 
   // AUDIT LOG HELPER
   const addAuditLog = (module: string, action: string, affectedRecordId: string, details: string) => {
+    const roleLabel =
+      activeRole === 'ADMIN_GENERAL'
+        ? 'Administrador General DRAC'
+        : activeRole === 'HR_ADMIN'
+        ? 'Administrador de RRHH'
+        : activeRole === 'JEFE_RRHH'
+        ? 'Jefe de Recursos Humanos'
+        : activeRole === 'DIRECTOR_GENERAL'
+        ? 'Director Regional DRAC'
+        : activeRole === 'JEFE' || activeRole === 'SUPERVISOR'
+        ? 'Jefe de Unidad DRAC'
+        : activeRole === 'VIGILANCIA' || activeRole === 'SECURITY_GUARD'
+        ? 'Control de Vigilancia DRAC'
+        : activeRole === 'CONTROL_ASISTENCIA'
+        ? 'Operador Control de Asistencia'
+        : 'Servidor Público DRAC';
+
     const newLog: AuditLog = {
       id: `audlog-${Date.now()}`,
       timestamp: new Date().toISOString(),
       user_id: activeUserDni,
-      user_name:
-        activeRole === 'HR_ADMIN'
-          ? 'Administrador DRAC'
-          : activeRole === 'SUPERVISOR'
-          ? 'Jefe / Director DRAC'
-          : activeRole === 'SECURITY_GUARD'
-          ? 'Agente Vigilancia DRAC'
-          : 'Trabajador DRAC',
+      user_name: roleLabel,
       role: activeRole,
       module,
       action,
@@ -439,6 +449,17 @@ export default function App() {
       details,
     };
     setAuditLogs((prev) => [newLog, ...prev]);
+
+    // Send to backend persistence
+    try {
+      fetch('/api/audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLog),
+      }).catch(() => {});
+    } catch {
+      // Ignore network errors in local mode
+    }
   };
 
   // DEPENDENCIA HANDLERS
