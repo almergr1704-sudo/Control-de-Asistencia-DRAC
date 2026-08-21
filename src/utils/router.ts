@@ -24,7 +24,9 @@ export const VIEW_TO_HASH: Record<string, string> = {
   devices_list: '#/biometricos/dispositivos',
   devices_sync: '#/biometricos/sincronizacion',
   devices_staging: '#/biometricos/staging',
+  vacations_new: '#/vacaciones/solicitar',
   vacations_requests: '#/vacaciones/solicitudes',
+  vacations_my: '#/vacaciones/mis-vacaciones',
   vacations_approvals: '#/vacaciones/aprobaciones',
   vacations_history: '#/vacaciones/historial',
   papeletas_new: '#/papeletas/nueva',
@@ -81,7 +83,9 @@ export const VIEW_TO_GROUP: Record<string, string> = {
   devices_list: 'devices',
   devices_sync: 'devices',
   devices_staging: 'devices',
+  vacations_new: 'vacations',
   vacations_requests: 'vacations',
+  vacations_my: 'vacations',
   vacations_approvals: 'vacations',
   vacations_history: 'vacations',
   papeletas_new: 'papeletas',
@@ -118,7 +122,9 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
       viewId === 'dash_overview' ||
       viewId === 'attendance_list' ||
       viewId === 'attendance_punches' ||
+      viewId === 'vacations_new' ||
       viewId === 'vacations_requests' ||
+      viewId === 'vacations_my' ||
       viewId === 'vacations_history' ||
       viewId === 'papeletas_new' ||
       viewId === 'papeletas_my' ||

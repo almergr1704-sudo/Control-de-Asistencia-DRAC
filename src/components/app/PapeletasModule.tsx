@@ -114,6 +114,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const isHRAdmin = activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'CONTROL_ASISTENCIA';
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createdPapeletaConfirmation, setCreatedPapeletaConfirmation] = useState<PapeletaSalida | null>(null);
   const [selectedPapeleta, setSelectedPapeleta] = useState<PapeletaSalida | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
@@ -490,8 +491,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       return;
     }
 
-    // Call onCreatePapeleta with the authenticated worker's exact data
-    onCreatePapeleta({
+    const newPapeletaPayload: PapeletaSalida = {
+      id: `pap-${Date.now()}`,
+      code: `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`,
       employee_id: activeUserEmployee.id,
       employee_dni: activeUserEmployee.dni,
       employee_name: `${activeUserEmployee.first_name} ${activeUserEmployee.last_name}`,
@@ -500,6 +502,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       area_name: activeUserEmployee.area_name || 'OFICINA DRAC',
       supervisor_id: activeWorkerBossResult.bossId || 'boss-default',
       supervisor_name: activeWorkerBossResult.bossName,
+      supervisor_dni: activeWorkerBossResult.bossDni,
+      supervisor_function: activeWorkerBossResult.bossFunction,
       motivo: formMotivo,
       descripcion: formDescripcion.trim(),
       destino: formDestino.trim(),
@@ -513,10 +517,19 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       signed_at: new Date().toISOString(),
       created_by: `${activeUserEmployee.first_name} ${activeUserEmployee.last_name}`,
       created_by_role: activeRole,
-    });
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      audits: [],
+    };
+
+    // Call onCreatePapeleta with the authenticated worker's exact data
+    onCreatePapeleta(newPapeletaPayload);
+    setCreatedPapeletaConfirmation(newPapeletaPayload);
 
     // Reset & Close
     setShowCreateModal(false);
+    setStatusTab('MY');
+    setCurrentPage(1);
     setFormDestino('');
     setFormDescripcion('');
     setFormSinRetorno(false);
@@ -1690,6 +1703,85 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          CONFIRMATION MODAL: PAPELETA GENERADA CORRECTAMENTE
+          ======================================================== */}
+      {createdPapeletaConfirmation && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-400">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">¡Papeleta generada correctamente!</h3>
+                  <p className="text-xs text-emerald-300">Registrada exitosamente en el sistema DRAC</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreatedPapeletaConfirmation(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Número de Papeleta:</span>
+                  <span className="font-mono text-sm font-bold text-indigo-400">{createdPapeletaConfirmation.code}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Estado Inicial:</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950/60 border border-amber-500/40 text-amber-300">
+                    SOLICITADA
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Fecha de Salida:</span>
+                  <span className="font-mono text-slate-200 font-semibold">{createdPapeletaConfirmation.fecha}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Horario Estimado:</span>
+                  <span className="font-mono text-slate-200">
+                    {createdPapeletaConfirmation.hora_estimada_salida} hrs a {createdPapeletaConfirmation.hora_estimada_retorno} hrs
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Tipo / Motivo:</span>
+                  <span className="text-slate-200 font-semibold">{formatMotivo(createdPapeletaConfirmation.motivo)}</span>
+                </div>
+                <div className="border-t border-slate-800/80 pt-2">
+                  <span className="text-slate-400 block mb-0.5">Destino:</span>
+                  <span className="text-white font-medium block">{createdPapeletaConfirmation.destino}</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-xl text-[11px] text-indigo-300 flex items-start gap-2">
+                <Shield className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-white block">Derivada a Visto Bueno del Jefe Inmediato:</span>
+                  <span>{createdPapeletaConfirmation.supervisor_name} ({createdPapeletaConfirmation.supervisor_function || 'Jefatura'})</span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCreatedPapeletaConfirmation(null)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-colors"
+                >
+                  Entendido / Ver en Mis Papeletas
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

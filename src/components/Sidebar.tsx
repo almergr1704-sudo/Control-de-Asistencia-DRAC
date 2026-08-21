@@ -163,7 +163,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Vacaciones',
       icon: Palmtree,
       subItems: [
-        { id: 'vacations_requests', label: 'Solicitudes' },
+        { id: 'vacations_new', label: 'Solicitar Vacaciones' },
+        { id: 'vacations_requests', label: 'Mis Vacaciones' },
         { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'CONTROL_ASISTENCIA'] },
         { id: 'vacations_history', label: 'Historial' },
       ],
