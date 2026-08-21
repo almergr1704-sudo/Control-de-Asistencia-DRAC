@@ -177,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'papeletas_my', label: 'Mis Papeletas' },
         { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
         { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
-        { id: 'papeletas_history', label: 'Historial' },
+        { id: 'papeletas_history', label: 'Historial General', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'] },
       ],
     },
     {

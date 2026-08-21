@@ -11,6 +11,74 @@ const AUDIT_FILE = path.join(DB_DIR, "audit-logs.json");
 const RAW_PUNCHES_FILE = path.join(DB_DIR, "raw-punches.json");
 const DEVICE_USERS_FILE = path.join(DB_DIR, "device-users.json");
 const SYNC_LOGS_FILE = path.join(DB_DIR, "sync-logs.json");
+const VACACIONES_FILE = path.join(DB_DIR, "vacaciones.json");
+const PAPELETAS_FILE = path.join(DB_DIR, "papeletas.json");
+const EMPLOYEES_FILE = path.join(DB_DIR, "employees.json");
+const ENCARGATURAS_FILE = path.join(DB_DIR, "encargaturas.json");
+const ATTENDANCE_FILE = path.join(DB_DIR, "attendance.json");
+
+// Import default initial data for persistent fallbacks
+import {
+  INITIAL_EMPLOYEES,
+  INITIAL_ATTENDANCE,
+  INITIAL_ENCARGATURAS,
+  INITIAL_VACACIONES,
+  INITIAL_PAPELETAS,
+} from "./src/data/initialData";
+
+// Helper to load employees
+async function getStoredEmployees(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(EMPLOYEES_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EMPLOYEES;
+  } catch (err: any) {
+    return INITIAL_EMPLOYEES;
+  }
+}
+
+// Helper to save employees
+async function saveStoredEmployees(emps: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(EMPLOYEES_FILE, JSON.stringify(emps, null, 2), "utf-8");
+}
+
+// Helper to load encargaturas
+async function getStoredEncargaturas(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(ENCARGATURAS_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ENCARGATURAS;
+  } catch (err: any) {
+    return INITIAL_ENCARGATURAS;
+  }
+}
+
+// Helper to save encargaturas
+async function saveStoredEncargaturas(encs: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(ENCARGATURAS_FILE, JSON.stringify(encs, null, 2), "utf-8");
+}
+
+// Helper to load processed attendance
+async function getStoredAttendance(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(ATTENDANCE_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ATTENDANCE;
+  } catch (err: any) {
+    return INITIAL_ATTENDANCE;
+  }
+}
+
+// Helper to save processed attendance
+async function saveStoredAttendance(att: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(ATTENDANCE_FILE, JSON.stringify(att, null, 2), "utf-8");
+}
 
 // Helper to load audit logs from persistent storage
 async function getStoredAuditLogs(): Promise<any[]> {
@@ -112,6 +180,40 @@ async function getStoredSyncLogs(): Promise<any[]> {
 async function saveStoredSyncLogs(logs: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
   await fs.writeFile(SYNC_LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+}
+
+// Helper to load vacations from persistent storage
+async function getStoredVacaciones(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(VACACIONES_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save vacations to persistent storage
+async function saveStoredVacaciones(vacs: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(VACACIONES_FILE, JSON.stringify(vacs, null, 2), "utf-8");
+}
+
+// Helper to load papeletas from persistent storage
+async function getStoredPapeletas(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(PAPELETAS_FILE, "utf-8");
+    return JSON.parse(data);
+  } catch (err: any) {
+    return [];
+  }
+}
+
+// Helper to save papeletas to persistent storage
+async function saveStoredPapeletas(paps: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(PAPELETAS_FILE, JSON.stringify(paps, null, 2), "utf-8");
 }
 
 async function startServer() {
@@ -1422,6 +1524,1371 @@ async function startServer() {
     }
 
     return res.json({ success: true, allowed });
+  });
+
+  // ==========================================
+  // VACACIONES API ENDPOINTS (DRAC Workflows)
+  // ==========================================
+
+  // GET /api/vacaciones - Obtener todas las vacaciones registradas
+  app.get("/api/vacaciones", async (_req, res) => {
+    try {
+      const vacs = await getStoredVacaciones();
+      return res.json({ success: true, count: vacs.length, data: vacs });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al consultar vacaciones." });
+    }
+  });
+
+  // POST /api/vacaciones - Registrar solicitud o programación vacacional
+  app.post("/api/vacaciones", async (req, res) => {
+    try {
+      const {
+        employee_id,
+        employee_dni,
+        employee_name,
+        dependencia_id,
+        dependencia_name,
+        direccion_organo_name,
+        area_id,
+        area_name,
+        position,
+        regimen_laboral,
+        condicion_laboral,
+        tipo = "PARCIAL",
+        start_date,
+        end_date,
+        total_days,
+        period_year = 2026,
+        origin = "PROFILE_VACATION_REQUEST",
+        supervisor_id,
+        supervisor_name,
+        comments = "",
+        created_by,
+        created_by_role = "TRABAJADOR",
+        approved_by_hr,
+      } = req.body || {};
+
+      if (!employee_dni || !employee_name || !start_date || !end_date) {
+        return res.status(400).json({
+          success: false,
+          message: "Los datos del trabajador y el período vacacional (inicio y fin) son obligatorios.",
+        });
+      }
+
+      if (start_date > end_date) {
+        return res.status(400).json({
+          success: false,
+          message: "La fecha de inicio no puede ser posterior a la fecha de término.",
+        });
+      }
+
+      const existingVacs = await getStoredVacaciones();
+
+      // Check overlap
+      const activeStatuses = ['SOLICITADA', 'VISTO_BUENO_JEFE', 'APROBADA_RRHH', 'PROGRAMADA', 'EN_CURSO'];
+      const overlap = existingVacs.find((v: any) => {
+        if (v.employee_dni !== employee_dni) return false;
+        if (!activeStatuses.includes(v.status)) return false;
+        return start_date <= v.end_date && end_date >= v.start_date;
+      });
+
+      if (overlap) {
+        return res.status(409).json({
+          success: false,
+          message: `Existe una superposición con otro período vacacional (${overlap.start_date} al ${overlap.end_date} - Estado: ${overlap.status}).`,
+        });
+      }
+
+      // Calculate days
+      let days = Number(total_days);
+      if (isNaN(days) || days <= 0) {
+        const start = new Date(`${start_date}T00:00:00`);
+        const end = new Date(`${end_date}T00:00:00`);
+        days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+      }
+
+      const isProfileOrigin = origin === "PROFILE_VACATION_REQUEST";
+      const initialStatus = isProfileOrigin ? "SOLICITADA" : "PROGRAMADA";
+      const newId = `vac-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const newCode = `VAC-${period_year}-${String(existingVacs.length + 1).padStart(3, "0")}`;
+      const nowIso = new Date().toISOString();
+      const nowLocal = new Date().toLocaleString("es-PE");
+
+      const initialAudit = {
+        id: `aud-vac-${Date.now()}`,
+        vacacion_id: newId,
+        new_status: initialStatus,
+        action_by_user_id: employee_id || "usr-01",
+        action_by_user_name: created_by || employee_name,
+        action_by_role: created_by_role,
+        action_type: isProfileOrigin ? "SOLICITAR" : "PROGRAMAR",
+        origin,
+        comment: isProfileOrigin
+          ? "Solicitud de vacaciones generada desde el Perfil del Trabajador."
+          : "Programación de vacaciones registrada administrativamente por Control de Asistencia/RRHH.",
+        timestamp: nowLocal,
+      };
+
+      const newVac = {
+        id: newId,
+        code: newCode,
+        employee_id: employee_id || `emp-${employee_dni}`,
+        employee_dni,
+        employee_name,
+        dependencia_id: dependencia_id || "dep-01",
+        dependencia_name: dependencia_name || "SEDE CENTRAL",
+        direccion_organo_name: direccion_organo_name || "",
+        area_id: area_id || "",
+        area_name: area_name || "",
+        position: position || "Servidor DRAC",
+        regimen_laboral,
+        condicion_laboral,
+        tipo,
+        start_date,
+        end_date,
+        total_days: days,
+        period_year,
+        status: initialStatus,
+        origin,
+        supervisor_id,
+        supervisor_name,
+        comments,
+        approved_by_hr: !isProfileOrigin ? (approved_by_hr || "Recursos Humanos DRAC") : undefined,
+        hr_approved_at: !isProfileOrigin ? nowLocal : undefined,
+        created_at: nowIso,
+        created_by: created_by || employee_name,
+        created_by_role,
+        audits: [initialAudit],
+      };
+
+      existingVacs.unshift(newVac);
+      await saveStoredVacaciones(existingVacs);
+
+      return res.status(201).json({
+        success: true,
+        message: isProfileOrigin
+          ? "Solicitud de vacaciones registrada con éxito. Pasa a V°B° del Jefe Inmediato."
+          : "Vacaciones programadas correctamente por Control de Asistencia/RRHH.",
+        data: newVac,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al guardar vacación: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/vacaciones/:id/vobo-jefe - V°B° del Jefe Inmediato (o Encargado Temporal)
+  app.put("/api/vacaciones/:id/vobo-jefe", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        boss_dni,
+        boss_id,
+        boss_name,
+        boss_role = "JEFE",
+        boss_function = "Jefe Titular",
+        delegation_info,
+        comment = "",
+      } = req.body || {};
+
+      const vacs = await getStoredVacaciones();
+      const vacIndex = vacs.findIndex((v: any) => v.id === id);
+
+      if (vacIndex === -1) {
+        return res.status(404).json({ success: false, message: "Registro vacacional no encontrado." });
+      }
+
+      const vac = vacs[vacIndex];
+
+      // REGLA CRÍTICA DE SEGURIDAD: NO PERMITIR AUTOAPROBACIÓN
+      if (
+        (boss_dni && vac.employee_dni && boss_dni.trim() === vac.employee_dni.trim()) ||
+        (boss_id && vac.employee_id && boss_id === vac.employee_id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "No puede aprobar una solicitud de vacaciones que usted mismo ha generado.",
+        });
+      }
+
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = vac.status;
+      const newStatus = "VISTO_BUENO_JEFE";
+
+      const auditEntry = {
+        id: `aud-vac-${Date.now()}`,
+        vacacion_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: boss_id || "usr-boss",
+        action_by_user_name: boss_name || "Jefe Inmediato",
+        action_by_role: boss_role,
+        action_type: "VISTO_BUENO_JEFE",
+        origin: vac.origin,
+        comment: comment || `V°B° otorgado por ${boss_function} (${boss_name}).`,
+        boss_approver_name: boss_name,
+        boss_approver_dni: boss_dni,
+        boss_approver_function: boss_function,
+        delegation_info,
+        timestamp: nowLocal,
+      };
+
+      vac.status = newStatus;
+      vac.boss_approved_at = nowLocal;
+      vac.boss_approver_id = boss_id;
+      vac.boss_approver_dni = boss_dni;
+      vac.boss_approver_name = boss_name;
+      vac.boss_approver_function = boss_function;
+      vac.boss_delegation_info = delegation_info;
+      vac.boss_comment = comment;
+      vac.updated_at = new Date().toISOString();
+      vac.audits = vac.audits ? [auditEntry, ...vac.audits] : [auditEntry];
+
+      vacs[vacIndex] = vac;
+      await saveStoredVacaciones(vacs);
+
+      return res.json({
+        success: true,
+        message: `V°B° registrado exitosamente por ${boss_name} (${boss_function}). La solicitud pasa a RRHH.`,
+        data: vac,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al procesar V°B°: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/vacaciones/:id/rechazar - Rechazo por Jefe o RRHH con motivo obligatorio
+  app.put("/api/vacaciones/:id/rechazar", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        action_by_dni,
+        action_by_id,
+        action_by_name,
+        action_by_role = "JEFE",
+        reason,
+      } = req.body || {};
+
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "El motivo de rechazo es obligatorio para registrar la no procedencia.",
+        });
+      }
+
+      const vacs = await getStoredVacaciones();
+      const vacIndex = vacs.findIndex((v: any) => v.id === id);
+      if (vacIndex === -1) {
+        return res.status(404).json({ success: false, message: "Registro vacacional no encontrado." });
+      }
+
+      const vac = vacs[vacIndex];
+
+      // Bloquear si intenta autorrechazarse en rol de solicitante
+      if (
+        action_by_role === "TRABAJADOR" &&
+        action_by_dni &&
+        vac.employee_dni &&
+        action_by_dni.trim() === vac.employee_dni.trim()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "No puede rechazar su propia solicitud de vacaciones.",
+        });
+      }
+
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = vac.status;
+      const newStatus = "RECHAZADA";
+
+      const auditEntry = {
+        id: `aud-vac-${Date.now()}`,
+        vacacion_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: action_by_id || "usr-01",
+        action_by_user_name: action_by_name || "Autoridad Evaluadora",
+        action_by_role,
+        action_type: "RECHAZAR",
+        origin: vac.origin,
+        comment: `Rechazado por ${action_by_name}. Motivo: ${reason.trim()}`,
+        rejection_reason: reason.trim(),
+        timestamp: nowLocal,
+      };
+
+      vac.status = newStatus;
+      vac.rejection_reason = reason.trim();
+      vac.updated_at = new Date().toISOString();
+      vac.audits = vac.audits ? [auditEntry, ...vac.audits] : [auditEntry];
+
+      vacs[vacIndex] = vac;
+      await saveStoredVacaciones(vacs);
+
+      return res.json({
+        success: true,
+        message: "Solicitud vacacional rechazada. Motivo y auditoría guardados correctamente.",
+        data: vac,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al rechazar solicitud: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/vacaciones/:id/aprobar-rrhh - Aprobación final institucional por RRHH / Control
+  app.put("/api/vacaciones/:id/aprobar-rrhh", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        hr_dni,
+        hr_id,
+        hr_name,
+        hr_role = "HR_ADMIN",
+        comment = "",
+        final_status = "PROGRAMADA",
+      } = req.body || {};
+
+      const vacs = await getStoredVacaciones();
+      const vacIndex = vacs.findIndex((v: any) => v.id === id);
+      if (vacIndex === -1) {
+        return res.status(404).json({ success: false, message: "Registro vacacional no encontrado." });
+      }
+
+      const vac = vacs[vacIndex];
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = vac.status;
+      const targetStatus = final_status === "APROBADA_RRHH" ? "APROBADA_RRHH" : "PROGRAMADA";
+
+      const auditEntry = {
+        id: `aud-vac-${Date.now()}`,
+        vacacion_id: id,
+        previous_status: previousStatus,
+        new_status: targetStatus,
+        action_by_user_id: hr_id || "usr-hr",
+        action_by_user_name: hr_name || "Recursos Humanos DRAC",
+        action_by_role: hr_role,
+        action_type: "APROBAR_RRHH",
+        origin: vac.origin,
+        comment: comment || `Aprobado y programado oficialmente por RRHH (${hr_name}).`,
+        timestamp: nowLocal,
+      };
+
+      vac.status = targetStatus;
+      vac.approved_by_hr = hr_name || "Recursos Humanos DRAC";
+      vac.hr_approved_at = nowLocal;
+      vac.hr_approver_id = hr_id;
+      vac.hr_approver_name = hr_name;
+      vac.hr_comment = comment;
+      vac.updated_at = new Date().toISOString();
+      vac.audits = vac.audits ? [auditEntry, ...vac.audits] : [auditEntry];
+
+      vacs[vacIndex] = vac;
+      await saveStoredVacaciones(vacs);
+
+      return res.json({
+        success: true,
+        message: "Vacaciones aprobadas y programadas formalmente en el sistema DRAC.",
+        data: vac,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al aprobar por RRHH: ${err?.message}` });
+    }
+  });
+
+  // DELETE /api/vacaciones/:id - Cancelar / Eliminar vacación
+  app.delete("/api/vacaciones/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      let vacs = await getStoredVacaciones();
+      const existing = vacs.find((v: any) => v.id === id);
+      if (!existing) {
+        return res.status(404).json({ success: false, message: "Registro vacacional no encontrado." });
+      }
+      vacs = vacs.filter((v: any) => v.id !== id);
+      await saveStoredVacaciones(vacs);
+      return res.json({ success: true, message: "Registro vacacional eliminado correctamente." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al eliminar vacación." });
+    }
+  });
+
+  // ==========================================
+  // API ROUTES: Papeletas de Salida DRAC
+  // ==========================================
+
+  // GET /api/papeletas - Listar papeletas con filtro de seguridad por rol
+  app.get("/api/papeletas", async (req, res) => {
+    try {
+      const userRole = (req.headers["x-user-role"] as string) || (req.query.role as string);
+      const userDni = (req.headers["x-user-dni"] as string) || (req.query.dni as string) || (req.query.employee_dni as string);
+      
+      let paps = await getStoredPapeletas();
+
+      // Si el rol es estrictamente TRABAJADOR, retornar ÚNICAMENTE sus propias papeletas
+      if ((userRole === "TRABAJADOR" || userRole === "EMPLOYEE") && userDni) {
+        paps = paps.filter((p: any) => p.employee_dni === userDni);
+      }
+
+      return res.json({ success: true, count: paps.length, data: paps });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al consultar papeletas." });
+    }
+  });
+
+  // POST /api/papeletas - Registrar solicitud de papeleta (SOLICITUD EXCLUSIVA DEL PROPIO TRABAJADOR)
+  app.post("/api/papeletas", async (req, res) => {
+    try {
+      const {
+        employee_id,
+        employee_dni,
+        employee_name,
+        dependencia_name = "SEDE CENTRAL",
+        direccion_organo_name = "",
+        area_name = "OFICINA DRAC",
+        supervisor_id,
+        supervisor_name,
+        motivo = "COMISION_SERVICIOS",
+        descripcion,
+        destino,
+        fecha,
+        hora_estimada_salida,
+        hora_estimada_retorno,
+        sin_retorno = false,
+        digital_signature_data,
+        signed_at,
+        origin = "PORTAL_TRABAJADOR",
+        auth_user_dni,
+        auth_user_role,
+        created_by_role = "TRABAJADOR",
+      } = req.body || {};
+
+      // 1. Validaciones de obligatoriedad
+      if (!employee_dni || !employee_name || !fecha || !hora_estimada_salida || !destino || !descripcion) {
+        return res.status(400).json({
+          success: false,
+          message: "Los datos del trabajador, fecha, horas, destino y motivo/descripción son obligatorios.",
+        });
+      }
+
+      // 2. VALIDACIÓN CRÍTICA DE IDENTIDAD Y SEGURIDAD (REQUERIMIENTOS 3, 4 Y 5)
+      // Un trabajador autenticado solo puede solicitar papeletas para sí mismo.
+      const callerDni =
+        (req.headers["x-user-dni"] as string) ||
+        auth_user_dni ||
+        (req.headers["x-authenticated-dni"] as string);
+
+      const callerRole =
+        (req.headers["x-user-role"] as string) ||
+        auth_user_role ||
+        created_by_role;
+
+      if (
+        (callerRole === "TRABAJADOR" || callerRole === "EMPLOYEE" || origin === "PORTAL_TRABAJADOR") &&
+        callerDni &&
+        employee_dni &&
+        callerDni.trim() !== employee_dni.trim()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "No tiene autorización para generar una papeleta a nombre de otro trabajador.",
+        });
+      }
+
+      const existingPaps = await getStoredPapeletas();
+      const newId = `pap-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const newCode = `PAP-2026-${String(existingPaps.length + 1).padStart(3, "0")}`;
+      const nowIso = new Date().toISOString();
+      const nowLocal = new Date().toLocaleString("es-PE");
+
+      // Estado inicial estrictamente PENDING_BOSS (SOLICITADA). Un trabajador no puede auto-aprobarse ni promover a APROBADA.
+      const initialStatus = "PENDING_BOSS";
+
+      const initialAudit = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: newId,
+        new_status: initialStatus,
+        action_by_user_id: employee_id || `emp-${employee_dni}`,
+        action_by_user_name: employee_name,
+        action_by_role: created_by_role,
+        action_type: "SOLICITAR_PAPELETA",
+        origin: "PORTAL_TRABAJADOR",
+        comment: `Solicitud de papeleta generada por el trabajador ${employee_name} (DNI ${employee_dni}) para ${destino}.`,
+        timestamp: nowLocal,
+      };
+
+      const newPapeleta = {
+        id: newId,
+        code: newCode,
+        employee_id: employee_id || `emp-${employee_dni}`,
+        employee_dni,
+        employee_name,
+        dependencia_name,
+        direccion_organo_name,
+        area_name,
+        supervisor_id: supervisor_id || "boss-default",
+        supervisor_name: supervisor_name || "Jefe Inmediato",
+        motivo,
+        descripcion,
+        destino,
+        fecha,
+        hora_estimada_salida,
+        hora_estimada_retorno: sin_retorno ? "Sin retorno" : hora_estimada_retorno,
+        sin_retorno: Boolean(sin_retorno),
+        status: initialStatus,
+        origin: "PORTAL_TRABAJADOR",
+        digital_signature_data,
+        signed_at: signed_at || nowIso,
+        created_by: employee_name,
+        created_by_role,
+        created_at: nowIso,
+        updated_at: nowIso,
+        audits: [initialAudit],
+      };
+
+      existingPaps.unshift(newPapeleta);
+      await saveStoredPapeletas(existingPaps);
+
+      return res.status(201).json({
+        success: true,
+        message: "Papeleta de salida registrada exitosamente. Enviada a la bandeja de V°B° del Jefe Inmediato.",
+        data: newPapeleta,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al guardar papeleta: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/papeletas/:id/vobo-jefe - V°B° del Jefe Inmediato (o Encargado Temporal Vigente)
+  app.put("/api/papeletas/:id/vobo-jefe", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        boss_dni,
+        boss_id,
+        boss_name,
+        boss_role = "JEFE",
+        boss_function = "Jefe Titular",
+        delegation_info,
+        comment = "",
+      } = req.body || {};
+
+      const paps = await getStoredPapeletas();
+      const papIndex = paps.findIndex((p: any) => p.id === id);
+
+      if (papIndex === -1) {
+        return res.status(404).json({ success: false, message: "Papeleta de salida no encontrada." });
+      }
+
+      const pap = paps[papIndex];
+
+      // REGLA CRÍTICA DE SEGURIDAD (REQUERIMIENTO 9): ANTI-AUTOAPROBACIÓN
+      if (
+        (boss_dni && pap.employee_dni && boss_dni.trim() === pap.employee_dni.trim()) ||
+        (boss_id && pap.employee_id && boss_id === pap.employee_id)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "No puede aprobar una papeleta que usted mismo ha solicitado.",
+        });
+      }
+
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = pap.status;
+      const newStatus = "PENDING_HR"; // Visto Bueno del Jefe otorgado, pasa a Aprobación de RRHH
+
+      const auditEntry = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: boss_id || "usr-boss",
+        action_by_user_name: boss_name || "Jefe Inmediato",
+        action_by_role: boss_role,
+        action_type: "VISTO_BUENO_JEFE",
+        comment: comment || `V°B° otorgado por ${boss_function} (${boss_name}).`,
+        boss_approver_name: boss_name,
+        boss_approver_dni: boss_dni,
+        boss_approver_function: boss_function,
+        delegation_info,
+        timestamp: nowLocal,
+      };
+
+      pap.status = newStatus;
+      pap.boss_approved_at = nowLocal;
+      pap.boss_approver_id = boss_id;
+      pap.boss_approver_dni = boss_dni;
+      pap.boss_approver_name = boss_name;
+      pap.boss_approver_function = boss_function;
+      pap.boss_delegation_info = delegation_info;
+      pap.boss_comment = comment;
+      pap.updated_at = new Date().toISOString();
+      pap.audits = pap.audits ? [auditEntry, ...pap.audits] : [auditEntry];
+
+      paps[papIndex] = pap;
+      await saveStoredPapeletas(paps);
+
+      return res.json({
+        success: true,
+        message: `V°B° registrado con éxito por ${boss_name} (${boss_function}). La papeleta pasa a autorización de RRHH.`,
+        data: pap,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al procesar V°B°: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/papeletas/:id/aprobar-rrhh - Aprobación Institucional por RRHH / Control de Asistencia
+  app.put("/api/papeletas/:id/aprobar-rrhh", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        hr_dni,
+        hr_id,
+        hr_name,
+        hr_role = "JEFE_RRHH",
+        comment = "",
+      } = req.body || {};
+
+      const paps = await getStoredPapeletas();
+      const papIndex = paps.findIndex((p: any) => p.id === id);
+
+      if (papIndex === -1) {
+        return res.status(404).json({ success: false, message: "Papeleta de salida no encontrada." });
+      }
+
+      const pap = paps[papIndex];
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = pap.status;
+      const newStatus = "APPROVED"; // Autorizada por RRHH, lista para control en Garita
+
+      const auditEntry = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: hr_id || "usr-hr",
+        action_by_user_name: hr_name || "Recursos Humanos DRAC",
+        action_by_role: hr_role,
+        action_type: "APROBAR_RRHH",
+        comment: comment || `Papeleta autorizada institucionalmente por ${hr_name}.`,
+        timestamp: nowLocal,
+      };
+
+      pap.status = newStatus;
+      pap.hr_approved_at = nowLocal;
+      pap.hr_approver_name = hr_name || "Recursos Humanos DRAC";
+      pap.hr_approver_dni = hr_dni;
+      pap.hr_comment = comment;
+      pap.updated_at = new Date().toISOString();
+      pap.audits = pap.audits ? [auditEntry, ...pap.audits] : [auditEntry];
+
+      paps[papIndex] = pap;
+      await saveStoredPapeletas(paps);
+
+      return res.json({
+        success: true,
+        message: "Papeleta autorizada oficialmente por RRHH. Habilitada en Garita de Vigilancia.",
+        data: pap,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al autorizar por RRHH: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/papeletas/:id/rechazar - Rechazo de papeleta con motivo
+  app.put("/api/papeletas/:id/rechazar", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        action_by_dni,
+        action_by_id,
+        action_by_name,
+        action_by_role = "JEFE",
+        reason,
+      } = req.body || {};
+
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "El motivo de rechazo es obligatorio para registrar la no procedencia de la papeleta.",
+        });
+      }
+
+      const paps = await getStoredPapeletas();
+      const papIndex = paps.findIndex((p: any) => p.id === id);
+
+      if (papIndex === -1) {
+        return res.status(404).json({ success: false, message: "Papeleta no encontrada." });
+      }
+
+      const pap = paps[papIndex];
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = pap.status;
+      const newStatus = "REJECTED";
+
+      const auditEntry = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: action_by_id || "usr-01",
+        action_by_user_name: action_by_name || "Autoridad Evaluadora",
+        action_by_role,
+        action_type: "RECHAZAR",
+        comment: `Rechazado por ${action_by_name}. Motivo: ${reason.trim()}`,
+        rejection_reason: reason.trim(),
+        timestamp: nowLocal,
+      };
+
+      pap.status = newStatus;
+      pap.rejection_reason = reason.trim();
+      pap.updated_at = new Date().toISOString();
+      pap.audits = pap.audits ? [auditEntry, ...pap.audits] : [auditEntry];
+
+      paps[papIndex] = pap;
+      await saveStoredPapeletas(paps);
+
+      return res.json({
+        success: true,
+        message: "Papeleta rechazada correctamente.",
+        data: pap,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al rechazar papeleta: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/papeletas/:id/garita-salida - Registro de salida física en Garita
+  app.put("/api/papeletas/:id/garita-salida", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        guard_id,
+        guard_name = "Agente de Vigilancia Garita",
+        hora_real_salida,
+        observacion = "",
+      } = req.body || {};
+
+      const paps = await getStoredPapeletas();
+      const papIndex = paps.findIndex((p: any) => p.id === id);
+
+      if (papIndex === -1) {
+        return res.status(404).json({ success: false, message: "Papeleta no encontrada." });
+      }
+
+      const pap = paps[papIndex];
+      const exitTime = hora_real_salida || new Date().toLocaleTimeString("es-PE", { hour12: false, hour: "2-digit", minute: "2-digit" });
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = pap.status;
+      const newStatus = pap.sin_retorno ? "COMPLETED" : "IN_OUTING";
+
+      const auditEntry = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: guard_id || "usr-guard",
+        action_by_user_name: guard_name,
+        action_by_role: "VIGILANCIA",
+        action_type: "REGISTRO_SALIDA_GARITA",
+        comment: `Salida física registrada en garita a las ${exitTime}.${observacion ? ` Obs: ${observacion}` : ""}`,
+        timestamp: nowLocal,
+      };
+
+      pap.status = newStatus;
+      pap.hora_real_salida = exitTime;
+      pap.security_guard_id = guard_id;
+      pap.security_guard_name = guard_name;
+      pap.updated_at = new Date().toISOString();
+      pap.audits = pap.audits ? [auditEntry, ...pap.audits] : [auditEntry];
+
+      paps[papIndex] = pap;
+      await saveStoredPapeletas(paps);
+
+      return res.json({
+        success: true,
+        message: `Salida registrada exitosamente a las ${exitTime}.`,
+        data: pap,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al registrar salida en garita: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/papeletas/:id/garita-retorno - Registro de retorno físico en Garita
+  app.put("/api/papeletas/:id/garita-retorno", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        guard_id,
+        guard_name = "Agente de Vigilancia Garita",
+        hora_real_retorno,
+        observacion = "",
+      } = req.body || {};
+
+      const paps = await getStoredPapeletas();
+      const papIndex = paps.findIndex((p: any) => p.id === id);
+
+      if (papIndex === -1) {
+        return res.status(404).json({ success: false, message: "Papeleta no encontrada." });
+      }
+
+      const pap = paps[papIndex];
+      const returnTime = hora_real_retorno || new Date().toLocaleTimeString("es-PE", { hour12: false, hour: "2-digit", minute: "2-digit" });
+      const nowLocal = new Date().toLocaleString("es-PE");
+      const previousStatus = pap.status;
+      const newStatus = "COMPLETED";
+
+      const auditEntry = {
+        id: `aud-pap-${Date.now()}`,
+        papeleta_id: id,
+        previous_status: previousStatus,
+        new_status: newStatus,
+        action_by_user_id: guard_id || "usr-guard",
+        action_by_user_name: guard_name,
+        action_by_role: "VIGILANCIA",
+        action_type: "REGISTRO_RETORNO_GARITA",
+        comment: `Retorno físico registrado en garita a las ${returnTime}.${observacion ? ` Obs: ${observacion}` : ""}`,
+        timestamp: nowLocal,
+      };
+
+      pap.status = newStatus;
+      pap.hora_real_retorno = returnTime;
+      pap.security_guard_id = guard_id;
+      pap.security_guard_name = guard_name;
+      pap.updated_at = new Date().toISOString();
+      pap.audits = pap.audits ? [auditEntry, ...pap.audits] : [auditEntry];
+
+      paps[papIndex] = pap;
+      await saveStoredPapeletas(paps);
+
+      return res.json({
+        success: true,
+        message: `Retorno registrado exitosamente a las ${returnTime}. Papeleta finalizada.`,
+        data: pap,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al registrar retorno en garita: ${err?.message}` });
+    }
+  });
+
+  // DELETE /api/papeletas/:id - Eliminar papeleta
+  app.delete("/api/papeletas/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      let paps = await getStoredPapeletas();
+      const existing = paps.find((p: any) => p.id === id);
+      if (!existing) {
+        return res.status(404).json({ success: false, message: "Papeleta no encontrada." });
+      }
+      paps = paps.filter((p: any) => p.id !== id);
+      await saveStoredPapeletas(paps);
+      return res.json({ success: true, message: "Papeleta eliminada correctamente." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al eliminar papeleta." });
+    }
+  });
+
+  // ==========================================
+  // API ROUTES: Attendance & Control Operativo DRAC
+  // ==========================================
+
+  // GET /api/attendance - Listar asistencias procesadas
+  app.get("/api/attendance", async (req, res) => {
+    try {
+      const userRole = (req.headers["x-user-role"] as string) || (req.query.role as string);
+      const userDni = (req.headers["x-user-dni"] as string) || (req.query.dni as string);
+      const { fecha, startDate, endDate } = req.query as any;
+
+      let atts = await getStoredAttendance();
+
+      if ((userRole === "TRABAJADOR" || userRole === "EMPLOYEE") && userDni) {
+        atts = atts.filter((a: any) => a.employee_dni === userDni);
+      }
+
+      if (fecha) {
+        atts = atts.filter((a: any) => a.fecha === fecha);
+      } else if (startDate && endDate) {
+        atts = atts.filter((a: any) => a.fecha >= startDate && a.fecha <= endDate);
+      }
+
+      return res.json({ success: true, count: atts.length, data: atts });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al consultar asistencia." });
+    }
+  });
+
+  // PUT /api/attendance/:id - Actualizar registro de asistencia (Ajuste / Regularización)
+  app.put("/api/attendance/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updatedRec = req.body;
+      let atts = await getStoredAttendance();
+      const idx = atts.findIndex((a: any) => a.id === id);
+      if (idx === -1) {
+        atts.unshift(updatedRec);
+      } else {
+        atts[idx] = { ...atts[idx], ...updatedRec };
+      }
+      await saveStoredAttendance(atts);
+      return res.json({ success: true, message: "Registro de asistencia actualizado.", data: updatedRec });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al actualizar asistencia." });
+    }
+  });
+
+  // ==========================================
+  // API ROUTES: Dashboard Operativo por Rol y Ámbito
+  // ==========================================
+
+  // GET /api/dashboard - Endpoint principal de métricas e indicadores de control de asistencia
+  app.get(["/api/dashboard", "/api/dashboard/me"], async (req, res) => {
+    try {
+      const callerDni =
+        (req.headers["x-user-dni"] as string) ||
+        (req.query.dni as string) ||
+        "10000001";
+      const callerRole =
+        (req.headers["x-user-role"] as string) ||
+        (req.query.role as string) ||
+        "ADMIN_GENERAL";
+
+      const startDate = (req.query.startDate as string) || "2026-08-01";
+      const endDate = (req.query.endDate as string) || "2026-08-31";
+      const month = (req.query.month as string) || "8";
+      const year = (req.query.year as string) || "2026";
+      const targetDate = (req.query.targetDate as string) || "2026-08-21";
+
+      const employees = await getStoredEmployees();
+      const attendance = await getStoredAttendance();
+      const encargaturas = await getStoredEncargaturas();
+      const papeletas = await getStoredPapeletas();
+      const vacaciones = await getStoredVacaciones();
+      const authorizations = await getStoredAuthorizations();
+
+      const callerEmployee =
+        employees.find((e: any) => e.dni === callerDni || e.id === callerDni) ||
+        employees[0];
+
+      // Filtrar registros de asistencia por el rango de fechas seleccionado
+      const periodAttendance = attendance.filter(
+        (a: any) => (!startDate || a.fecha >= startDate) && (!endDate || a.fecha <= endDate)
+      );
+
+      // Helper para calcular métricas individuales de un trabajador en el periodo
+      const calculateWorkerMetrics = (dni: string) => {
+        const emp = employees.find((e: any) => e.dni === dni);
+        const empAtts = periodAttendance.filter((a: any) => a.employee_dni === dni);
+        const empPaps = papeletas.filter((p: any) => p.employee_dni === dni);
+        const empVacs = vacaciones.filter((v: any) => v.employee_dni === dni);
+        const empAuths = authorizations.filter((auth: any) => auth.employee_dni === dni);
+
+        const dias_asistidos = empAtts.filter(
+          (a: any) =>
+            a.status === "PUNCTUAL" ||
+            a.status === "LATE" ||
+            a.status === "OUTING_PERMISSION" ||
+            (a.total_effective_hours && a.total_effective_hours > 0)
+        ).length;
+
+        const dias_laborados = empAtts.filter(
+          (a: any) => a.total_effective_hours && a.total_effective_hours > 0
+        ).length;
+
+        const dias_falta = empAtts.filter((a: any) => a.status === "ABSENT").length;
+
+        const tardanzas_records = empAtts.filter(
+          (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+        );
+        const tardanzas_count = tardanzas_records.length;
+
+        const minutos_tardanza_total = empAtts.reduce(
+          (sum: number, a: any) => sum + (Number(a.net_tardiness_minutes) || 0),
+          0
+        );
+
+        const horas_trabajadas = Number(
+          empAtts.reduce((sum: number, a: any) => sum + (Number(a.total_effective_hours) || 0), 0).toFixed(1)
+        );
+
+        // Estándar del periodo (ejemplo: 18 días hábiles x 8 horas = 144 horas)
+        const horas_estandar = Math.max(dias_asistidos + dias_falta, 18) * 8;
+        const horas_faltantes = Number(Math.max(0, horas_estandar - horas_trabajadas).toFixed(1));
+
+        const papeletas_pendientes_count = empPaps.filter((p: any) =>
+          ["PENDING_BOSS", "PENDING_HR", "PENDING_DIRECTOR"].includes(p.status)
+        ).length;
+
+        const vacaciones_pendientes_count = empVacs.filter((v: any) =>
+          ["PENDING_APPROVAL", "PENDING_BOSS", "PENDING_HR"].includes(v.status)
+        ).length;
+
+        const justificaciones_count = empAuths.length;
+
+        return {
+          employee: emp || { dni, first_name: "Trabajador", last_name: dni },
+          indicators: {
+            dias_asistidos,
+            dias_laborados,
+            dias_falta,
+            tardanzas_count,
+            minutos_tardanza_total,
+            horas_trabajadas,
+            horas_faltantes,
+            horas_estandar,
+            papeletas_pendientes_count,
+            vacaciones_pendientes_count,
+            justificaciones_count,
+          },
+          marcaciones: empAtts.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+          tardanzas: tardanzas_records.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+          papeletas: empPaps.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+          vacaciones: empVacs.sort((a: any, b: any) => (b.fecha_inicio || "").localeCompare(a.fecha_inicio || "")),
+          justificaciones: empAuths,
+        };
+      };
+
+      // ============================================================
+      // 1. PERFIL TRABAJADOR: Exclusivamente información personal
+      // ============================================================
+      if (callerRole === "TRABAJADOR" || callerRole === "EMPLOYEE") {
+        const workerData = calculateWorkerMetrics(callerDni);
+        return res.json({
+          success: true,
+          role: "TRABAJADOR",
+          period: { startDate, endDate, month, year, label: "Agosto 2026" },
+          is_worker_only: true,
+          ...workerData,
+        });
+      }
+
+      // ============================================================
+      // 2. PERFIL JEFE INMEDIATO / SUPERVISOR / DIRECTOR_GENERAL
+      // ============================================================
+      if (
+        callerRole === "JEFE" ||
+        callerRole === "SUPERVISOR" ||
+        callerRole === "DIRECTOR_GENERAL"
+      ) {
+        // Datos personales del Jefe
+        const my_data = calculateWorkerMetrics(callerDni);
+
+        // Determinación del ámbito orgánico y encargaturas vigentes
+        const activeEncargatura = encargaturas.find(
+          (enc: any) =>
+            (enc.encargado_dni === callerDni || enc.encargado_id === callerEmployee?.id) &&
+            enc.status === "ACTIVA" &&
+            (!enc.fecha_inicio || enc.fecha_inicio <= targetDate) &&
+            (!enc.fecha_fin || enc.fecha_fin >= targetDate)
+        );
+
+        // Subordinados bajo responsabilidad (Titular o Encargado)
+        const teamSubordinates = employees.filter((emp: any) => {
+          if (emp.dni === callerDni || emp.id === callerEmployee?.id) return false;
+          if (emp.active === false) return false;
+
+          // 1. Subordinación directa por ID/Nombre de supervisor
+          if (emp.supervisor_id === callerEmployee?.id || emp.supervisor_id === callerDni) return true;
+
+          // 2. Si es jefe titular de Dirección / Órgano o Área
+          if (callerEmployee?.is_jefe_director) {
+            if (callerEmployee.direccion_organo_id && emp.direccion_organo_id === callerEmployee.direccion_organo_id) {
+              return true;
+            }
+            if (callerEmployee.area_id && emp.area_id === callerEmployee.area_id) {
+              return true;
+            }
+          }
+
+          // 3. Encargatura temporal vigente
+          if (activeEncargatura) {
+            if (activeEncargatura.direccion_organo_id && emp.direccion_organo_id === activeEncargatura.direccion_organo_id) {
+              return true;
+            }
+            if (activeEncargatura.area_id && emp.area_id === activeEncargatura.area_id) {
+              return true;
+            }
+            if (activeEncargatura.dependencia_id && emp.dependencia_id === activeEncargatura.dependencia_id) {
+              return true;
+            }
+          }
+
+          return false;
+        });
+
+        // Métricas de asistencia del equipo
+        const teamDnis = teamSubordinates.map((s: any) => s.dni);
+        const teamPeriodAttendance = periodAttendance.filter((a: any) => teamDnis.includes(a.employee_dni));
+        const teamTodayAttendance = attendance.filter(
+          (a: any) => a.fecha === targetDate && teamDnis.includes(a.employee_dni)
+        );
+
+        const asistieron_hoy = teamTodayAttendance.filter(
+          (a: any) =>
+            a.status === "PUNCTUAL" ||
+            a.status === "LATE" ||
+            a.status === "OUTING_PERMISSION" ||
+            (a.total_effective_hours && a.total_effective_hours > 0)
+        ).length;
+
+        const ausentes_hoy = teamSubordinates.length - asistieron_hoy;
+
+        const tardanzas_hoy = teamTodayAttendance.filter(
+          (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+        ).length;
+
+        const tardanzas_periodo = teamPeriodAttendance.filter(
+          (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+        ).length;
+
+        const minutos_tardanza_periodo = teamPeriodAttendance.reduce(
+          (sum: number, a: any) => sum + (Number(a.net_tardiness_minutes) || 0),
+          0
+        );
+
+        const teamPendingPapeletas = papeletas.filter(
+          (p: any) => teamDnis.includes(p.employee_dni) && p.status === "PENDING_BOSS"
+        );
+
+        const teamPendingVacaciones = vacaciones.filter(
+          (v: any) => teamDnis.includes(v.employee_dni) && ["PENDING_APPROVAL", "PENDING_BOSS"].includes(v.status)
+        );
+
+        // Resumen individual de cada subordinado para la tabla de supervisión
+        const teamSummaryList = teamSubordinates.map((sub: any) => {
+          const subMetrics = calculateWorkerMetrics(sub.dni);
+          const todayRec = teamTodayAttendance.find((a: any) => a.employee_dni === sub.dni);
+          return {
+            employee: sub,
+            indicators: subMetrics.indicators,
+            today_record: todayRec || {
+              fecha: targetDate,
+              status: "ABSENT",
+              observations: "Sin registro hoy",
+            },
+          };
+        });
+
+        return res.json({
+          success: true,
+          role: callerRole,
+          period: { startDate, endDate, month, year, label: "Agosto 2026" },
+          is_encargado: Boolean(activeEncargatura),
+          active_encargatura: activeEncargatura,
+          scope_info: {
+            unit_name:
+              activeEncargatura?.direccion_organo_name ||
+              callerEmployee?.direccion_organo_name ||
+              callerEmployee?.area_name ||
+              "Unidad Orgánica DRAC",
+            is_encargado: Boolean(activeEncargatura),
+            resolution: activeEncargatura?.documento_resolucion,
+          },
+          my_data,
+          team_data: {
+            team_members_count: teamSubordinates.length,
+            indicators: {
+              personal_a_cargo: teamSubordinates.length,
+              asistieron_hoy,
+              ausentes_hoy,
+              tardanzas_hoy,
+              tardanzas_periodo,
+              minutos_tardanza_periodo,
+              papeletas_pendientes_vobo: teamPendingPapeletas.length,
+              vacaciones_pendientes: teamPendingVacaciones.length,
+            },
+            team_summary_list: teamSummaryList,
+            team_attendance_today: teamTodayAttendance,
+            pending_papeletas: teamPendingPapeletas,
+            pending_vacaciones: teamPendingVacaciones,
+            team_subordinates: teamSubordinates,
+          },
+        });
+      }
+
+      // ============================================================
+      // 3. PERFIL CONTROL_ASISTENCIA / ADMIN_GENERAL / HR_ADMIN / JEFE_RRHH
+      // ============================================================
+      const activeEmployees = employees.filter((e: any) => e.active !== false);
+      const allTodayAttendance = attendance.filter((a: any) => a.fecha === targetDate);
+
+      const asistieron_hoy = allTodayAttendance.filter(
+        (a: any) =>
+          a.status === "PUNCTUAL" ||
+          a.status === "LATE" ||
+          a.status === "OUTING_PERMISSION" ||
+          (a.total_effective_hours && a.total_effective_hours > 0)
+      ).length;
+
+      const ausentes_hoy = Math.max(0, activeEmployees.length - asistieron_hoy);
+
+      const tardanzas_hoy_records = allTodayAttendance.filter(
+        (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+      );
+      const tardanzas_hoy = tardanzas_hoy_records.length;
+      const minutos_tardanza_hoy = tardanzas_hoy_records.reduce(
+        (sum: number, a: any) => sum + (Number(a.net_tardiness_minutes) || 0),
+        0
+      );
+
+      const tardanzas_periodo_records = periodAttendance.filter(
+        (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+      );
+      const tardanzas_periodo = tardanzas_periodo_records.length;
+      const minutos_tardanza_periodo = tardanzas_periodo_records.reduce(
+        (sum: number, a: any) => sum + (Number(a.net_tardiness_minutes) || 0),
+        0
+      );
+
+      const faltas_injustificadas_periodo = periodAttendance.filter(
+        (a: any) => a.status === "ABSENT"
+      ).length;
+
+      const horas_trabajadas_totales = Number(
+        periodAttendance.reduce(
+          (sum: number, a: any) => sum + (Number(a.total_effective_hours) || 0),
+          0
+        ).toFixed(1)
+      );
+
+      const papeletas_pendientes = papeletas.filter((p: any) =>
+        ["PENDING_BOSS", "PENDING_HR", "PENDING_DIRECTOR"].includes(p.status)
+      ).length;
+
+      const vacaciones_programadas = vacaciones.filter((v: any) =>
+        ["APPROVED", "IN_PROGRESS"].includes(v.status)
+      ).length;
+
+      const justificaciones_pendientes = authorizations.filter(
+        (auth: any) => auth.status === "PENDING"
+      ).length;
+
+      // Resumen consolidado para todos los trabajadores
+      const employees_attendance_summary = activeEmployees.map((emp: any) => {
+        const metrics = calculateWorkerMetrics(emp.dni);
+        const todayRec = allTodayAttendance.find((a: any) => a.employee_dni === emp.dni);
+        return {
+          employee: emp,
+          indicators: metrics.indicators,
+          today_status: todayRec?.status || "ABSENT",
+          today_in: todayRec?.t1_real_in || "--:--",
+          today_out: todayRec?.t2_real_out || todayRec?.t1_real_out || "--:--",
+          today_tardiness_net: todayRec?.net_tardiness_minutes || 0,
+        };
+      });
+
+      // Personal en garita (salió con papeleta autorizada)
+      const garita_control = papeletas.filter(
+        (p: any) => p.status === "IN_PROGRESS" || (p.hora_real_salida && !p.hora_real_retorno && !p.sin_retorno)
+      );
+
+      return res.json({
+        success: true,
+        role: callerRole,
+        period: { startDate, endDate, month, year, label: "Agosto 2026" },
+        global_indicators: {
+          total_trabajadores: activeEmployees.length,
+          trabajadores_activos: activeEmployees.length,
+          asistieron_hoy,
+          ausentes_hoy,
+          tardanzas_hoy,
+          minutos_tardanza_hoy,
+          tardanzas_periodo,
+          minutos_tardanza_periodo,
+          faltas_injustificadas_periodo,
+          horas_trabajadas_totales,
+          papeletas_pendientes,
+          vacaciones_programadas,
+          justificaciones_pendientes,
+        },
+        employees_attendance_summary,
+        papeletas_pendientes_global: papeletas.filter((p: any) =>
+          ["PENDING_BOSS", "PENDING_HR", "PENDING_DIRECTOR"].includes(p.status)
+        ),
+        vacaciones_activas_global: vacaciones.filter((v: any) =>
+          ["APPROVED", "IN_PROGRESS", "PENDING_APPROVAL"].includes(v.status)
+        ),
+        garita_control,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error en dashboard: ${err?.message}` });
+    }
+  });
+
+  // GET /api/dashboard/worker-detail/:identifier - Detalle de un trabajador con control de acceso por rol
+  app.get("/api/dashboard/worker-detail/:identifier", async (req, res) => {
+    try {
+      const { identifier } = req.params;
+      const callerDni = (req.headers["x-user-dni"] as string) || (req.query.callerDni as string);
+      const callerRole = (req.headers["x-user-role"] as string) || (req.query.callerRole as string);
+
+      const employees = await getStoredEmployees();
+      const targetEmp = employees.find((e: any) => e.dni === identifier || e.id === identifier);
+      if (!targetEmp) {
+        return res.status(404).json({ success: false, message: "Trabajador no encontrado." });
+      }
+
+      // Validación estricta de seguridad
+      if ((callerRole === "TRABAJADOR" || callerRole === "EMPLOYEE") && callerDni && callerDni !== targetEmp.dni) {
+        return res.status(403).json({
+          success: false,
+          message: "Acceso denegado: Un trabajador solo puede consultar su propia información.",
+        });
+      }
+
+      const attendance = await getStoredAttendance();
+      const papeletas = await getStoredPapeletas();
+      const vacaciones = await getStoredVacaciones();
+      const authorizations = await getStoredAuthorizations();
+
+      const empAtts = attendance.filter((a: any) => a.employee_dni === targetEmp.dni);
+      const empPaps = papeletas.filter((p: any) => p.employee_dni === targetEmp.dni);
+      const empVacs = vacaciones.filter((v: any) => v.employee_dni === targetEmp.dni);
+      const empAuths = authorizations.filter((auth: any) => auth.employee_dni === targetEmp.dni);
+
+      const dias_asistidos = empAtts.filter(
+        (a: any) =>
+          a.status === "PUNCTUAL" ||
+          a.status === "LATE" ||
+          a.status === "OUTING_PERMISSION" ||
+          (a.total_effective_hours && a.total_effective_hours > 0)
+      ).length;
+
+      const dias_falta = empAtts.filter((a: any) => a.status === "ABSENT").length;
+      const tardanzas_records = empAtts.filter(
+        (a: any) => (a.net_tardiness_minutes && a.net_tardiness_minutes > 0) || a.status === "LATE"
+      );
+      const tardanzas_count = tardanzas_records.length;
+      const minutos_tardanza_total = empAtts.reduce(
+        (sum: number, a: any) => sum + (Number(a.net_tardiness_minutes) || 0),
+        0
+      );
+      const horas_trabajadas = Number(
+        empAtts.reduce((sum: number, a: any) => sum + (Number(a.total_effective_hours) || 0), 0).toFixed(1)
+      );
+
+      return res.json({
+        success: true,
+        employee: targetEmp,
+        indicators: {
+          dias_asistidos,
+          dias_laborados: dias_asistidos,
+          dias_falta,
+          tardanzas_count,
+          minutos_tardanza_total,
+          horas_trabajadas,
+          papeletas_pendientes_count: empPaps.filter((p: any) => p.status.startsWith("PENDING")).length,
+          vacaciones_pendientes_count: empVacs.filter((v: any) => v.status.startsWith("PENDING")).length,
+          justificaciones_count: empAuths.length,
+        },
+        marcaciones: empAtts.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+        tardanzas: tardanzas_records.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+        papeletas: empPaps.sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)),
+        vacaciones: empVacs.sort((a: any, b: any) => (b.fecha_inicio || "").localeCompare(a.fecha_inicio || "")),
+        justificaciones: empAuths,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al consultar detalle: ${err?.message}` });
+    }
   });
 
   // Vite middleware for development

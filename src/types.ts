@@ -504,21 +504,32 @@ export type PapeletaStatus =
   | 'CANCELLED';
 
 export type PapeletaMotivo =
-  | 'PERSONAL'
-  | 'SALUD_MEDICA'
   | 'COMISION_SERVICIOS'
+  | 'SALUD_MEDICA'
+  | 'CAPACITACION_INSTITUCIONAL'
+  | 'ASUNTOS_PARTICULARES'
+  | 'PERSONAL'
   | 'DILIGENCIA_OFICIAL'
   | 'OTRO';
+
+export type PapeletaOrigen = 'PORTAL_TRABAJADOR' | 'ADMINISTRATIVO';
 
 export interface PapeletaAudit {
   id: string;
   papeleta_id: string;
-  previous_status: PapeletaStatus;
+  previous_status?: PapeletaStatus;
   new_status: PapeletaStatus;
   action_by_user_id: string;
   action_by_user_name: string;
-  action_by_role: RoleType;
+  action_by_role: RoleType | string;
+  action_type?: string;
+  origin?: PapeletaOrigen | string;
   comment?: string;
+  rejection_reason?: string;
+  boss_approver_name?: string;
+  boss_approver_dni?: string;
+  boss_approver_function?: string;
+  delegation_info?: PapeletaBossDelegationInfo;
   timestamp: string;
 }
 
@@ -554,6 +565,7 @@ export interface PapeletaSalida {
   hora_real_retorno?: string | null; // Guarded by Vigilancia
   sin_retorno?: boolean; // Salida sin retorno (Comisión final de jornada, etc.)
   status: PapeletaStatus;
+  origin?: PapeletaOrigen;
   
   digital_signature_data?: string; // Digital signature image / vector
   signed_at?: string;
@@ -573,26 +585,120 @@ export interface PapeletaSalida {
   
   security_guard_id?: string;
   security_guard_name?: string;
+  rejection_reason?: string;
+  created_by?: string;
+  created_by_role?: string;
+  audits?: PapeletaAudit[];
   created_at: string;
   updated_at: string;
 }
 
-export type VacacionTipo = 'TOTAL' | 'PARCIAL';
+export type VacacionTipo = 'TOTAL' | 'PARCIAL' | 'TOTAL_30' | 'FRACCIONADO';
+
+export type VacacionStatus =
+  | 'SOLICITADA'
+  | 'VISTO_BUENO_JEFE'
+  | 'OBSERVADA'
+  | 'RECHAZADA'
+  | 'APROBADA_RRHH'
+  | 'PROGRAMADA'
+  | 'EN_CURSO'
+  | 'FINALIZADA'
+  | 'CANCELADA';
+
+export type VacacionOrigen = 'PROFILE_VACATION_REQUEST' | 'ATTENDANCE_VACATION_PROGRAMMING';
+
+export interface VacacionAudit {
+  id: string;
+  vacacion_id: string;
+  previous_status?: VacacionStatus;
+  new_status: VacacionStatus;
+  action_by_user_id: string;
+  action_by_user_name: string;
+  action_by_role: RoleType;
+  action_type:
+    | 'SOLICITAR'
+    | 'VISTO_BUENO_JEFE'
+    | 'OBSERVAR'
+    | 'RECHAZAR'
+    | 'APROBAR_RRHH'
+    | 'PROGRAMAR'
+    | 'CANCELAR'
+    | 'EDITAR'
+    | 'ACTUALIZACION_SISTEMA';
+  origin: VacacionOrigen;
+  comment?: string;
+  rejection_reason?: string;
+  timestamp: string;
+  boss_approver_name?: string;
+  boss_approver_dni?: string;
+  boss_approver_function?: string;
+  delegation_info?: {
+    is_encargado: boolean;
+    encargatura_id?: string;
+    unidad_encargada?: string;
+    documento?: string;
+    vigencia?: string;
+  };
+}
 
 export interface Vacacion {
   id: string;
+  code?: string; // Ej: VAC-2026-001
   employee_id: string;
   employee_dni: string;
   employee_name: string;
+  dependencia_id?: string;
+  dependencia_name?: string;
+  direccion_organo_name?: string;
+  area_id?: string;
+  area_name?: string;
+  position?: string;
+  regimen_laboral?: RegimenLaboral;
+  condicion_laboral?: CondicionLaboral;
+
   tipo: VacacionTipo;
   start_date: string;
   end_date: string;
   total_days: number;
   period_year: number;
-  status: 'PENDING' | 'APPROVED' | 'CANCELLED';
+
+  status: VacacionStatus;
+  origin: VacacionOrigen;
+
+  // V°B° Jefe Inmediato
+  supervisor_id?: string;
+  supervisor_name?: string;
+  boss_approved_at?: string;
+  boss_approver_id?: string;
+  boss_approver_dni?: string;
+  boss_approver_name?: string;
+  boss_approver_function?: string; // 'Jefe Titular' | 'Jefe Encargado'
+  boss_delegation_info?: {
+    is_encargado: boolean;
+    encargatura_id?: string;
+    unidad_encargada?: string;
+    documento?: string;
+    vigencia?: string;
+  };
+  boss_comment?: string;
+  rejection_reason?: string;
+  observation_comment?: string;
+
+  // RRHH / Control
   approved_by_hr?: string;
+  hr_approved_at?: string;
+  hr_approver_id?: string;
+  hr_approver_name?: string;
+  hr_comment?: string;
+
   comments?: string;
   created_at: string;
+  created_by?: string;
+  created_by_role?: RoleType;
+  updated_at?: string;
+
+  audits?: VacacionAudit[];
 }
 
 export type AsistenciaEstado =

@@ -77,7 +77,7 @@ export function calculateAttendanceForDate(
   const activeVacation = vacaciones.find(
     (v) =>
       v.employee_id === employee.id &&
-      v.status === 'APPROVED' &&
+      (v.status === 'PROGRAMADA' || v.status === 'APROBADA_RRHH' || v.status === 'EN_CURSO') &&
       fecha >= v.start_date &&
       fecha <= v.end_date
   );

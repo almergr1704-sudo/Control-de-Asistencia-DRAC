@@ -43,6 +43,7 @@ import {
   ChevronRight,
   FileText,
   CheckCircle,
+  AlertCircle,
   ExternalLink,
   Cpu,
   RefreshCw,
@@ -298,6 +299,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   activeRole,
   encargaturas = [],
   papeletas = [],
+  devices = [],
   onAddDependencia,
   onEditDependencia,
   onDeleteDependencia,
@@ -781,6 +783,23 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // Detail Modal for Employee (Directorio de Personal - Ficha Integral)
   const [selectedEmpForDetail, setSelectedEmpForDetail] = useState<Employee | null>(null);
   const [openEmpActionMenuId, setOpenEmpActionMenuId] = useState<string | null>(null);
+
+  // Biometric Synchronization state
+  const [syncingEmpId, setSyncingEmpId] = useState<string | null>(null);
+  const [selectedSyncDeviceId, setSelectedSyncDeviceId] = useState<string>('dev-01');
+  const [syncFeedback, setSyncFeedback] = useState<{
+    type: 'SUCCESS' | 'ERROR' | 'INFO';
+    message: string;
+    biometric_user_id?: string;
+    device_name?: string;
+    timestamp?: string;
+  } | null>(null);
+
+  // Mass Biometric Sync in Personnel module
+  const [selectedWorkerIdsForSync, setSelectedWorkerIdsForSync] = useState<Set<string>>(new Set());
+  const [isMassSyncModalOpen, setIsMassSyncModalOpen] = useState(false);
+  const [isMassSyncing, setIsMassSyncing] = useState(false);
+  const [massSyncProgress, setMassSyncProgress] = useState<{ total: number; done: number; success: number; failed: number } | null>(null);
 
   const todayDateStr = new Date().toISOString().split('T')[0];
 
@@ -2148,6 +2167,16 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                                           >
                                             <History className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                                             <span>Historial Traslados</span>
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setOpenEmpActionMenuId(null);
+                                              setSelectedEmpForDetail(emp);
+                                            }}
+                                            className="w-full px-3 py-2 text-left hover:bg-slate-800/80 text-cyan-300 flex items-center gap-2 transition-colors"
+                                          >
+                                            <Cpu className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                            <span>Sincronizar Biométrico</span>
                                           </button>
                                         </div>
 
@@ -5491,6 +5520,218 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       {selectedEmpForDetail.email || 'Sin correo'} {selectedEmpForDetail.phone ? `• Tel: ${selectedEmpForDetail.phone}` : ''}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Sección 4: Sincronización Biométrica ZKTeco */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>Sincronización Biométrica ZKTeco (Maestro DRAC → Reloj)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400">Estado:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1 ${
+                        selectedEmpForDetail.biometric_sync_status === 'SINCRONIZADO'
+                          ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                          : selectedEmpForDetail.biometric_sync_status === 'ERROR'
+                          ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
+                          : selectedEmpForDetail.biometric_sync_status === 'DESACTIVADO'
+                          ? 'bg-slate-500/10 text-slate-400 border border-slate-700'
+                          : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          selectedEmpForDetail.biometric_sync_status === 'SINCRONIZADO'
+                            ? 'bg-emerald-400 animate-pulse'
+                            : selectedEmpForDetail.biometric_sync_status === 'ERROR'
+                            ? 'bg-rose-400'
+                            : 'bg-amber-400'
+                        }`}
+                      />
+                      {selectedEmpForDetail.biometric_sync_status || (selectedEmpForDetail.active ? 'SINCRONIZADO' : 'DESACTIVADO')}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-800 space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">User ID en Reloj:</span>
+                      <span className="font-mono text-cyan-300 font-bold text-xs mt-0.5 block">
+                        {selectedEmpForDetail.biometric_user_id ||
+                          selectedEmpForDetail.codigo_trabajador.replace(/[^0-9]/g, '').padStart(6, '0') ||
+                          selectedEmpForDetail.dni}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Reloj Asignado:</span>
+                      <span className="font-semibold text-slate-200 text-xs mt-0.5 block">
+                        {selectedEmpForDetail.biometric_sync_device_name ||
+                          devices.find((d) => d.dependencia_id === selectedEmpForDetail.dependencia_id)?.name ||
+                          'ZKTeco Sede Central'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Última Sincronización:</span>
+                      <span className="font-mono text-slate-300 text-xs mt-0.5 block">
+                        {selectedEmpForDetail.biometric_last_sync || '20/08/2026 09:32:00'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {syncFeedback && (
+                    <div
+                      className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                        syncFeedback.type === 'SUCCESS'
+                          ? 'bg-emerald-950/30 border-emerald-800 text-emerald-200'
+                          : syncFeedback.type === 'ERROR'
+                          ? 'bg-rose-950/30 border-rose-800 text-rose-200'
+                          : 'bg-indigo-950/30 border-indigo-800 text-indigo-200'
+                      }`}
+                    >
+                      {syncFeedback.type === 'SUCCESS' ? (
+                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      )}
+                      <div className="space-y-1">
+                        <p className="font-bold">{syncFeedback.message}</p>
+                        {syncFeedback.device_name && (
+                          <p className="text-[11px] text-slate-400 font-mono">
+                            Dispositivo: {syncFeedback.device_name} • User ID: {syncFeedback.biometric_user_id} • Fecha:{' '}
+                            {syncFeedback.timestamp}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {canManageOrg && (
+                    <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-bold text-slate-300">Destino:</label>
+                        <select
+                          value={selectedSyncDeviceId}
+                          onChange={(e) => setSelectedSyncDeviceId(e.target.value)}
+                          className="bg-[#060709] border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:border-cyan-500 focus:outline-none"
+                        >
+                          {devices.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.ip_address}:{d.port})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {selectedEmpForDetail.active && (
+                          <button
+                            type="button"
+                            disabled={syncingEmpId === selectedEmpForDetail.id}
+                            onClick={async () => {
+                              const emp = selectedEmpForDetail;
+                              const targetDev = devices.find((d) => d.id === selectedSyncDeviceId) || devices[0];
+                              if (!targetDev) return;
+
+                              setSyncingEmpId(emp.id);
+                              setSyncFeedback(null);
+
+                              try {
+                                const res = await syncEmployeeToDevice(emp, targetDev);
+                                if (res.success) {
+                                  const updatedEmp: Employee = {
+                                    ...emp,
+                                    biometric_user_id: res.biometric_user_id,
+                                    biometric_sync_status: 'SINCRONIZADO',
+                                    biometric_last_sync: res.timestamp || new Date().toLocaleString('es-PE'),
+                                    biometric_sync_device_id: targetDev.id,
+                                    biometric_sync_device_name: targetDev.name,
+                                  };
+                                  onEditEmployee(updatedEmp);
+                                  setSelectedEmpForDetail(updatedEmp);
+                                  setSyncFeedback({
+                                    type: 'SUCCESS',
+                                    message: `✓ Trabajador sincronizado correctamente con ${targetDev.name}`,
+                                    biometric_user_id: res.biometric_user_id,
+                                    device_name: targetDev.name,
+                                    timestamp: res.timestamp || new Date().toLocaleString('es-PE'),
+                                  });
+                                } else {
+                                  setSyncFeedback({
+                                    type: 'ERROR',
+                                    message: `✕ Error: ${res.message}`,
+                                  });
+                                }
+                              } catch (err: any) {
+                                setSyncFeedback({
+                                  type: 'ERROR',
+                                  message: `✕ Error al enviar al biométrico: ${err?.message || 'Fallo de conexión'}`,
+                                });
+                              } finally {
+                                setSyncingEmpId(null);
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1.5 shadow-lg shadow-cyan-600/20"
+                          >
+                            <Zap className={`w-3.5 h-3.5 ${syncingEmpId === selectedEmpForDetail.id ? 'animate-spin' : ''}`} />
+                            <span>{syncingEmpId === selectedEmpForDetail.id ? 'Enviando...' : 'Enviar al Reloj'}</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={syncingEmpId === selectedEmpForDetail.id}
+                          onClick={async () => {
+                            const emp = selectedEmpForDetail;
+                            const targetDev = devices.find((d) => d.id === selectedSyncDeviceId) || devices[0];
+                            if (!targetDev) return;
+
+                            setSyncingEmpId(emp.id);
+                            setSyncFeedback(null);
+
+                            try {
+                              const res = await disableUserOnDevice(emp, targetDev);
+                              if (res.success) {
+                                const updatedEmp: Employee = {
+                                  ...emp,
+                                  biometric_sync_status: 'DESACTIVADO',
+                                  biometric_last_sync: new Date().toLocaleString('es-PE'),
+                                };
+                                onEditEmployee(updatedEmp);
+                                setSelectedEmpForDetail(updatedEmp);
+                                setSyncFeedback({
+                                  type: 'INFO',
+                                  message: `Trabajador desactivado en el terminal ${targetDev.name}`,
+                                  biometric_user_id: emp.biometric_user_id || emp.dni,
+                                  device_name: targetDev.name,
+                                  timestamp: new Date().toLocaleString('es-PE'),
+                                });
+                              } else {
+                                setSyncFeedback({
+                                  type: 'ERROR',
+                                  message: `Error al desactivar: ${res.message}`,
+                                });
+                              }
+                            } catch (err: any) {
+                              setSyncFeedback({
+                                type: 'ERROR',
+                                message: `Error: ${err?.message}`,
+                              });
+                            } finally {
+                              setSyncingEmpId(null);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+                        >
+                          Desactivar en Biométrico
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

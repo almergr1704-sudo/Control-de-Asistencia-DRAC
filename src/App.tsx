@@ -354,9 +354,33 @@ export default function App() {
         console.log('Información: no se pudieron sincronizar autorizaciones temporales:', err);
       });
   }, []);
+
   const [papeletas, setPapeletas] = useState<PapeletaSalida[]>(() =>
     loadStored('papeletas', INITIAL_PAPELETAS)
   );
+
+  // Sync papeletas from server database on mount
+  useEffect(() => {
+    fetch('/api/papeletas', {
+      headers: {
+        'x-user-dni': activeUserDni,
+        'x-user-role': activeRole,
+      },
+    })
+      .then((res) => {
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          return res.json();
+        }
+        return null;
+      })
+      .then((data) => {
+        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
+          setPapeletas(data.data);
+        }
+      })
+      .catch(() => {});
+  }, [activeUserDni, activeRole]);
   const [encargaturas, setEncargaturas] = useState<Encargatura[]>(() =>
     loadStored('encargaturas', INITIAL_ENCARGATURAS)
   );
@@ -1022,7 +1046,15 @@ export default function App() {
     action: PapeletaStatus | 'APPROVE_BOSS' | 'APPROVE_HR' | 'REJECT' | 'MARK_OUTING_REAL' | 'MARK_COMPLETED_REAL',
     comment?: string,
     realExitTime?: string,
-    realReturnTime?: string
+    realReturnTime?: string,
+    approverMetadata?: {
+      boss_dni?: string;
+      boss_id?: string;
+      boss_name?: string;
+      boss_role?: string;
+      boss_function?: string;
+      delegation_info?: any;
+    }
   ) => {
     let targetStatus: PapeletaStatus;
     if (action === 'APPROVE_BOSS') {
@@ -1039,23 +1071,96 @@ export default function App() {
       targetStatus = action as PapeletaStatus;
     }
 
+    const nowFormatted = new Date().toLocaleString('es-PE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+
     setPapeletas((prev) =>
       prev.map((p) => {
         if (p.id !== papeletaId) return p;
-        const now = new Date().toISOString();
+        const nowIso = new Date().toISOString();
+        const prevAudits = p.audits || [];
+
+        const newAuditEntry = {
+          id: `aud-${p.id}-${Date.now()}`,
+          papeleta_id: p.id,
+          previous_status: p.status,
+          new_status: targetStatus,
+          action_by_user_id: approverMetadata?.boss_id || activeUserDni,
+          action_by_user_name: approverMetadata?.boss_name || (currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : activeUserDni),
+          action_by_role: approverMetadata?.boss_role || activeRole,
+          action_type: action,
+          comment: comment || `Actualización de estado a ${targetStatus}`,
+          timestamp: nowFormatted,
+          metadata: approverMetadata?.delegation_info,
+        };
+
         return {
           ...p,
           status: targetStatus,
-          boss_approved_at: action === 'APPROVE_BOSS' ? now : p.boss_approved_at,
+          boss_approved_at: action === 'APPROVE_BOSS' ? nowFormatted : p.boss_approved_at,
+          boss_approver_dni: action === 'APPROVE_BOSS' ? approverMetadata?.boss_dni || activeUserDni : p.boss_approver_dni,
+          boss_approver_name: action === 'APPROVE_BOSS' ? approverMetadata?.boss_name || (currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : undefined) : p.boss_approver_name,
+          boss_approver_function: action === 'APPROVE_BOSS' ? approverMetadata?.boss_function || 'Jefe Titular' : p.boss_approver_function,
           boss_comment: action === 'APPROVE_BOSS' ? comment : p.boss_comment,
-          hr_approved_at: action === 'APPROVE_HR' ? now : p.hr_approved_at,
+          boss_delegation_info: action === 'APPROVE_BOSS' && approverMetadata?.delegation_info ? approverMetadata.delegation_info : p.boss_delegation_info,
+          hr_approved_at: action === 'APPROVE_HR' ? nowFormatted : p.hr_approved_at,
+          hr_approver_dni: action === 'APPROVE_HR' ? activeUserDni : p.hr_approver_dni,
+          hr_approver_name: action === 'APPROVE_HR' ? (currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : 'Recursos Humanos') : p.hr_approver_name,
           hr_comment: action === 'APPROVE_HR' ? comment : p.hr_comment,
+          rejection_reason: action === 'REJECT' ? comment : p.rejection_reason,
+          rejected_at: action === 'REJECT' ? nowFormatted : p.rejected_at,
+          rejected_by: action === 'REJECT' ? (currentUser ? `${currentUser.first_name} ${currentUser.last_name}` : activeUserDni) : p.rejected_by,
           hora_real_salida: realExitTime !== undefined ? realExitTime : p.hora_real_salida,
           hora_real_retorno: realReturnTime !== undefined ? realReturnTime : p.hora_real_retorno,
-          updated_at: now,
+          updated_at: nowIso,
+          audits: [...prevAudits, newAuditEntry],
         };
       })
     );
+
+    // Call backend endpoint asynchronously
+    let apiEndpoint = '';
+    let apiBody: any = {};
+    if (action === 'APPROVE_BOSS') {
+      apiEndpoint = `/api/papeletas/${papeletaId}/vobo-jefe`;
+      apiBody = {
+        boss_dni: approverMetadata?.boss_dni || activeUserDni,
+        boss_name: approverMetadata?.boss_name,
+        boss_function: approverMetadata?.boss_function,
+        comment,
+      };
+    } else if (action === 'APPROVE_HR') {
+      apiEndpoint = `/api/papeletas/${papeletaId}/aprobar-rrhh`;
+      apiBody = { hr_dni: activeUserDni, comment };
+    } else if (action === 'REJECT') {
+      apiEndpoint = `/api/papeletas/${papeletaId}/rechazar`;
+      apiBody = { reason: comment };
+    } else if (action === 'MARK_OUTING_REAL') {
+      apiEndpoint = `/api/papeletas/${papeletaId}/garita-salida`;
+      apiBody = { hora_real_salida: realExitTime, comment };
+    } else if (action === 'MARK_COMPLETED_REAL') {
+      apiEndpoint = `/api/papeletas/${papeletaId}/garita-retorno`;
+      apiBody = { hora_real_retorno: realReturnTime, comment };
+    }
+
+    if (apiEndpoint) {
+      fetch(apiEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-dni': activeUserDni,
+          'x-user-role': activeRole,
+        },
+        body: JSON.stringify(apiBody),
+      }).catch(() => {});
+    }
 
     addAuditLog(
       'PAPELETAS',
@@ -1066,38 +1171,111 @@ export default function App() {
   };
 
   const handleCreatePapeleta = (newPapeletaData: Omit<PapeletaSalida, 'id' | 'code' | 'created_at' | 'updated_at'>) => {
-    const newCode = `PAP-2026-000${papeletas.length + 1}`;
-    const newId = `pap-00${papeletas.length + 1}`;
+    const newCode = `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`;
+    const newId = `pap-${Date.now()}`;
+    const nowFormatted = new Date().toLocaleString('es-PE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
 
     const newPapeleta: PapeletaSalida = {
       ...newPapeletaData,
       id: newId,
       code: newCode,
+      status: 'PENDING_BOSS',
+      origin: 'PORTAL_TRABAJADOR',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      audits: [
+        {
+          id: `aud-${newId}-init`,
+          papeleta_id: newId,
+          new_status: 'PENDING_BOSS',
+          action_by_user_id: activeUserDni,
+          action_by_user_name: newPapeletaData.employee_name,
+          action_by_role: activeRole,
+          action_type: 'SOLICITAR_PAPELETA',
+          comment: 'Solicitud generada desde el Perfil del Trabajador.',
+          timestamp: nowFormatted,
+        },
+      ],
     };
 
     setPapeletas((prev) => [newPapeleta, ...prev]);
+
+    // Backend persistent call with strict worker identity headers
+    fetch('/api/papeletas', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-dni': activeUserDni,
+        'x-user-role': activeRole,
+      },
+      body: JSON.stringify(newPapeleta),
+    }).catch(() => {});
+
     addAuditLog('PAPELETAS', 'CREAR_PAPELETA', newId, `Nueva Papeleta registrada para DNI ${newPapeleta.employee_dni}`);
   };
 
-  // VACATION HANDLERS
+  // VACATION HANDLERS (DRAC Workflow Engine)
   const handleAddVacation = (newVacationData: Omit<Vacacion, 'id' | 'created_at'>) => {
+    const newId = `vac-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newVac: Vacacion = {
       ...newVacationData,
-      id: `vac-00${vacaciones.length + 1}`,
+      id: newId,
+      code: newVacationData.code || `VAC-2026-${String(vacaciones.length + 1).padStart(3, '0')}`,
       created_at: new Date().toISOString(),
     };
     setVacaciones((prev) => [newVac, ...prev]);
-    addAuditLog('VACACIONES', 'SOLICITAR_VACACION', newVac.id, `Solicitud vacacional DNI ${newVac.employee_dni}`);
+
+    // Backend persistent sync attempt
+    fetch('/api/vacaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newVac),
+    }).catch(() => {});
+
+    const logAction =
+      newVac.origin === 'PROFILE_VACATION_REQUEST' ? 'SOLICITAR_VACACION_PERFIL' : 'PROGRAMAR_VACACION_RRHH';
+    addAuditLog(
+      'VACACIONES',
+      logAction as any,
+      newVac.id,
+      `Vacaciones ${newVac.origin === 'PROFILE_VACATION_REQUEST' ? 'solicitadas' : 'programadas'} para ${newVac.employee_name} (DNI ${newVac.employee_dni}): ${newVac.start_date} al ${newVac.end_date} (${newVac.total_days} días)`
+    );
   };
 
   const handleEditVacation = (updatedVacation: Vacacion) => {
     setVacaciones((prev) => prev.map((v) => (v.id === updatedVacation.id ? updatedVacation : v)));
+    addAuditLog(
+      'VACACIONES',
+      'EDITAR_VACACION' as any,
+      updatedVacation.id,
+      `Actualización de estado vacacional DNI ${updatedVacation.employee_dni} a ${updatedVacation.status}`
+    );
   };
 
   const handleDeleteVacation = (vacationId: string) => {
+    const vac = vacaciones.find((v) => v.id === vacationId);
     setVacaciones((prev) => prev.filter((v) => v.id !== vacationId));
+
+    fetch(`/api/vacaciones/${vacationId}`, {
+      method: 'DELETE',
+    }).catch(() => {});
+
+    if (vac) {
+      addAuditLog(
+        'VACACIONES',
+        'ELIMINAR_VACACION' as any,
+        vacationId,
+        `Cancelación / Anulación de vacación para DNI ${vac.employee_dni}`
+      );
+    }
   };
 
   // ATTENDANCE RECORD EDIT HANDLER
@@ -1254,6 +1432,12 @@ export default function App() {
                   papeletas={papeletas}
                   vacaciones={vacaciones}
                   activeRole={activeRole}
+                  activeUserDni={activeUserDni}
+                  currentUser={currentUser}
+                  encargaturas={encargaturas}
+                  punchAuthorizations={punchAuthorizations}
+                  turnos={turnos}
+                  horarios={horarios}
                   onNavigate={handleNavigate}
                 />
               )}
@@ -1274,6 +1458,7 @@ export default function App() {
                   activeRole={activeRole}
                   encargaturas={encargaturas}
                   papeletas={papeletas}
+                  devices={devices}
                   onAddDependencia={handleAddDependencia}
                   onEditDependencia={handleEditDependencia}
                   onDeleteDependencia={handleDeleteDependencia}
@@ -1371,6 +1556,14 @@ export default function App() {
                   vacaciones={vacaciones}
                   employees={employees}
                   activeRole={activeRole}
+                  activeUserDni={activeUserDni}
+                  currentUser={currentUser}
+                  encargaturas={encargaturas}
+                  dependencias={dependencias}
+                  direccionesOrganos={direccionesOrganos}
+                  areas={areas}
+                  cargos={cargos}
+                  horarios={horarios}
                   onAddVacation={handleAddVacation}
                   onEditVacation={handleEditVacation}
                   onDeleteVacation={handleDeleteVacation}
@@ -1386,6 +1579,12 @@ export default function App() {
                   employees={employees}
                   activeRole={activeRole}
                   activeUserDni={activeUserDni}
+                  currentUser={currentUser}
+                  encargaturas={encargaturas}
+                  dependencias={dependencias}
+                  direccionesOrganos={direccionesOrganos}
+                  areas={areas}
+                  cargos={cargos}
                   onUpdatePapeletaStatus={handleUpdatePapeletaStatus}
                   onCreatePapeleta={handleCreatePapeleta}
                 />

@@ -171,3 +171,33 @@ export function canApproveAsBoss(params: {
 
   return { canApprove: false, isEncargado: false, reason: 'Fuera del ámbito orgánico asignado' };
 }
+
+/**
+ * Helper para verificar si un jefe (titular o encargado) puede autorizar papeleta para un solicitante
+ */
+export function canUserApproveForRequester(params: {
+  bossEmployee?: Employee | null;
+  requesterEmployee?: Employee | null;
+  allEncargaturas: Encargatura[];
+  targetDate?: string;
+}): {
+  canApprove: boolean;
+  isEncargado: boolean;
+  encargatura?: Encargatura;
+  reason: string;
+} {
+  const result = canApproveAsBoss({
+    bossDni: params.bossEmployee?.dni || '',
+    bossEmployee: params.bossEmployee,
+    requesterEmployee: params.requesterEmployee,
+    allEncargaturas: params.allEncargaturas,
+    currentDate: params.targetDate,
+  });
+  return {
+    canApprove: result.canApprove,
+    isEncargado: result.isEncargado,
+    encargatura: result.activeEncargatura,
+    reason: result.reason,
+  };
+}
+
