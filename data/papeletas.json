@@ -1,0 +1,51 @@
+[
+  {
+    "id": "pap-1787320157287-357",
+    "code": "PAP-2026-001",
+    "employee_id": "emp-01",
+    "employee_dni": "10000001",
+    "employee_name": "Administrador General",
+    "dependencia_name": "SEDE CENTRAL",
+    "direccion_organo_name": "OFICINA DE ADMINISTRACION",
+    "area_name": "OFICINA DE ADMINISTRACION",
+    "supervisor_id": "emp-04",
+    "supervisor_name": "María Silva Terrones",
+    "supervisor_dni": "10000004",
+    "supervisor_function": "Jefe Encargado",
+    "supervisor_delegation_info": {
+      "is_encargado": true,
+      "encargatura_id": "enc-001",
+      "unidad_encargada": "Directora Encargada de la Oficina de Administración (e)",
+      "documento": "MEMORANDO N.º MEMORANDO N.º 035-2026-GR.CAJ/DRA-DR",
+      "vigencia": "2026-08-01 al 2026-09-30"
+    },
+    "motivo": "COMISION_SERVICIOS",
+    "descripcion": "Entrega de informes técnicos y coordinación",
+    "destino": "Sede Central Gobierno Regional Cajamarca",
+    "fecha": "2026-08-25",
+    "hora_estimada_salida": "09:00",
+    "hora_estimada_retorno": "13:00",
+    "sin_retorno": false,
+    "status": "PENDING_BOSS",
+    "origin": "PORTAL_TRABAJADOR",
+    "signed_at": "2026-08-21T13:49:17.286Z",
+    "created_by": "Administrador General",
+    "created_by_role": "TRABAJADOR",
+    "created_at": "2026-08-21T13:49:17.287Z",
+    "updated_at": "2026-08-21T13:49:17.287Z",
+    "audits": [
+      {
+        "id": "aud-pap-1787320157307",
+        "papeleta_id": "pap-1787320157287-357",
+        "new_status": "PENDING_BOSS",
+        "action_by_user_id": "emp-01",
+        "action_by_user_name": "Administrador General",
+        "action_by_role": "TRABAJADOR",
+        "action_type": "SOLICITAR_PAPELETA",
+        "origin": "PORTAL_TRABAJADOR",
+        "comment": "Solicitud de papeleta generada por el trabajador Administrador General (DNI 10000001) para Sede Central Gobierno Regional Cajamarca. Derivada a V°B° de María Silva Terrones (Jefe Encargado).",
+        "timestamp": "21/8/2026, 1:49:17 p. m."
+      }
+    ]
+  }
+]

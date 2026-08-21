@@ -1217,7 +1217,16 @@ export default function App() {
         'x-user-role': activeRole,
       },
       body: JSON.stringify(newPapeleta),
-    }).catch(() => {});
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data) {
+            setPapeletas((prev) => prev.map((p) => (p.id === newId ? json.data : p)));
+          }
+        }
+      })
+      .catch(() => {});
 
     addAuditLog('PAPELETAS', 'CREAR_PAPELETA', newId, `Nueva Papeleta registrada para DNI ${newPapeleta.employee_dni}`);
   };
@@ -1233,12 +1242,25 @@ export default function App() {
     };
     setVacaciones((prev) => [newVac, ...prev]);
 
-    // Backend persistent sync attempt
+    // Backend persistent sync attempt with headers
     fetch('/api/vacaciones', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-dni': activeUserDni,
+        'x-user-role': activeRole,
+      },
       body: JSON.stringify(newVac),
-    }).catch(() => {});
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data) {
+            setVacaciones((prev) => prev.map((v) => (v.id === newId ? json.data : v)));
+          }
+        }
+      })
+      .catch(() => {});
 
     const logAction =
       newVac.origin === 'PROFILE_VACATION_REQUEST' ? 'SOLICITAR_VACACION_PERFIL' : 'PROGRAMAR_VACACION_RRHH';

@@ -1540,39 +1540,161 @@ async function startServer() {
     }
   });
 
-  // POST /api/vacaciones - Registrar solicitud o programación vacacional
+  // ==========================================
+  // HELPER: Auto-resolve Immediate Boss taking Encargaturas into account
+  // ==========================================
+  async function resolveImmediateBossForWorker(requester: any, targetDate: string = "2026-08-21") {
+    try {
+      const employees = await getStoredEmployees();
+      const encargaturas = await getStoredEncargaturas();
+
+      // 1. Prioridad: Encargatura Temporal Vigente para el ámbito orgánico del trabajador
+      for (const enc of encargaturas) {
+        if (enc.status === "ANULADA") continue;
+        const isVigente = targetDate >= enc.start_date && targetDate <= enc.end_date;
+        if (!isVigente) continue;
+
+        let matches = false;
+        if (enc.area_id && requester.area_id === enc.area_id) matches = true;
+        if (enc.direccion_organo_id && requester.direccion_organo_id === enc.direccion_organo_id) matches = true;
+        if (enc.dependencia_id && requester.dependencia_id === enc.dependencia_id) matches = true;
+
+        if (matches) {
+          const encargadoEmp = employees.find(
+            (e: any) => e.dni === enc.encargado_dni || e.id === enc.encargado_employee_id
+          );
+          return {
+            bossId: enc.encargado_employee_id || `emp-${enc.encargado_dni}`,
+            bossDni: enc.encargado_dni,
+            bossName: enc.encargado_name,
+            bossFunction: "Jefe Encargado",
+            isEncargado: true,
+            delegationInfo: {
+              is_encargado: true,
+              encargatura_id: enc.id,
+              unidad_encargada: enc.cargo_encargado,
+              documento: `${enc.document_type || "Resolución Directoral"} N.º ${enc.document_number || "001-2026"}`,
+              vigencia: `${enc.start_date} al ${enc.end_date}`,
+            },
+            reason: `Jefe Encargado mediante ${enc.document_type || "Resolución"} N.º ${enc.document_number || "001-2026"} (${enc.cargo_encargado || "Área"})`,
+          };
+        }
+      }
+
+      // 2. Prioridad: Supervisor / Jefe Titular Directo
+      if (requester.supervisor_id) {
+        const sup = employees.find(
+          (e: any) => e.id === requester.supervisor_id || e.dni === requester.supervisor_id
+        );
+        if (sup) {
+          return {
+            bossId: sup.id,
+            bossDni: sup.dni,
+            bossName: `${sup.first_name} ${sup.last_name}`,
+            bossFunction: "Jefe Titular",
+            isEncargado: false,
+            delegationInfo: undefined,
+            reason: "Jefe Inmediato Titular Directo",
+          };
+        }
+      }
+
+      // 3. Prioridad: Director de la Dirección / Órgano
+      if (requester.direccion_organo_id) {
+        const director = employees.find(
+          (e: any) =>
+            e.direccion_organo_id === requester.direccion_organo_id &&
+            (e.is_jefe_director || e.role === "DIRECTOR_GENERAL" || e.role === "JEFE_RRHH" || e.role === "JEFE") &&
+            e.dni !== requester.dni
+        );
+        if (director) {
+          return {
+            bossId: director.id,
+            bossDni: director.dni,
+            bossName: `${director.first_name} ${director.last_name}`,
+            bossFunction: "Jefe Titular",
+            isEncargado: false,
+            delegationInfo: undefined,
+            reason: "Director / Jefe Titular de la Unidad Orgánica",
+          };
+        }
+      }
+
+      // 4. Fallback institucional
+      return {
+        bossId: requester.supervisor_id || "emp-03",
+        bossDni: "10000003",
+        bossName: requester.supervisor_name || "Jefatura Inmediata DRAC",
+        bossFunction: "Jefe Titular",
+        isEncargado: false,
+        delegationInfo: undefined,
+        reason: "Jefatura Jerárquica Directa",
+      };
+    } catch {
+      return {
+        bossId: "emp-03",
+        bossDni: "10000003",
+        bossName: "Jefatura Inmediata DRAC",
+        bossFunction: "Jefe Titular",
+        isEncargado: false,
+        delegationInfo: undefined,
+        reason: "Jefatura Jerárquica Directa",
+      };
+    }
+  }
+
+  // ==========================================
+  // VACACIONES API ENDPOINTS (DRAC Workflows)
+  // ==========================================
+
+  // GET /api/vacaciones - Obtener todas las vacaciones registradas
+  app.get("/api/vacaciones", async (req, res) => {
+    try {
+      const userRole = (req.headers["x-user-role"] as string) || (req.query.role as string);
+      const userDni = (req.headers["x-user-dni"] as string) || (req.query.dni as string);
+      
+      let vacs = await getStoredVacaciones();
+
+      // Si el rol es estrictamente TRABAJADOR, retornar ÚNICAMENTE sus propias vacaciones
+      if ((userRole === "TRABAJADOR" || userRole === "EMPLOYEE") && userDni) {
+        vacs = vacs.filter((v: any) => v.employee_dni === userDni);
+      }
+
+      return res.json({ success: true, count: vacs.length, data: vacs });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al consultar vacaciones." });
+    }
+  });
+
+  // POST /api/vacaciones - Registrar solicitud (Trabajador) o Programación (Control de Asistencia / RRHH)
   app.post("/api/vacaciones", async (req, res) => {
     try {
-      const {
-        employee_id,
-        employee_dni,
-        employee_name,
-        dependencia_id,
-        dependencia_name,
-        direccion_organo_name,
-        area_id,
-        area_name,
-        position,
-        regimen_laboral,
-        condicion_laboral,
-        tipo = "PARCIAL",
-        start_date,
-        end_date,
-        total_days,
-        period_year = 2026,
-        origin = "PROFILE_VACATION_REQUEST",
-        supervisor_id,
-        supervisor_name,
-        comments = "",
-        created_by,
-        created_by_role = "TRABAJADOR",
-        approved_by_hr,
-      } = req.body || {};
+      const body = req.body || {};
+      const callerDni =
+        (req.headers["x-user-dni"] as string) ||
+        (req.headers["x-authenticated-dni"] as string) ||
+        body.auth_user_dni ||
+        body.callerDni;
 
-      if (!employee_dni || !employee_name || !start_date || !end_date) {
+      const callerRole =
+        (req.headers["x-user-role"] as string) ||
+        (req.headers["x-authenticated-role"] as string) ||
+        body.auth_user_role ||
+        body.created_by_role ||
+        "TRABAJADOR";
+
+      const start_date = body.start_date || body.fechaInicio || body.fecha_inicio || "";
+      const end_date = body.end_date || body.fechaFin || body.fecha_fin || "";
+      const tipo = body.tipo || body.modalidad || "PARCIAL";
+      const total_days = body.total_days || body.dias || body.totalDays;
+      const comments = body.comments || body.observacion || body.observaciones || body.documento || "";
+      const period_year = Number(body.period_year || (start_date ? start_date.split("-")[0] : 2026));
+
+      // Validar fechas obligatorias
+      if (!start_date || !end_date) {
         return res.status(400).json({
           success: false,
-          message: "Los datos del trabajador y el período vacacional (inicio y fin) son obligatorios.",
+          message: "Las fechas de inicio y término de vacaciones son obligatorias.",
         });
       }
 
@@ -1583,12 +1705,87 @@ async function startServer() {
         });
       }
 
+      const employees = await getStoredEmployees();
       const existingVacs = await getStoredVacaciones();
 
-      // Check overlap
-      const activeStatuses = ['SOLICITADA', 'VISTO_BUENO_JEFE', 'APROBADA_RRHH', 'PROGRAMADA', 'EN_CURSO'];
+      // Distinguir entre flujo TRABAJADOR (Solicitud propia) y flujo ADMINISTRATIVO (Control Asistencia / RRHH)
+      const isWorkerFlow =
+        body.origin === "PORTAL_TRABAJADOR" ||
+        body.origin === "PROFILE_VACATION_REQUEST" ||
+        callerRole === "TRABAJADOR" ||
+        callerRole === "EMPLOYEE";
+
+      let targetWorker: any = null;
+
+      if (isWorkerFlow) {
+        // ESCENARIO A: TRABAJADOR SOLICITA SUS PROPIAS VACACIONES
+        const explicitTargetDni = body.employee_dni || body.dni || body.workerDni;
+        const explicitTargetId = body.employee_id || body.workerId || body.worker_id;
+
+        // Regla de seguridad: Trabajador NO puede solicitar para otro
+        if (
+          callerDni &&
+          ((explicitTargetDni && callerDni.trim() !== explicitTargetDni.trim()) ||
+            (explicitTargetId && !employees.some((e: any) => e.dni === callerDni && e.id === explicitTargetId)))
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: "No tiene autorización para solicitar vacaciones a nombre de otro trabajador.",
+          });
+        }
+
+        targetWorker = employees.find(
+          (e: any) => e.dni === callerDni || e.id === callerDni || e.dni === explicitTargetDni
+        );
+
+        if (!targetWorker) {
+          return res.status(400).json({
+            success: false,
+            message: "El trabajador no está asociado a su usuario o no existe en el directorio institucional.",
+          });
+        }
+
+        if (targetWorker.status === "INACTIVE") {
+          return res.status(400).json({
+            success: false,
+            message: "El trabajador se encuentra en estado INACTIVO y no puede tramitar vacaciones.",
+          });
+        }
+      } else {
+        // ESCENARIO B: CONTROL DE ASISTENCIA / RRHH PROGRAMA VACACIONES
+        const targetDni = body.employee_dni || body.dni || body.workerDni;
+        const targetId = body.employee_id || body.workerId || body.worker_id || body.employeeId;
+
+        if (!targetDni && !targetId) {
+          return res.status(400).json({
+            success: false,
+            message: "Debe seleccionar a un trabajador de la lista para programar el descanso vacacional.",
+          });
+        }
+
+        targetWorker = employees.find(
+          (e: any) => (targetId && e.id === targetId) || (targetDni && e.dni === targetDni)
+        );
+
+        if (!targetWorker) {
+          return res.status(400).json({
+            success: false,
+            message: "El trabajador seleccionado no existe en el sistema.",
+          });
+        }
+
+        if (targetWorker.status === "INACTIVE") {
+          return res.status(400).json({
+            success: false,
+            message: "El trabajador seleccionado se encuentra en estado INACTIVO.",
+          });
+        }
+      }
+
+      // Validar superposición de vacaciones para el trabajador
+      const activeStatuses = ["SOLICITADA", "VISTO_BUENO_JEFE", "APROBADA_RRHH", "PROGRAMADA", "EN_CURSO"];
       const overlap = existingVacs.find((v: any) => {
-        if (v.employee_dni !== employee_dni) return false;
+        if (v.employee_dni !== targetWorker.dni && v.employee_id !== targetWorker.id) return false;
         if (!activeStatuses.includes(v.status)) return false;
         return start_date <= v.end_date && end_date >= v.start_date;
       });
@@ -1596,11 +1793,11 @@ async function startServer() {
       if (overlap) {
         return res.status(409).json({
           success: false,
-          message: `Existe una superposición con otro período vacacional (${overlap.start_date} al ${overlap.end_date} - Estado: ${overlap.status}).`,
+          message: `El periodo de vacaciones se superpone con otro periodo ya registrado (${overlap.start_date} al ${overlap.end_date} - Estado: ${overlap.status}).`,
         });
       }
 
-      // Calculate days
+      // Calcular días computables
       let days = Number(total_days);
       if (isNaN(days) || days <= 0) {
         const start = new Date(`${start_date}T00:00:00`);
@@ -1608,42 +1805,54 @@ async function startServer() {
         days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
       }
 
-      const isProfileOrigin = origin === "PROFILE_VACATION_REQUEST";
-      const initialStatus = isProfileOrigin ? "SOLICITADA" : "PROGRAMADA";
+      const initialStatus = isWorkerFlow ? "SOLICITADA" : "PROGRAMADA";
+      const origin = isWorkerFlow
+        ? "PORTAL_TRABAJADOR"
+        : callerRole === "CONTROL_ASISTENCIA"
+        ? "CONTROL_ASISTENCIA"
+        : "HR_ADMIN";
+
       const newId = `vac-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const newCode = `VAC-${period_year}-${String(existingVacs.length + 1).padStart(3, "0")}`;
       const nowIso = new Date().toISOString();
       const nowLocal = new Date().toLocaleString("es-PE");
 
+      // Determinar jefe inmediato con encargatura vigente si es flujo trabajador
+      const bossInfo = isWorkerFlow
+        ? await resolveImmediateBossForWorker(targetWorker, start_date)
+        : null;
+
       const initialAudit = {
         id: `aud-vac-${Date.now()}`,
         vacacion_id: newId,
         new_status: initialStatus,
-        action_by_user_id: employee_id || "usr-01",
-        action_by_user_name: created_by || employee_name,
-        action_by_role: created_by_role,
-        action_type: isProfileOrigin ? "SOLICITAR" : "PROGRAMAR",
+        action_by_user_id: isWorkerFlow ? targetWorker.id : (callerDni || "usr-admin"),
+        action_by_user_name: isWorkerFlow
+          ? `${targetWorker.first_name} ${targetWorker.last_name}`
+          : (body.created_by || "Control de Asistencia DRAC"),
+        action_by_role: isWorkerFlow ? "TRABAJADOR" : callerRole,
+        action_type: isWorkerFlow ? "SOLICITAR" : "PROGRAMAR",
         origin,
-        comment: isProfileOrigin
-          ? "Solicitud de vacaciones generada desde el Perfil del Trabajador."
-          : "Programación de vacaciones registrada administrativamente por Control de Asistencia/RRHH.",
+        comment: isWorkerFlow
+          ? `Solicitud de vacaciones generada por el trabajador. Derivada a V°B° de ${bossInfo?.bossName} (${bossInfo?.bossFunction}).`
+          : `Programación institucional directa de descanso vacacional registrada por ${callerRole}.`,
         timestamp: nowLocal,
       };
 
       const newVac = {
         id: newId,
         code: newCode,
-        employee_id: employee_id || `emp-${employee_dni}`,
-        employee_dni,
-        employee_name,
-        dependencia_id: dependencia_id || "dep-01",
-        dependencia_name: dependencia_name || "SEDE CENTRAL",
-        direccion_organo_name: direccion_organo_name || "",
-        area_id: area_id || "",
-        area_name: area_name || "",
-        position: position || "Servidor DRAC",
-        regimen_laboral,
-        condicion_laboral,
+        employee_id: targetWorker.id,
+        employee_dni: targetWorker.dni,
+        employee_name: `${targetWorker.first_name} ${targetWorker.last_name}`,
+        dependencia_id: targetWorker.dependencia_id || "dep-01",
+        dependencia_name: targetWorker.dependencia_name || "SEDE CENTRAL",
+        direccion_organo_name: targetWorker.direccion_organo_name || "",
+        area_id: targetWorker.area_id || "",
+        area_name: targetWorker.area_name || "OFICINA DRAC",
+        position: targetWorker.position || "Servidor DRAC",
+        regimen_laboral: targetWorker.regimen_laboral || "D.L. 1057",
+        condicion_laboral: targetWorker.condicion_laboral || "NOMBRADO",
         tipo,
         start_date,
         end_date,
@@ -1651,14 +1860,17 @@ async function startServer() {
         period_year,
         status: initialStatus,
         origin,
-        supervisor_id,
-        supervisor_name,
+        supervisor_id: bossInfo?.bossId || targetWorker.supervisor_id || "boss-default",
+        supervisor_name: bossInfo?.bossName || targetWorker.supervisor_name || "Jefatura Inmediata",
         comments,
-        approved_by_hr: !isProfileOrigin ? (approved_by_hr || "Recursos Humanos DRAC") : undefined,
-        hr_approved_at: !isProfileOrigin ? nowLocal : undefined,
+        approved_by_hr: !isWorkerFlow ? (body.approved_by_hr || "Recursos Humanos DRAC") : undefined,
+        hr_approved_at: !isWorkerFlow ? nowLocal : undefined,
+        hr_approver_name: !isWorkerFlow ? (body.hr_approver_name || "Control de Asistencia DRAC") : undefined,
         created_at: nowIso,
-        created_by: created_by || employee_name,
-        created_by_role,
+        created_by: isWorkerFlow
+          ? `${targetWorker.first_name} ${targetWorker.last_name}`
+          : (body.created_by || "Control de Asistencia DRAC"),
+        created_by_role: isWorkerFlow ? "TRABAJADOR" : callerRole,
         audits: [initialAudit],
       };
 
@@ -1667,13 +1879,13 @@ async function startServer() {
 
       return res.status(201).json({
         success: true,
-        message: isProfileOrigin
-          ? "Solicitud de vacaciones registrada con éxito. Pasa a V°B° del Jefe Inmediato."
-          : "Vacaciones programadas correctamente por Control de Asistencia/RRHH.",
+        message: isWorkerFlow
+          ? "Solicitud de vacaciones creada correctamente. Derivada al Jefe Inmediato para su V°B°."
+          : "Vacaciones programadas correctamente.",
         data: newVac,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: `Error al guardar vacación: ${err?.message}` });
+      return res.status(500).json({ success: false, message: `Error al procesar vacaciones: ${err?.message}` });
     }
   });
 
@@ -1937,61 +2149,77 @@ async function startServer() {
   // POST /api/papeletas - Registrar solicitud de papeleta (SOLICITUD EXCLUSIVA DEL PROPIO TRABAJADOR)
   app.post("/api/papeletas", async (req, res) => {
     try {
-      const {
-        employee_id,
-        employee_dni,
-        employee_name,
-        dependencia_name = "SEDE CENTRAL",
-        direccion_organo_name = "",
-        area_name = "OFICINA DRAC",
-        supervisor_id,
-        supervisor_name,
-        motivo = "COMISION_SERVICIOS",
-        descripcion,
-        destino,
-        fecha,
-        hora_estimada_salida,
-        hora_estimada_retorno,
-        sin_retorno = false,
-        digital_signature_data,
-        signed_at,
-        origin = "PORTAL_TRABAJADOR",
-        auth_user_dni,
-        auth_user_role,
-        created_by_role = "TRABAJADOR",
-      } = req.body || {};
-
-      // 1. Validaciones de obligatoriedad
-      if (!employee_dni || !employee_name || !fecha || !hora_estimada_salida || !destino || !descripcion) {
-        return res.status(400).json({
-          success: false,
-          message: "Los datos del trabajador, fecha, horas, destino y motivo/descripción son obligatorios.",
-        });
-      }
-
-      // 2. VALIDACIÓN CRÍTICA DE IDENTIDAD Y SEGURIDAD (REQUERIMIENTOS 3, 4 Y 5)
-      // Un trabajador autenticado solo puede solicitar papeletas para sí mismo.
+      const body = req.body || {};
       const callerDni =
         (req.headers["x-user-dni"] as string) ||
-        auth_user_dni ||
-        (req.headers["x-authenticated-dni"] as string);
+        (req.headers["x-authenticated-dni"] as string) ||
+        body.auth_user_dni ||
+        body.callerDni;
 
       const callerRole =
         (req.headers["x-user-role"] as string) ||
-        auth_user_role ||
-        created_by_role;
+        (req.headers["x-authenticated-role"] as string) ||
+        body.auth_user_role ||
+        body.created_by_role ||
+        "TRABAJADOR";
 
+      const explicitTargetDni = body.employee_dni || body.dni || body.workerDni;
+      const explicitTargetId = body.employee_id || body.workerId || body.worker_id || body.employeeId;
+
+      const employees = await getStoredEmployees();
+
+      // REGLA CRÍTICA DE SEGURIDAD (REQUERIMIENTOS 2, 3, 4, 5):
+      // Un trabajador autenticado solo puede solicitar papeletas para sí mismo.
       if (
-        (callerRole === "TRABAJADOR" || callerRole === "EMPLOYEE" || origin === "PORTAL_TRABAJADOR") &&
         callerDni &&
-        employee_dni &&
-        callerDni.trim() !== employee_dni.trim()
+        ((explicitTargetDni && callerDni.trim() !== explicitTargetDni.trim()) ||
+          (explicitTargetId && !employees.some((e: any) => e.dni === callerDni && e.id === explicitTargetId)))
       ) {
         return res.status(403).json({
           success: false,
           message: "No tiene autorización para generar una papeleta a nombre de otro trabajador.",
         });
       }
+
+      // Obtener trabajador asociado
+      const worker = employees.find(
+        (e: any) => e.dni === callerDni || e.id === callerDni || e.dni === explicitTargetDni
+      );
+
+      if (!worker) {
+        return res.status(400).json({
+          success: false,
+          message: "El trabajador no está asociado a su usuario o no existe en el directorio de la DRAC.",
+        });
+      }
+
+      if (worker.status === "INACTIVE") {
+        return res.status(400).json({
+          success: false,
+          message: "El trabajador se encuentra en estado INACTIVO y no puede tramitar papeletas.",
+        });
+      }
+
+      const motivo = body.motivo || body.tipo || body.tipoPapeleta || "COMISION_SERVICIOS";
+      const destino = body.destino || body.lugarDestino || "";
+      const descripcion = body.descripcion || body.justificacion || body.motivo_detalle || body.fundamentacion || motivo;
+      const fecha = body.fecha || body.fechaSalida || new Date().toISOString().split("T")[0];
+      const hora_estimada_salida = body.hora_estimada_salida || body.horaSalidaSolicitada || body.horaSalida || "";
+      const hora_estimada_retorno = body.hora_estimada_retorno || body.horaRetornoSolicitada || body.horaRetorno || "";
+      const sin_retorno = Boolean(body.sin_retorno || body.sinRetorno);
+      const digital_signature_data = body.digital_signature_data || body.signatureData;
+      const signed_at = body.signed_at || new Date().toISOString();
+
+      // Validaciones de obligatoriedad de campos de la solicitud
+      if (!fecha || !hora_estimada_salida || !destino || (!sin_retorno && !hora_estimada_retorno && !descripcion)) {
+        return res.status(400).json({
+          success: false,
+          message: "Los campos de fecha, hora estimada de salida, destino y motivo/descripción son obligatorios.",
+        });
+      }
+
+      // Determinar automáticamente el Jefe Inmediato competente con Encargaturas Temporales Vigentes
+      const bossInfo = await resolveImmediateBossForWorker(worker, fecha);
 
       const existingPaps = await getStoredPapeletas();
       const newId = `pap-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -2006,39 +2234,42 @@ async function startServer() {
         id: `aud-pap-${Date.now()}`,
         papeleta_id: newId,
         new_status: initialStatus,
-        action_by_user_id: employee_id || `emp-${employee_dni}`,
-        action_by_user_name: employee_name,
-        action_by_role: created_by_role,
+        action_by_user_id: worker.id,
+        action_by_user_name: `${worker.first_name} ${worker.last_name}`,
+        action_by_role: "TRABAJADOR",
         action_type: "SOLICITAR_PAPELETA",
         origin: "PORTAL_TRABAJADOR",
-        comment: `Solicitud de papeleta generada por el trabajador ${employee_name} (DNI ${employee_dni}) para ${destino}.`,
+        comment: `Solicitud de papeleta generada por el trabajador ${worker.first_name} ${worker.last_name} (DNI ${worker.dni}) para ${destino}. Derivada a V°B° de ${bossInfo.bossName} (${bossInfo.bossFunction}).`,
         timestamp: nowLocal,
       };
 
       const newPapeleta = {
         id: newId,
         code: newCode,
-        employee_id: employee_id || `emp-${employee_dni}`,
-        employee_dni,
-        employee_name,
-        dependencia_name,
-        direccion_organo_name,
-        area_name,
-        supervisor_id: supervisor_id || "boss-default",
-        supervisor_name: supervisor_name || "Jefe Inmediato",
+        employee_id: worker.id,
+        employee_dni: worker.dni,
+        employee_name: `${worker.first_name} ${worker.last_name}`,
+        dependencia_name: worker.dependencia_name || "SEDE CENTRAL",
+        direccion_organo_name: worker.direccion_organo_name || "",
+        area_name: worker.area_name || "OFICINA DRAC",
+        supervisor_id: bossInfo.bossId,
+        supervisor_name: bossInfo.bossName,
+        supervisor_dni: bossInfo.bossDni,
+        supervisor_function: bossInfo.bossFunction,
+        supervisor_delegation_info: bossInfo.delegationInfo,
         motivo,
         descripcion,
         destino,
         fecha,
         hora_estimada_salida,
-        hora_estimada_retorno: sin_retorno ? "Sin retorno" : hora_estimada_retorno,
-        sin_retorno: Boolean(sin_retorno),
+        hora_estimada_retorno: sin_retorno ? "Sin retorno" : (hora_estimada_retorno || "17:00"),
+        sin_retorno,
         status: initialStatus,
         origin: "PORTAL_TRABAJADOR",
         digital_signature_data,
-        signed_at: signed_at || nowIso,
-        created_by: employee_name,
-        created_by_role,
+        signed_at,
+        created_by: `${worker.first_name} ${worker.last_name}`,
+        created_by_role: "TRABAJADOR",
         created_at: nowIso,
         updated_at: nowIso,
         audits: [initialAudit],

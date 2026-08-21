@@ -99,8 +99,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 }) => {
   // 1. Resolve Authenticated Worker (Strict Identity)
   const activeUserEmployee = useMemo(() => {
+    if (currentUser) return currentUser;
     return employees.find((e) => e.dni === activeUserDni) || employees[0] || null;
-  }, [employees, activeUserDni]);
+  }, [currentUser, employees, activeUserDni]);
 
   // Is security/gatekeeper role or view
   const isSecurityView =
