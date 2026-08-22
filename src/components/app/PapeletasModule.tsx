@@ -1756,7 +1756,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Tipo / Motivo:</span>
-                  <span className="text-slate-200 font-semibold">{formatMotivo(createdPapeletaConfirmation.motivo)}</span>
+                  <span className="text-slate-200 font-semibold">{motivoLabels[createdPapeletaConfirmation.motivo] || createdPapeletaConfirmation.motivo}</span>
                 </div>
                 <div className="border-t border-slate-800/80 pt-2">
                   <span className="text-slate-400 block mb-0.5">Destino:</span>

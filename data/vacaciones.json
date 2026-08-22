@@ -1,5 +1,47 @@
 [
   {
+    "id": "vac-1787419894342-510",
+    "code": "VAC-2026-003",
+    "employee_id": "emp-01",
+    "employee_dni": "10000001",
+    "employee_name": "Administrador General",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "direccion_organo_name": "OFICINA DE ADMINISTRACION",
+    "area_id": "area-admin-admin",
+    "area_name": "OFICINA DE ADMINISTRACION",
+    "position": "Administrador General del Sistema",
+    "regimen_laboral": "D. LEG. 276",
+    "condicion_laboral": "NOMBRADO",
+    "tipo": "FRACCIONADO",
+    "start_date": "2026-11-01",
+    "end_date": "2026-11-07",
+    "total_days": 7,
+    "period_year": 2026,
+    "status": "SOLICITADA",
+    "origin": "PORTAL_TRABAJADOR",
+    "supervisor_id": "emp-03",
+    "supervisor_name": "Fernando Castillo Rojas",
+    "comments": "Descanso vacacional 7 días calendario",
+    "created_at": "2026-08-22T17:31:34.342Z",
+    "created_by": "Administrador General",
+    "created_by_role": "TRABAJADOR",
+    "audits": [
+      {
+        "id": "aud-vac-1787419894343",
+        "vacacion_id": "vac-1787419894342-510",
+        "new_status": "SOLICITADA",
+        "action_by_user_id": "emp-01",
+        "action_by_user_name": "Administrador General",
+        "action_by_role": "TRABAJADOR",
+        "action_type": "SOLICITAR",
+        "origin": "PORTAL_TRABAJADOR",
+        "comment": "Solicitud de vacaciones generada por el trabajador. Derivada a V°B° de Fernando Castillo Rojas (Jefe Titular).",
+        "timestamp": "22/8/2026, 5:31:34 p. m."
+      }
+    ]
+  },
+  {
     "id": "vac-1787320182728-349",
     "code": "VAC-2026-002",
     "employee_id": "emp-03",

@@ -106,25 +106,37 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
   // Tab State: 'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'
   const [activeTab, setActiveTab] = useState<'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'>(() => {
     if (activeView === 'vacations_approvals') return 'boss_approvals';
-    if (activeView === 'vacations_requests') return 'all';
+    if (activeView === 'vacations_new' || activeView === 'vacations_my') return 'my_vacations';
+    if (activeView === 'vacations_requests') {
+      return (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') ? 'my_vacations' : 'all';
+    }
     if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') return 'my_vacations';
     return 'all';
   });
 
   useEffect(() => {
-    if (activeView === 'vacations_approvals') {
+    if (activeView === 'vacations_new') {
+      setShowProfileRequestModal(true);
+      setActiveTab('my_vacations');
+    } else if (activeView === 'vacations_my') {
+      setShowProfileRequestModal(false);
+      setActiveTab('my_vacations');
+    } else if (activeView === 'vacations_approvals') {
+      setShowProfileRequestModal(false);
       setActiveTab(
         activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL'
           ? 'boss_approvals'
           : 'hr_approvals'
       );
     } else if (activeView === 'vacations_requests') {
+      setShowProfileRequestModal(false);
       if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') {
         setActiveTab('my_vacations');
       } else {
         setActiveTab('all');
       }
     } else if (activeView === 'vacations_history') {
+      setShowProfileRequestModal(false);
       setActiveTab('all');
     }
   }, [activeView, activeRole]);
@@ -132,6 +144,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
   // MODAL STATES
   // Modal A: Solicitar desde perfil del trabajador (PROFILE_VACATION_REQUEST) -> NO WORKER SEARCH
   const [showProfileRequestModal, setShowProfileRequestModal] = useState(false);
+  const [createdVacationConfirmation, setCreatedVacationConfirmation] = useState<Vacacion | null>(null);
   // Modal B: Programar desde Control de Asistencia/RRHH (ATTENDANCE_VACATION_PROGRAMMING) -> CON BUSCADOR
   const [showAttendanceProgModal, setShowAttendanceProgModal] = useState(false);
   // Modal C: Rechazar con motivo obligatorio
@@ -468,6 +481,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     };
 
     onAddVacation(newVac);
+    setCreatedVacationConfirmation(newVac as Vacacion);
     setShowProfileRequestModal(false);
     setProfComments('');
     setActiveTab('my_vacations');
@@ -2436,6 +2450,83 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               >
                 Cerrar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* CONFIRMATION MODAL: SOLICITUD DE VACACIONES REGISTRADA CORRECTAMENTE      */}
+      {/* ========================================================================= */}
+      {createdVacationConfirmation && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-400">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">¡Solicitud de vacaciones registrada correctamente!</h3>
+                  <p className="text-xs text-emerald-300">Enviada formalmente al Jefe Inmediato</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCreatedVacationConfirmation(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Código de Solicitud:</span>
+                  <span className="font-mono text-sm font-bold text-indigo-400">{createdVacationConfirmation.code}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Estado Inicial:</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950/60 border border-amber-500/40 text-amber-300">
+                    SOLICITADA
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Periodo Solicitado:</span>
+                  <span className="font-mono text-slate-200 font-semibold">
+                    {createdVacationConfirmation.start_date} al {createdVacationConfirmation.end_date}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Cantidad de Días:</span>
+                  <span className="font-bold text-emerald-400 text-sm">
+                    {createdVacationConfirmation.total_days} días calendario
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Modalidad:</span>
+                  <span className="text-slate-200 font-semibold">{createdVacationConfirmation.tipo}</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-xl text-[11px] text-indigo-300 flex items-start gap-2">
+                <Shield className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-white block">Derivada a V°B° del Jefe Inmediato:</span>
+                  <span>{createdVacationConfirmation.supervisor_name || 'Jefatura de Área'}</span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCreatedVacationConfirmation(null)}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs transition-colors"
+                >
+                  Entendido / Ver en Mis Vacaciones
+                </button>
+              </div>
             </div>
           </div>
         </div>

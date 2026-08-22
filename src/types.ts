@@ -554,6 +554,9 @@ export interface PapeletaSalida {
   
   supervisor_id: string;
   supervisor_name: string;
+  supervisor_dni?: string;
+  supervisor_function?: string;
+  supervisor_delegation_info?: PapeletaBossDelegationInfo;
   
   motivo: PapeletaMotivo;
   descripcion: string;
