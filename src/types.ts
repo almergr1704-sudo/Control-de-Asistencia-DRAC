@@ -562,8 +562,8 @@ export interface PapeletaSalida {
   descripcion: string;
   destino: string;
   fecha: string; // YYYY-MM-DD
-  hora_estimada_salida: string; // "10:30"
-  hora_estimada_retorno: string; // "12:00"
+  hora_estimada_salida?: string; // "10:30" (Opcional para el trabajador solicitante)
+  hora_estimada_retorno?: string; // "12:00" (Opcional para el trabajador solicitante)
   hora_real_salida?: string | null; // Guarded by Vigilancia
   hora_real_retorno?: string | null; // Guarded by Vigilancia
   sin_retorno?: boolean; // Salida sin retorno (Comisión final de jornada, etc.)

@@ -41,6 +41,7 @@ import {
   Briefcase,
   Printer,
   FileCheck2,
+  Info,
 } from 'lucide-react';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { DataTablePagination } from '../common/DataTablePagination';
@@ -202,8 +203,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const [formDestino, setFormDestino] = useState('');
   const [formDescripcion, setFormDescripcion] = useState('');
   const [formFecha, setFormFecha] = useState(() => new Date().toISOString().split('T')[0]);
-  const [formHoraSalida, setFormHoraSalida] = useState('09:30');
-  const [formHoraRetorno, setFormHoraRetorno] = useState('12:30');
+  const [formHoraSalida, setFormHoraSalida] = useState('');
+  const [formHoraRetorno, setFormHoraRetorno] = useState('');
   const [formSinRetorno, setFormSinRetorno] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -481,16 +482,6 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       return;
     }
 
-    if (!formHoraSalida) {
-      setFormError('Debe especificar la hora estimada de salida.');
-      return;
-    }
-
-    if (!formSinRetorno && !formHoraRetorno) {
-      setFormError('Debe especificar la hora estimada de retorno o marcar salida sin retorno.');
-      return;
-    }
-
     const newPapeletaPayload: PapeletaSalida = {
       id: `pap-${Date.now()}`,
       code: `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`,
@@ -508,8 +499,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       descripcion: formDescripcion.trim(),
       destino: formDestino.trim(),
       fecha: formFecha,
-      hora_estimada_salida: formHoraSalida,
-      hora_estimada_retorno: formSinRetorno ? 'Sin retorno' : formHoraRetorno,
+      hora_estimada_salida: formHoraSalida.trim() || undefined,
+      hora_estimada_retorno: formSinRetorno ? 'Sin retorno' : (formHoraRetorno.trim() || undefined),
       sin_retorno: formSinRetorno,
       status: 'PENDING_BOSS',
       origin: 'PORTAL_TRABAJADOR',
@@ -532,6 +523,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
     setCurrentPage(1);
     setFormDestino('');
     setFormDescripcion('');
+    setFormHoraSalida('');
+    setFormHoraRetorno('');
     setFormSinRetorno(false);
     setSignatureData(null);
     setFormError(null);
@@ -1176,7 +1169,13 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                         <td className="px-3 py-3 font-mono">
                           <div className="text-slate-200 font-bold text-xs">{p.fecha}</div>
                           <div className="text-slate-400 text-[10px] whitespace-nowrap">
-                            {p.hora_estimada_salida} ➔ {p.hora_estimada_retorno}
+                            {p.hora_estimada_salida || p.hora_estimada_retorno ? (
+                              <span>
+                                {p.hora_estimada_salida || '--:--'} ➔ {p.sin_retorno ? 'Sin retorno' : (p.hora_estimada_retorno || '--:--')}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 italic text-[9px]">Horas por Garita</span>
+                            )}
                           </div>
                         </td>
 
@@ -1584,7 +1583,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </div>
 
               {/* 5. Fecha y Horarios Estimados */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-300 mb-1">
                     Fecha <span className="text-rose-400">*</span>
@@ -1600,20 +1599,19 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    Hora Salida <span className="text-rose-400">*</span>
+                    Hora de Salida <span className="text-slate-500 font-normal">(Opcional)</span>
                   </label>
                   <input
                     type="time"
                     value={formHoraSalida}
                     onChange={(e) => setFormHoraSalida(e.target.value)}
                     className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-                    required
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    Hora Retorno <span className="text-rose-400">*</span>
+                    Hora de Retorno <span className="text-slate-500 font-normal">(Opcional)</span>
                   </label>
                   <input
                     type="time"
@@ -1623,9 +1621,16 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                     className={`w-full bg-[#090A0D] border border-slate-800 rounded-lg p-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 ${
                       formSinRetorno ? 'opacity-40 cursor-not-allowed' : ''
                     }`}
-                    required={!formSinRetorno}
                   />
                 </div>
+              </div>
+
+              {/* Indicación de Responsabilidad de Garita */}
+              <div className="p-2.5 bg-indigo-950/20 border border-indigo-500/30 rounded-xl flex items-start gap-2 text-[11px] text-indigo-300">
+                <Info className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Responsabilidad de Garita:</strong> Las horas reales de salida y retorno serán registradas exclusivamente por el personal de Vigilancia/Garita al momento del control físico.
+                </span>
               </div>
 
               {/* Salida Sin Retorno Checkbox */}
@@ -1749,9 +1754,17 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                   <span className="font-mono text-slate-200 font-semibold">{createdPapeletaConfirmation.fecha}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Horario Estimado:</span>
+                  <span className="text-slate-400">Horario Solicitado:</span>
                   <span className="font-mono text-slate-200">
-                    {createdPapeletaConfirmation.hora_estimada_salida} hrs a {createdPapeletaConfirmation.hora_estimada_retorno} hrs
+                    {createdPapeletaConfirmation.hora_estimada_salida || createdPapeletaConfirmation.hora_estimada_retorno ? (
+                      `${createdPapeletaConfirmation.hora_estimada_salida || 'No especificada'} a ${
+                        createdPapeletaConfirmation.sin_retorno
+                          ? 'Sin retorno'
+                          : (createdPapeletaConfirmation.hora_estimada_retorno || 'No especificada')
+                      }`
+                    ) : (
+                      <span className="text-indigo-300 italic">Por registrar en Garita</span>
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -1867,10 +1880,16 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               {/* Times */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-[#090A0D] rounded-xl border border-slate-800">
-                  <div className="font-bold text-slate-400 text-[10px]">HORARIO PROGRAMADO</div>
+                  <div className="font-bold text-slate-400 text-[10px]">HORARIO ESTIMADO (SOLICITUD)</div>
                   <div className="text-white font-mono mt-1 font-bold">{selectedPapeleta.fecha}</div>
                   <div className="text-slate-300 font-mono mt-0.5">
-                    {selectedPapeleta.hora_estimada_salida} ➔ {selectedPapeleta.hora_estimada_retorno}
+                    {selectedPapeleta.hora_estimada_salida || selectedPapeleta.hora_estimada_retorno ? (
+                      `${selectedPapeleta.hora_estimada_salida || '--:--'} ➔ ${
+                        selectedPapeleta.sin_retorno ? 'Sin retorno' : (selectedPapeleta.hora_estimada_retorno || '--:--')
+                      }`
+                    ) : (
+                      <span className="text-slate-500 italic text-[11px]">No especificado (Control en Garita)</span>
+                    )}
                   </div>
                 </div>
 
@@ -2036,9 +2055,15 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                   <span className="text-slate-200 font-medium">{vigilanciaModal.papeleta.destino}</span>
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-800/80 pt-1">
-                  <span className="text-slate-400">Horario Autorizado:</span>
+                  <span className="text-slate-400">Horario Solicitado:</span>
                   <span className="text-indigo-300 font-mono">
-                    {vigilanciaModal.papeleta.hora_estimada_salida} ➔ {vigilanciaModal.papeleta.hora_estimada_retorno}
+                    {vigilanciaModal.papeleta.hora_estimada_salida || vigilanciaModal.papeleta.hora_estimada_retorno ? (
+                      `${vigilanciaModal.papeleta.hora_estimada_salida || '--:--'} ➔ ${
+                        vigilanciaModal.papeleta.sin_retorno ? 'Sin retorno' : (vigilanciaModal.papeleta.hora_estimada_retorno || '--:--')
+                      }`
+                    ) : (
+                      <span className="italic text-slate-400">Por registrar en Garita</span>
+                    )}
                   </span>
                 </div>
                 {vigilanciaModal.type === 'RETURN' && vigilanciaModal.papeleta.hora_real_salida && (

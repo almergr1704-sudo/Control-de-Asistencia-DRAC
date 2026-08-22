@@ -2211,10 +2211,12 @@ async function startServer() {
       const signed_at = body.signed_at || new Date().toISOString();
 
       // Validaciones de obligatoriedad de campos de la solicitud
-      if (!fecha || !hora_estimada_salida || !destino || (!sin_retorno && !hora_estimada_retorno && !descripcion)) {
+      // NOTA: Las horas de salida y retorno NO son obligatorias para el trabajador solicitante.
+      // Las horas reales de salida y retorno corresponden exclusivamente a Vigilancia / Garita.
+      if (!fecha || !destino || !descripcion) {
         return res.status(400).json({
           success: false,
-          message: "Los campos de fecha, hora estimada de salida, destino y motivo/descripción son obligatorios.",
+          message: "Los campos de fecha, destino y justificación/descripción son obligatorios.",
         });
       }
 
@@ -2261,8 +2263,8 @@ async function startServer() {
         descripcion,
         destino,
         fecha,
-        hora_estimada_salida,
-        hora_estimada_retorno: sin_retorno ? "Sin retorno" : (hora_estimada_retorno || "17:00"),
+        hora_estimada_salida: hora_estimada_salida || "",
+        hora_estimada_retorno: sin_retorno ? "Sin retorno" : (hora_estimada_retorno || ""),
         sin_retorno,
         status: initialStatus,
         origin: "PORTAL_TRABAJADOR",
