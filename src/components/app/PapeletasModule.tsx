@@ -19,6 +19,7 @@ import {
   XCircle,
   Clock,
   ShieldCheck,
+  ShieldAlert,
   UserCheck,
   Building2,
   AlertCircle,
@@ -49,7 +50,7 @@ import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
 import { getImmediateBossForPapeleta } from '../../utils/vacationEngine';
-import { canUserApproveForRequester } from '../../utils/encargaturaUtils';
+import { canUserApproveForRequester, isWorkerInBossScope } from '../../utils/encargaturaUtils';
 
 interface PapeletasModuleProps {
   activeView?: string;
@@ -304,11 +305,19 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       if (isStrictWorker) {
         if (p.employee_dni !== activeUserDni) return false;
       } else if (isBossRole && !isHRAdmin) {
-        // JEFE/SUPERVISOR: sees their subordinates + their own
+        // JEFE/SUPERVISOR: If 'MY', sees only their own. If viewing team, strictly check scope.
         if (statusTab === 'MY') {
           if (p.employee_dni !== activeUserDni) return false;
-        } else if (statusTab === 'PENDING_BOSS') {
-          if (p.status !== 'PENDING_BOSS') return false;
+        } else {
+          // Team scope verification: only see workers under their responsibility or active encargatura
+          const reqEmp = employees.find((e) => e.dni === p.employee_dni);
+          const inScope = isWorkerInBossScope({
+            bossEmployee: activeUserEmployee,
+            workerEmployee: reqEmp,
+            allEncargaturas: encargaturas,
+            currentDate: p.fecha,
+          });
+          if (!inScope) return false;
         }
       }
 
@@ -608,6 +617,11 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         allEncargaturas: encargaturas,
         targetDate: papeleta.fecha,
       });
+
+      if (!evalResult.canApprove && !isHRAdmin) {
+        alert(`🔒 Control de Encargatura y Jerarquía: ${evalResult.reason}`);
+        return;
+      }
 
       if (evalResult.isEncargado && evalResult.encargatura) {
         bossFunction = 'Jefe Encargado';
@@ -1221,10 +1235,10 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                               <Eye className="w-3.5 h-3.5" />
                             </button>
 
-                            {/* 1º VoBo Jefe Inmediato (STRICT ANTI-AUTOAPROBACIÓN IMPLEMENTATION) */}
-                            {p.status === 'PENDING_BOSS' && (
-                              <>
-                                {isSelfApplicant ? (
+                            {/* 1º VoBo Jefe Inmediato (STRICT ANTI-AUTOAPROBACIÓN & ENCARGATURA RULES) */}
+                            {p.status === 'PENDING_BOSS' && (() => {
+                              if (isSelfApplicant) {
+                                return (
                                   <span
                                     className="px-2 py-1 bg-amber-950/40 border border-amber-500/30 text-amber-400 rounded text-[10px] font-bold flex items-center gap-1 cursor-not-allowed select-none"
                                     title="Autoaprobación bloqueada: No puede otorgar visto bueno a una papeleta que usted mismo ha solicitado."
@@ -1232,20 +1246,58 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                                     <Lock className="w-3 h-3 text-amber-400" />
                                     <span>Autoaprobación Bloqueada</span>
                                   </span>
-                                ) : (
-                                  (isBossRole || isHRAdmin) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleBossApproval(p)}
-                                      className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors shadow-sm whitespace-nowrap"
+                                );
+                              }
+
+                              if (isHRAdmin) {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBossApproval(p)}
+                                    className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors shadow-sm whitespace-nowrap"
+                                  >
+                                    <Check className="w-3 h-3" />
+                                    <span>VoBo Jefe</span>
+                                  </button>
+                                );
+                              }
+
+                              if (isBossRole) {
+                                const reqEmp = employees.find((e) => e.dni === p.employee_dni);
+                                const evalResult = canUserApproveForRequester({
+                                  bossEmployee: activeUserEmployee,
+                                  requesterEmployee: reqEmp,
+                                  allEncargaturas: encargaturas,
+                                  targetDate: p.fecha,
+                                });
+
+                                if (!evalResult.canApprove) {
+                                  return (
+                                    <span
+                                      className="px-2 py-1 bg-slate-800 border border-slate-700 text-slate-400 rounded text-[10px] font-medium flex items-center gap-1 cursor-not-allowed select-none"
+                                      title={evalResult.reason}
                                     >
-                                      <Check className="w-3 h-3" />
-                                      <span>VoBo Jefe</span>
-                                    </button>
-                                  )
-                                )}
-                              </>
-                            )}
+                                      <ShieldAlert className="w-3 h-3 text-amber-400 shrink-0" />
+                                      <span>VoBo Delegado</span>
+                                    </span>
+                                  );
+                                }
+
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleBossApproval(p)}
+                                    className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold flex items-center gap-1 transition-colors shadow-sm whitespace-nowrap"
+                                    title={evalResult.reason}
+                                  >
+                                    <Check className="w-3 h-3" />
+                                    <span>{evalResult.isEncargado ? 'VoBo Encargado' : 'VoBo Jefe'}</span>
+                                  </button>
+                                );
+                              }
+
+                              return null;
+                            })()}
 
                             {/* 2º Aprobación RRHH / Control de Asistencia */}
                             {p.status === 'PENDING_HR' && isHRAdmin && (

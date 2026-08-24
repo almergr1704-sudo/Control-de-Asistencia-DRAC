@@ -111,12 +111,12 @@ export const VIEW_TO_GROUP: Record<string, string> = {
 };
 
 export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
-  // 1. ADMINISTRADOR GENERAL
+  // 1. ADMINISTRADOR GENERAL & HR ADMIN - Acceso Total
   if (role === 'ADMIN_GENERAL' || role === 'HR_ADMIN') {
-    return true; // Access to all modules
+    return true;
   }
 
-  // 2. TRABAJADOR
+  // 2. TRABAJADOR / EMPLEADO BASE - Exclusivamente datos y trámites propios
   if (role === 'TRABAJADOR' || role === 'EMPLOYEE') {
     return (
       viewId === 'dash_overview' ||
@@ -132,13 +132,31 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
     );
   }
 
-  // 3. JEFE / RESPONSABLE DE DIRECCIÓN U ÓRGANO
+  // 3. JEFE INMEDIATO / SUPERVISOR
+  // REGLA DE SEGURIDAD CRÍTICA: NO es un perfil administrativo.
+  // NO puede acceder a Organización, Directorio de Personal (gestión/creación), Configuración, Usuarios, Roles, Marcadores ni Horarios.
   if (role === 'JEFE' || role === 'SUPERVISOR') {
     return (
-      !viewId.startsWith('admin_') &&
-      viewId !== 'config_system' &&
-      !viewId.startsWith('shifts_') &&
-      !viewId.startsWith('devices_')
+      viewId === 'dash_overview' ||
+      // Mi Asistencia & Asistencia de personal
+      viewId === 'attendance_list' ||
+      viewId === 'attendance_punches' ||
+      // Mis Vacaciones & Aprobaciones de personal
+      viewId === 'vacations_new' ||
+      viewId === 'vacations_requests' ||
+      viewId === 'vacations_my' ||
+      viewId === 'vacations_approvals' ||
+      viewId === 'vacations_history' ||
+      // Mis Papeletas & Papeletas de su personal (VoBo e Historial)
+      viewId === 'papeletas_new' ||
+      viewId === 'papeletas_my' ||
+      viewId === 'papeletas_pending' ||
+      viewId === 'papeletas_approved' ||
+      viewId === 'papeletas_history' ||
+      // Reportes de su ámbito
+      viewId === 'reports_attendance' ||
+      viewId === 'reports_papeletas' ||
+      viewId === 'reports_vacations'
     );
   }
 
@@ -151,7 +169,7 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
     );
   }
 
-  // 5. SEGURIDAD / VIGILANCIA
+  // 5. SEGURIDAD / VIGILANCIA (GARITA)
   if (role === 'VIGILANCIA' || role === 'SECURITY_GUARD') {
     return (
       viewId === 'dash_overview' ||
@@ -160,13 +178,21 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
     );
   }
 
-  // 6. DIRECTOR GENERAL
+  // 6. DIRECTOR GENERAL - Supervisión institucional macro
   if (role === 'DIRECTOR_GENERAL') {
     return (
-      !viewId.startsWith('admin_') &&
-      viewId !== 'config_system' &&
-      !viewId.startsWith('shifts_') &&
-      !viewId.startsWith('devices_')
+      viewId === 'dash_overview' ||
+      viewId === 'attendance_list' ||
+      viewId === 'attendance_punches' ||
+      viewId === 'vacations_requests' ||
+      viewId === 'vacations_approvals' ||
+      viewId === 'vacations_history' ||
+      viewId === 'papeletas_new' ||
+      viewId === 'papeletas_my' ||
+      viewId === 'papeletas_pending' ||
+      viewId === 'papeletas_approved' ||
+      viewId === 'papeletas_history' ||
+      viewId.startsWith('reports_')
     );
   }
 
@@ -175,12 +201,11 @@ export function isViewAllowedForRole(viewId: string, role: RoleType): boolean {
     return (
       !viewId.startsWith('admin_') &&
       viewId !== 'config_system' &&
-      !viewId.startsWith('org_') &&
-      !viewId.startsWith('shifts_')
+      !viewId.startsWith('org_')
     );
   }
 
-  return true;
+  return false;
 }
 
 export function getViewFromHash(hash: string, role: RoleType): string {

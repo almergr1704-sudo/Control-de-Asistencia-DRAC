@@ -90,7 +90,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   // Menu structure matching DRAC institutional requirements
-  const menuGroups: MenuGroup[] = [
+  const menuGroups: MenuGroup[] = activeRole === 'JEFE' || activeRole === 'SUPERVISOR' ? [
+    {
+      id: 'inicio',
+      label: 'Inicio',
+      icon: Home,
+      subItems: [{ id: 'dash_overview', label: 'Dashboard Operativo' }],
+    },
+    {
+      id: 'attendance',
+      label: 'Mi Asistencia',
+      icon: ClipboardList,
+      subItems: [
+        { id: 'attendance_list', label: 'Control de Asistencia' },
+        { id: 'attendance_punches', label: 'Marcaciones Biométricas' },
+      ],
+    },
+    {
+      id: 'my_papeletas',
+      label: 'Mis Papeletas',
+      icon: FileText,
+      subItems: [
+        { id: 'papeletas_new', label: 'Nueva Papeleta' },
+        { id: 'papeletas_my', label: 'Mis Papeletas' },
+      ],
+    },
+    {
+      id: 'my_vacations',
+      label: 'Mis Vacaciones',
+      icon: Palmtree,
+      subItems: [
+        { id: 'vacations_new', label: 'Solicitar Vacaciones' },
+        { id: 'vacations_requests', label: 'Mis Vacaciones' },
+        { id: 'vacations_history', label: 'Historial' },
+      ],
+    },
+    {
+      id: 'team_papeletas',
+      label: 'Papeletas de mi Personal',
+      icon: ShieldCheck,
+      subItems: [
+        { id: 'papeletas_pending', label: 'Pendientes de Visto Bueno' },
+        { id: 'papeletas_approved', label: 'Historial' },
+      ],
+    },
+    {
+      id: 'team_vacations',
+      label: 'Vacaciones de mi Personal',
+      icon: UserCheck,
+      subItems: [
+        { id: 'vacations_approvals', label: 'Aprobaciones de Personal' },
+      ],
+    },
+    {
+      id: 'reports',
+      label: 'Reportes de mi Área',
+      icon: BarChart3,
+      subItems: [
+        { id: 'reports_attendance', label: 'Reporte de Asistencia' },
+        { id: 'reports_papeletas', label: 'Reporte de Papeletas' },
+      ],
+    },
+  ] : [
     {
       id: 'inicio',
       label: 'Inicio',
@@ -101,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'org',
       label: 'Organización',
       icon: Building2,
-      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
       subItems: [
         { id: 'org_deps', label: 'Dependencias' },
         { id: 'org_dirs', label: 'Direcciones / Órganos' },
@@ -115,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'personnel',
       label: 'Personal',
       icon: Users,
-      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'personnel_list', label: 'Directorio' },
         { id: 'personnel_new', label: 'Registrar Personal' },
@@ -129,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'shifts',
       label: 'Horarios',
       icon: Clock,
-      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'shifts_turnos', label: 'Turnos Laborales' },
         { id: 'shifts_horarios', label: 'Horarios Laborales' },
@@ -165,7 +226,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { id: 'vacations_new', label: 'Solicitar Vacaciones' },
         { id: 'vacations_requests', label: 'Mis Vacaciones' },
-        { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'CONTROL_ASISTENCIA'] },
+        { id: 'vacations_approvals', label: 'Aprobaciones', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA', 'DIRECTOR_GENERAL'] },
         { id: 'vacations_history', label: 'Historial' },
       ],
     },
@@ -176,8 +237,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { id: 'papeletas_new', label: 'Nueva Papeleta' },
         { id: 'papeletas_my', label: 'Mis Papeletas' },
-        { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
-        { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL'] },
+        { id: 'papeletas_pending', label: 'Pendientes de VoBo', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'DIRECTOR_GENERAL'] },
+        { id: 'papeletas_approved', label: 'Aprobadas', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'DIRECTOR_GENERAL'] },
         { id: 'papeletas_history', label: 'Historial General', allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'] },
       ],
     },
@@ -197,7 +258,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'reports',
       label: 'Reportes',
       icon: BarChart3,
-      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'JEFE', 'SUPERVISOR', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'],
+      allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'reports_attendance', label: 'Reporte de Asistencia' },
         { id: 'reports_tardiness', label: 'Reporte de Tardanzas' },

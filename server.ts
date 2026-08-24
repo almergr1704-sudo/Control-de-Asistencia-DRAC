@@ -237,6 +237,169 @@ async function startServer() {
     next();
   });
 
+  // RBAC Helper: Verify that caller has administrative permissions
+  const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {
+    const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "TRABAJADOR";
+    const allowed = ["ADMIN_GENERAL", "HR_ADMIN", "JEFE_RRHH", "CONTROL_ASISTENCIA"];
+    if (!allowed.includes(callerRole)) {
+      res.status(403).json({
+        success: false,
+        message: `403 Forbidden: No tiene autorización administrativa para gestionar ${moduleName}. Su perfil es estrictamente operativo/supervisor.`,
+      });
+      return false;
+    }
+    return true;
+  };
+
+  // ==========================================
+  // API ROUTES: Personal / Employees CRUD & Storage
+  // ==========================================
+
+  // GET /api/employees - List employees
+  app.get("/api/employees", async (req, res) => {
+    try {
+      const employees = await getStoredEmployees();
+      return res.json({ success: true, count: employees.length, data: employees });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al leer personal." });
+    }
+  });
+
+  // POST /api/employees - Create employee (Admin/RRHH only)
+  app.post("/api/employees", async (req, res) => {
+    if (!checkAdminPermission(req, res, "trabajadores")) return;
+    try {
+      const emp = req.body || {};
+      if (!emp.dni || !emp.first_name || !emp.last_name) {
+        return res.status(400).json({ success: false, message: "DNI, nombres y apellidos son obligatorios." });
+      }
+      const employees = await getStoredEmployees();
+      const dup = employees.find((e: any) => e.dni === emp.dni);
+      if (dup) {
+        return res.status(409).json({ success: false, message: `Ya existe un trabajador con el DNI ${emp.dni}.` });
+      }
+      const newEmp = {
+        id: emp.id || `emp-${Date.now()}`,
+        ...emp,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      employees.unshift(newEmp);
+      await saveStoredEmployees(employees);
+      return res.status(201).json({ success: true, message: "Trabajador registrado exitosamente.", data: newEmp });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al crear trabajador: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/employees/:id - Update employee (Admin/RRHH only)
+  app.put("/api/employees/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "trabajadores")) return;
+    try {
+      const { id } = req.params;
+      const updates = req.body || {};
+      const employees = await getStoredEmployees();
+      const idx = employees.findIndex((e: any) => e.id === id || e.dni === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, message: "Trabajador no encontrado." });
+      }
+      employees[idx] = { ...employees[idx], ...updates, updated_at: new Date().toISOString() };
+      await saveStoredEmployees(employees);
+      return res.json({ success: true, message: "Trabajador actualizado correctamente.", data: employees[idx] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al actualizar trabajador: ${err?.message}` });
+    }
+  });
+
+  // DELETE /api/employees/:id - Delete employee (Admin/RRHH only)
+  app.delete("/api/employees/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "trabajadores")) return;
+    try {
+      const { id } = req.params;
+      let employees = await getStoredEmployees();
+      const existing = employees.find((e: any) => e.id === id || e.dni === id);
+      if (!existing) {
+        return res.status(404).json({ success: false, message: "Trabajador no encontrado." });
+      }
+      employees = employees.filter((e: any) => e.id !== id && e.dni !== id);
+      await saveStoredEmployees(employees);
+      return res.json({ success: true, message: "Trabajador eliminado correctamente." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al eliminar trabajador: ${err?.message}` });
+    }
+  });
+
+  // ==========================================
+  // API ROUTES: Encargaturas Temporales CRUD
+  // ==========================================
+
+  // GET /api/encargaturas - List encargaturas
+  app.get("/api/encargaturas", async (req, res) => {
+    try {
+      const encs = await getStoredEncargaturas();
+      return res.json({ success: true, count: encs.length, data: encs });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: "Error al leer encargaturas." });
+    }
+  });
+
+  // POST /api/encargaturas - Create encargatura (Admin/RRHH only)
+  app.post("/api/encargaturas", async (req, res) => {
+    if (!checkAdminPermission(req, res, "encargaturas temporales")) return;
+    try {
+      const body = req.body || {};
+      if (!body.encargado_dni || !body.start_date || !body.end_date) {
+        return res.status(400).json({ success: false, message: "Encargado, fecha inicio y fecha fin son obligatorios." });
+      }
+      const encs = await getStoredEncargaturas();
+      const newEnc = {
+        id: body.id || `enc-${Date.now()}`,
+        ...body,
+        status: body.status || "VIGENTE",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      encs.unshift(newEnc);
+      await saveStoredEncargaturas(encs);
+      return res.status(201).json({ success: true, message: "Encargatura registrada exitosamente.", data: newEnc });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al registrar encargatura: ${err?.message}` });
+    }
+  });
+
+  // PUT /api/encargaturas/:id - Update encargatura (Admin/RRHH only)
+  app.put("/api/encargaturas/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "encargaturas temporales")) return;
+    try {
+      const { id } = req.params;
+      const updates = req.body || {};
+      const encs = await getStoredEncargaturas();
+      const idx = encs.findIndex((e: any) => e.id === id);
+      if (idx === -1) {
+        return res.status(404).json({ success: false, message: "Encargatura no encontrada." });
+      }
+      encs[idx] = { ...encs[idx], ...updates, updated_at: new Date().toISOString() };
+      await saveStoredEncargaturas(encs);
+      return res.json({ success: true, message: "Encargatura actualizada.", data: encs[idx] });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al actualizar encargatura: ${err?.message}` });
+    }
+  });
+
+  // DELETE /api/encargaturas/:id - Delete encargatura (Admin/RRHH only)
+  app.delete("/api/encargaturas/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "encargaturas temporales")) return;
+    try {
+      const { id } = req.params;
+      let encs = await getStoredEncargaturas();
+      encs = encs.filter((e: any) => e.id !== id);
+      await saveStoredEncargaturas(encs);
+      return res.json({ success: true, message: "Encargatura eliminada." });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al eliminar encargatura: ${err?.message}` });
+    }
+  });
+
   // ==========================================
   // API ROUTES: ZKTeco Devices CRUD & Storage
   // ==========================================
@@ -254,6 +417,7 @@ async function startServer() {
 
   // POST /api/devices - Create / Register new device
   app.post("/api/devices", async (req, res) => {
+    if (!checkAdminPermission(req, res, "dispositivos biométricos")) return;
     try {
       const {
         name,
@@ -1510,9 +1674,12 @@ async function startServer() {
     if (role === 'ADMIN_GENERAL' || role === 'HR_ADMIN') {
       allowed = true;
     } else if (role === 'TRABAJADOR' || role === 'EMPLOYEE') {
-      allowed = ['dash_overview', 'attendance_list', 'attendance_punches', 'vacations_requests', 'vacations_history', 'papeletas_new', 'papeletas_my', 'papeletas_history'].includes(viewId);
+      allowed = ['dash_overview', 'attendance_list', 'attendance_punches', 'vacations_requests', 'vacations_new', 'vacations_history', 'papeletas_new', 'papeletas_my', 'papeletas_history'].includes(viewId);
     } else if (role === 'JEFE' || role === 'SUPERVISOR') {
-      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('shifts_') && !viewId.startsWith('devices_');
+      // JEFE / SUPERVISOR: STRICT NON-ADMIN PRIVILEGES
+      // Disallow all org_, personnel_, shifts_, devices_, admin_, config_, security_
+      const forbiddenPrefixes = ['admin_', 'config_', 'org_', 'personnel_', 'shifts_', 'devices_', 'security_'];
+      allowed = !forbiddenPrefixes.some((prefix) => viewId.startsWith(prefix));
     } else if (role === 'JEFE_RRHH') {
       allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('devices_');
     } else if (role === 'VIGILANCIA' || role === 'SECURITY_GUARD') {
@@ -1520,7 +1687,7 @@ async function startServer() {
     } else if (role === 'DIRECTOR_GENERAL') {
       allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('shifts_') && !viewId.startsWith('devices_');
     } else if (role === 'CONTROL_ASISTENCIA') {
-      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('org_') && !viewId.startsWith('shifts_');
+      allowed = !viewId.startsWith('admin_') && viewId !== 'config_system' && !viewId.startsWith('org_');
     }
 
     return res.json({ success: true, allowed });

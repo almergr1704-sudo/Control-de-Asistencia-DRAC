@@ -94,8 +94,54 @@ export function getActiveEncargaturasForUser(
 }
 
 /**
+ * Busca si existe una Encargatura Temporal Vigente activa para una unidad orgánica específica
+ * o para un jefe titular específico.
+ */
+export function getActiveEncargaturaForUnit(params: {
+  direccionOrganoId?: string;
+  areaId?: string;
+  dependenciaId?: string;
+  titularDni?: string;
+  allEncargaturas: Encargatura[];
+  currentDate?: string;
+}): Encargatura | null {
+  const { direccionOrganoId, areaId, dependenciaId, titularDni, allEncargaturas, currentDate = new Date().toISOString().substring(0, 10) } = params;
+
+  for (const enc of allEncargaturas) {
+    if (enc.status === 'ANULADA') continue;
+    const status = computeEncargaturaStatus(enc, currentDate);
+    if (status !== 'VIGENTE') continue;
+
+    // Coincidencia por titular ausente
+    if (titularDni && enc.titular_dni === titularDni) {
+      return enc;
+    }
+
+    // Coincidencia por unidad orgánica encargada
+    if (areaId && enc.area_id && enc.area_id === areaId) {
+      return enc;
+    }
+    if (direccionOrganoId && enc.direccion_organo_id && enc.direccion_organo_id === direccionOrganoId) {
+      return enc;
+    }
+    if (dependenciaId && enc.dependencia_id && enc.dependencia_id === dependenciaId && !enc.direccion_organo_id && !enc.area_id) {
+      return enc;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Determina si un usuario (sea como Jefe Titular o Jefe Encargado) tiene potestad de dar VoBo
- * a una papeleta de un trabajador solicitante.
+ * a una papeleta o trámite de un trabajador solicitante.
+ * 
+ * REGLA INSTITUCIONAL DE ENCARGATURAS:
+ * 1. Si existe una Encargatura Temporal Vigente para la unidad:
+ *    - El JEFE TITULAR queda TEMPORALMENTE SUSPENDIDO de aprobar en esa unidad durante la vigencia.
+ *    - El TRABAJADOR ENCARGADO asume la potestad de dar V°B°.
+ * 2. Al vencer la vigencia, la autoridad se restituye automáticamente al titular sin modificar roles.
+ * 3. En ningún caso un usuario puede dar V°B° a sus propios trámites (anti-autoaprobación).
  */
 export function canApproveAsBoss(params: {
   bossDni: string;
@@ -109,13 +155,22 @@ export function canApproveAsBoss(params: {
   activeEncargatura?: Encargatura;
   reason: string;
 } {
-  const { bossDni, bossEmployee, requesterEmployee, allEncargaturas, currentDate } = params;
+  const { bossDni, bossEmployee, requesterEmployee, allEncargaturas, currentDate = new Date().toISOString().substring(0, 10) } = params;
 
   if (!requesterEmployee) {
     return { canApprove: false, isEncargado: false, reason: 'Trabajador solicitante no encontrado' };
   }
 
-  // 1. Revisar si tiene una Encargatura Temporal Vigente para el ámbito del solicitante
+  // REGLA CRÍTICA: Anti-Autoaprobación
+  if (bossDni && requesterEmployee.dni && bossDni.trim() === requesterEmployee.dni.trim()) {
+    return {
+      canApprove: false,
+      isEncargado: false,
+      reason: 'No puede otorgarse visto bueno a sí mismo.',
+    };
+  }
+
+  // 1. REVISAR SI EL USUARIO ES EL JEFE ENCARGADO VIGENTE PARA EL ÁMBITO DEL SOLICITANTE
   const activeEncargaturas = getActiveEncargaturasForUser(bossDni, allEncargaturas, currentDate);
   for (const enc of activeEncargaturas) {
     let matchesUnit = false;
@@ -139,18 +194,45 @@ export function canApproveAsBoss(params: {
     }
   }
 
-  // 2. Revisar si es el Jefe Inmediato Titular
+  // 2. REVISAR SI EXISTE ENCARGATURA VIGENTE QUE REEMPLAZA AL JEFE TITULAR EN ESTA UNIDAD
+  const activeUnitEncargatura = getActiveEncargaturaForUnit({
+    direccionOrganoId: requesterEmployee.direccion_organo_id,
+    areaId: requesterEmployee.area_id,
+    dependenciaId: requesterEmployee.dependencia_id,
+    titularDni: bossDni,
+    allEncargaturas,
+    currentDate,
+  });
+
+  // Si existe encargatura activa en la unidad y el usuario actual NO es el encargado:
+  // El titular pierde temporalmente la facultad de aprobación.
+  if (activeUnitEncargatura && activeUnitEncargatura.encargado_dni !== bossDni) {
+    return {
+      canApprove: false,
+      isEncargado: false,
+      activeEncargatura: activeUnitEncargatura,
+      reason: `Facultad de V°B° suspendida temporalmente: Encargatura vigente asignada a ${activeUnitEncargatura.encargado_name} mediante ${activeUnitEncargatura.document_type} N.º ${activeUnitEncargatura.document_number} (Vigencia: ${activeUnitEncargatura.start_date} al ${activeUnitEncargatura.end_date}).`,
+    };
+  }
+
+  // 3. REVISAR SI ES EL JEFE INMEDIATO TITULAR (Sin encargatura activa que lo suspenda)
   if (bossEmployee) {
     const roles = getEmployeeAssignedRoles(bossEmployee);
-    const hasJefeRole = roles.includes('JEFE') || roles.includes('SUPERVISOR');
+    const hasJefeRole =
+      roles.includes('JEFE') ||
+      roles.includes('SUPERVISOR') ||
+      roles.includes('DIRECTOR_GENERAL') ||
+      roles.includes('JEFE_RRHH') ||
+      roles.includes('ADMIN_GENERAL') ||
+      roles.includes('HR_ADMIN');
     
     if (hasJefeRole) {
-      // Supervisor directo
-      if (requesterEmployee.supervisor_id === bossEmployee.id) {
+      // Supervisor directo del trabajador
+      if (requesterEmployee.supervisor_id === bossEmployee.id || requesterEmployee.supervisor_id === bossEmployee.dni) {
         return { canApprove: true, isEncargado: false, reason: 'Jefe Inmediato Titular Directo' };
       }
 
-      // Titular de la Dirección / Órgano
+      // Director o Titular de la Dirección / Órgano
       if (
         bossEmployee.is_jefe_director &&
         bossEmployee.direccion_organo_id &&
@@ -159,17 +241,23 @@ export function canApproveAsBoss(params: {
         return { canApprove: true, isEncargado: false, reason: 'Director / Jefe Titular de la Unidad Orgánica' };
       }
 
-      // Titular de RRHH aprobando a su propia área
+      // Titular del Área / Oficina
       if (
         bossEmployee.area_id &&
-        bossEmployee.area_id === requesterEmployee.area_id
+        bossEmployee.area_id === requesterEmployee.area_id &&
+        (bossEmployee.is_jefe_director || roles.includes('JEFE') || roles.includes('SUPERVISOR'))
       ) {
         return { canApprove: true, isEncargado: false, reason: 'Jefe Inmediato de Área / Oficina' };
+      }
+
+      // Administrador / RRHH con facultad global
+      if (roles.includes('ADMIN_GENERAL') || roles.includes('HR_ADMIN') || roles.includes('JEFE_RRHH')) {
+        return { canApprove: true, isEncargado: false, reason: 'Autoridad Administrativa Institucional' };
       }
     }
   }
 
-  return { canApprove: false, isEncargado: false, reason: 'Fuera del ámbito orgánico asignado' };
+  return { canApprove: false, isEncargado: false, reason: 'Fuera del ámbito orgánico de responsabilidad asignado' };
 }
 
 /**
@@ -199,5 +287,49 @@ export function canUserApproveForRequester(params: {
     encargatura: result.activeEncargatura,
     reason: result.reason,
   };
+}
+
+/**
+ * Determina si un trabajador está dentro del ámbito de supervisión de un Jefe Inmediato
+ * (ya sea como Jefe Titular de la unidad o por Encargatura Temporal Vigente).
+ */
+export function isWorkerInBossScope(params: {
+  bossEmployee?: Employee | null;
+  workerEmployee?: Employee | null;
+  allEncargaturas: Encargatura[];
+  currentDate?: string;
+}): boolean {
+  const { bossEmployee, workerEmployee, allEncargaturas, currentDate = new Date().toISOString().substring(0, 10) } = params;
+  if (!bossEmployee || !workerEmployee) return false;
+  if (bossEmployee.dni === workerEmployee.dni) return false;
+
+  const roles = getEmployeeAssignedRoles(bossEmployee);
+  if (roles.includes('ADMIN_GENERAL') || roles.includes('HR_ADMIN') || roles.includes('JEFE_RRHH')) {
+    return true;
+  }
+
+  // 1. Encargatura Vigente como encargado
+  const activeEncargaturas = getActiveEncargaturasForUser(bossEmployee.dni, allEncargaturas, currentDate);
+  for (const enc of activeEncargaturas) {
+    if (enc.direccion_organo_id && workerEmployee.direccion_organo_id === enc.direccion_organo_id) return true;
+    if (enc.area_id && workerEmployee.area_id === enc.area_id) return true;
+    if (enc.dependencia_id && workerEmployee.dependencia_id === enc.dependencia_id) return true;
+  }
+
+  // 2. Si el jefe titular tiene una encargatura activa que delegó sus funciones a otro, NO ve para aprobar
+  // pero puede consultar su equipo
+  if (workerEmployee.supervisor_id === bossEmployee.id || workerEmployee.supervisor_id === bossEmployee.dni) {
+    return true;
+  }
+
+  if (bossEmployee.is_jefe_director && bossEmployee.direccion_organo_id && bossEmployee.direccion_organo_id === workerEmployee.direccion_organo_id) {
+    return true;
+  }
+
+  if (bossEmployee.area_id && bossEmployee.area_id === workerEmployee.area_id) {
+    return true;
+  }
+
+  return false;
 }
 
