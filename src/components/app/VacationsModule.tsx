@@ -117,14 +117,26 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     activeRole === 'ADMIN_GENERAL' ||
     activeRole === 'JEFE_RRHH';
 
+  // Active Encargaturas where current user is the encargado temporal
+  const activeEncargaturasAsEncargado = useMemo(() => {
+    const today = new Date().toISOString().substring(0, 10);
+    return encargaturas.filter((enc) => {
+      if (enc.encargado_dni !== (activeEmp?.dni || activeUserDni)) return false;
+      if (enc.status === 'ANULADA') return false;
+      return today >= enc.start_date && today <= enc.end_date;
+    });
+  }, [activeEmp, activeUserDni, encargaturas]);
+
+  const isTemporaryBoss = activeEncargaturasAsEncargado.length > 0;
+
   // Tab State: 'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'
   const [activeTab, setActiveTab] = useState<'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'>(() => {
     if (activeView === 'vacations_approvals') return 'boss_approvals';
     if (activeView === 'vacations_new' || activeView === 'vacations_my') return 'my_vacations';
     if (activeView === 'vacations_requests') {
-      return (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') ? 'my_vacations' : 'all';
+      return (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') && !isTemporaryBoss ? 'my_vacations' : 'all';
     }
-    if (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') return 'my_vacations';
+    if ((activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') && !isTemporaryBoss) return 'my_vacations';
     return 'all';
   });
 
@@ -890,6 +902,17 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
         </div>
       </div>
 
+      {/* Encargatura Temporal Vigente Alert Banner */}
+      {isTemporaryBoss && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-3 text-xs">
+          <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-slate-300 leading-relaxed">
+            <span className="font-bold text-amber-300">⚡ ENCARGATURA TEMPORAL VIGENTE: </span>
+            Usted asume las funciones de <span className="font-semibold text-white">{activeEncargaturasAsEncargado[0]?.cargo_encargado}</span> mediante <span className="font-mono text-amber-200">{activeEncargaturasAsEncargado[0]?.document_type} N.º {activeEncargaturasAsEncargado[0]?.document_number}</span> (Vigencia: {activeEncargaturasAsEncargado[0]?.start_date} al {activeEncargaturasAsEncargado[0]?.end_date}). Habilitado para revisar y otorgar V°B° a las solicitudes vacacionales del personal a su cargo temporal.
+          </div>
+        </div>
+      )}
+
       {/* 3. Tabbed Navigation Bar */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
@@ -907,7 +930,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
           </span>
         </button>
 
-        {isBossRole && (
+        {(isBossRole || isTemporaryBoss) && (
           <button
             onClick={() => setActiveTab('boss_approvals')}
             className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-2 ${
@@ -917,7 +940,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
             }`}
           >
             <UserCheck className="w-3.5 h-3.5 text-amber-300" />
-            <span>Bandeja V°B° Jefe Inmediato</span>
+            <span>Bandeja V°B° Jefe Inmediato {isTemporaryBoss ? '(Encargatura)' : ''}</span>
             {pendingBossRequests.length > 0 && (
               <span className="px-1.5 py-0.5 bg-amber-500 text-slate-950 font-black rounded-full text-[10px]">
                 {pendingBossRequests.length}

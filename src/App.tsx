@@ -1531,6 +1531,8 @@ export default function App() {
                   turnos={turnos}
                   horarios={horarios}
                   activeRole={activeRole}
+                  employees={employees}
+                  onEditEmployee={handleEditEmployee}
                   onAddTurno={handleAddTurno}
                   onEditTurno={handleEditTurno}
                   onDeleteTurno={handleDeleteTurno}

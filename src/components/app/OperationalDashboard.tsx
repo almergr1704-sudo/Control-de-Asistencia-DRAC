@@ -108,25 +108,26 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
     );
   }, [currentUser, employees, activeUserDni]);
 
-  // Determine user role archetype
-  const isWorkerOnly = activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE';
-  const isBoss =
-    activeRole === 'JEFE' ||
-    activeRole === 'SUPERVISOR' ||
-    activeRole === 'DIRECTOR_GENERAL';
-  const isControlAsistencia =
-    activeRole === 'CONTROL_ASISTENCIA' ||
-    activeRole === 'ADMIN_GENERAL' ||
-    activeRole === 'HR_ADMIN' ||
-    activeRole === 'JEFE_RRHH';
-
-  // Check active Encargatura for the boss
+  // Check active Encargatura for the current user
   const activeEncargaturas = useMemo(() => {
     if (!authenticatedWorker) return [];
     return getActiveEncargaturasForUser(authenticatedWorker.dni, encargaturas, todayStr);
   }, [authenticatedWorker, encargaturas, todayStr]);
 
   const activeEncargatura = activeEncargaturas[0] || null;
+
+  // Determine user role archetype
+  const isWorkerOnly = (activeRole === 'TRABAJADOR' || activeRole === 'EMPLOYEE') && !activeEncargatura;
+  const isBoss =
+    activeRole === 'JEFE' ||
+    activeRole === 'SUPERVISOR' ||
+    activeRole === 'DIRECTOR_GENERAL' ||
+    Boolean(activeEncargatura);
+  const isControlAsistencia =
+    activeRole === 'CONTROL_ASISTENCIA' ||
+    activeRole === 'ADMIN_GENERAL' ||
+    activeRole === 'HR_ADMIN' ||
+    activeRole === 'JEFE_RRHH';
 
   // Handle Preset changes
   const handlePresetChange = (preset: 'current_month' | 'prev_month' | 'custom') => {

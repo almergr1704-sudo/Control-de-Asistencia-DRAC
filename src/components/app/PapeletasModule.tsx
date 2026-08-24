@@ -115,6 +115,18 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   const isBossRole = activeRole === 'JEFE' || activeRole === 'SUPERVISOR' || activeRole === 'DIRECTOR_GENERAL';
   const isHRAdmin = activeRole === 'HR_ADMIN' || activeRole === 'JEFE_RRHH' || activeRole === 'ADMIN_GENERAL' || activeRole === 'CONTROL_ASISTENCIA';
 
+  // Active Encargaturas where current user is the encargado temporal
+  const activeEncargaturasAsEncargado = useMemo(() => {
+    const today = new Date().toISOString().substring(0, 10);
+    return encargaturas.filter((enc) => {
+      if (enc.encargado_dni !== activeUserDni) return false;
+      if (enc.status === 'ANULADA') return false;
+      return today >= enc.start_date && today <= enc.end_date;
+    });
+  }, [activeUserDni, encargaturas]);
+
+  const isTemporaryBoss = activeEncargaturasAsEncargado.length > 0;
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createdPapeletaConfirmation, setCreatedPapeletaConfirmation] = useState<PapeletaSalida | null>(null);
   const [selectedPapeleta, setSelectedPapeleta] = useState<PapeletaSalida | null>(null);
@@ -122,20 +134,19 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 
   // Tab filter (ALL, PENDING_BOSS, PENDING_HR, APPROVED, IN_OUTING, COMPLETED, REJECTED, MY)
   const [statusTab, setStatusTab] = useState<string>(() => {
-    if (isStrictWorker) return 'MY';
-    if (activeView === 'security_exit') return 'APPROVED';
-    if (activeView === 'security_return' || activeView === 'security_outside') return 'IN_OUTING';
     if (activeView === 'papeletas_pending') return 'PENDING_BOSS';
-    if (activeView === 'papeletas_approved') return 'APPROVED';
+    if (activeView === 'papeletas_approved' || activeView === 'security_exit') return 'APPROVED';
+    if (activeView === 'security_return' || activeView === 'security_outside') return 'IN_OUTING';
     if (activeView === 'papeletas_my') return 'MY';
-    return isBossRole ? 'PENDING_BOSS' : 'ALL';
+    if (isStrictWorker && !isTemporaryBoss) return 'MY';
+    return isBossRole || isTemporaryBoss ? 'PENDING_BOSS' : 'ALL';
   });
 
   useEffect(() => {
     if (!activeView) return;
     if (activeView === 'papeletas_new') {
       setShowCreateModal(true);
-      if (isStrictWorker) setStatusTab('MY');
+      if (isStrictWorker && !isTemporaryBoss) setStatusTab('MY');
     } else if (activeView === 'papeletas_pending') {
       setShowCreateModal(false);
       setStatusTab('PENDING_BOSS');
@@ -149,7 +160,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       setShowCreateModal(false);
       setStatusTab('MY');
     }
-  }, [activeView, isStrictWorker]);
+  }, [activeView, isStrictWorker, isTemporaryBoss]);
 
   // PAGINATION STATE
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -301,14 +312,14 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
   // MASTER FILTERING & RBAC SCOPING
   const filteredPapeletas = useMemo(() => {
     return papeletas.filter((p) => {
-      // 1. RBAC SCOPE: Worker can ONLY ever see their own papeletas
-      if (isStrictWorker) {
+      // 1. RBAC SCOPE: Strict Worker without active Encargatura can ONLY see their own papeletas
+      if (isStrictWorker && !isTemporaryBoss) {
         if (p.employee_dni !== activeUserDni) return false;
-      } else if (isBossRole && !isHRAdmin) {
-        // JEFE/SUPERVISOR: If 'MY', sees only their own. If viewing team, strictly check scope.
+      } else if (isBossRole || isTemporaryBoss) {
+        // JEFE / SUPERVISOR / ENCARGADO TEMPORAL
         if (statusTab === 'MY') {
           if (p.employee_dni !== activeUserDni) return false;
-        } else {
+        } else if (!isHRAdmin) {
           // Team scope verification: only see workers under their responsibility or active encargatura
           const reqEmp = employees.find((e) => e.dni === p.employee_dni);
           const inScope = isWorkerInBossScope({
@@ -721,10 +732,21 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
         )}
       </div>
 
+      {/* Encargatura Temporal Vigente Alert Banner */}
+      {isTemporaryBoss && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-3 text-xs">
+          <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-slate-300 leading-relaxed">
+            <span className="font-bold text-amber-300">⚡ ENCARGATURA TEMPORAL VIGENTE: </span>
+            Usted asume las funciones de <span className="font-semibold text-white">{activeEncargaturasAsEncargado[0]?.cargo_encargado}</span> mediante <span className="font-mono text-amber-200">{activeEncargaturasAsEncargado[0]?.document_type} N.º {activeEncargaturasAsEncargado[0]?.document_number}</span> (Vigencia: {activeEncargaturasAsEncargado[0]?.start_date} al {activeEncargaturasAsEncargado[0]?.end_date}). Habilitado para revisar y otorgar V°B° a las papeletas del personal a su cargo temporal.
+          </div>
+        </div>
+      )}
+
       {/* Navigation Tabs - STRICTLY ROLE-SCOPED */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-2">
-        {/* Worker View: ONLY "Mis Papeletas" */}
-        {isStrictWorker ? (
+        {/* Worker View (without temporary charge) */}
+        {isStrictWorker && !isTemporaryBoss ? (
           <button
             type="button"
             onClick={() => {

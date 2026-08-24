@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Turno, Horario, RoleType } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Turno, Horario, RoleType, Employee } from '../../types';
 import {
   Clock,
   Plus,
@@ -21,6 +21,13 @@ import {
   ArrowRight,
   History,
   Sparkles,
+  UserCheck,
+  Users,
+  Zap,
+  CheckSquare,
+  Square,
+  Building2,
+  RefreshCw,
 } from 'lucide-react';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { DataTablePagination } from '../common/DataTablePagination';
@@ -40,6 +47,8 @@ interface ShiftsSchedulesModuleProps {
   turnos: Turno[];
   horarios: Horario[];
   activeRole: RoleType;
+  employees?: Employee[];
+  onEditEmployee?: (emp: Employee) => void;
   onAddTurno: (newTurno: Omit<Turno, 'id' | 'created_at'>) => void;
   onEditTurno: (turno: Turno) => void;
   onDeleteTurno: (turnoId: string) => void;
@@ -53,6 +62,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   turnos,
   horarios,
   activeRole,
+  employees = [],
+  onEditEmployee,
   onAddTurno,
   onEditTurno,
   onDeleteTurno,
@@ -60,8 +71,17 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   onEditHorario,
   onDeleteHorario,
 }) => {
-  const [activeTab, setActiveTab] = useState<'HORARIOS' | 'TURNOS'>('HORARIOS');
+  const [activeTab, setActiveTab] = useState<'HORARIOS' | 'TURNOS' | 'ASIGNACIONES'>('HORARIOS');
   const [expandedSimulatorTurnoId, setExpandedSimulatorTurnoId] = useState<string | null>(null);
+
+  // Toast Notification for Schedule Assignments
+  const [scheduleToast, setScheduleToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (scheduleToast) {
+      const timer = setTimeout(() => setScheduleToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [scheduleToast]);
 
   // State for card simulator
   const [cardSimIn, setCardSimIn] = useState('07:55');
@@ -70,8 +90,36 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   React.useEffect(() => {
     if (!activeView) return;
     if (activeView === 'shifts_turnos') setActiveTab('TURNOS');
-    else if (activeView === 'shifts_horarios' || activeView === 'shifts_assign') setActiveTab('HORARIOS');
+    else if (activeView === 'shifts_horarios') setActiveTab('HORARIOS');
+    else if (activeView === 'shifts_assign') setActiveTab('ASIGNACIONES');
   }, [activeView]);
+
+  // SEARCH & FILTER STATE: ASIGNACIONES
+  const [searchAssign, setSearchAssign] = useState('');
+  const [filterAssignHorario, setFilterAssignHorario] = useState('ALL');
+  const [filterAssignArea, setFilterAssignArea] = useState('ALL');
+  const [pageAssign, setPageAssign] = useState(1);
+  const [pageSizeAssign, setPageSizeAssign] = useState(15);
+  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+
+  // Modals for Assignment
+  const [singleAssignEmp, setSingleAssignEmp] = useState<Employee | null>(null);
+  const [selectedHorarioForSingle, setSelectedHorarioForSingle] = useState<string>('');
+  const [singleEffectiveDate, setSingleEffectiveDate] = useState<string>(new Date().toISOString().slice(0, 10));
+
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkHorarioId, setBulkHorarioId] = useState<string>('');
+  const [bulkAreaFilter, setBulkAreaFilter] = useState<string>('ALL');
+  const [bulkEffectiveDate, setBulkEffectiveDate] = useState<string>(new Date().toISOString().slice(0, 10));
+
+  // Unique Areas from employees
+  const uniqueAreas = useMemo(() => {
+    const set = new Set<string>();
+    employees.forEach((e) => {
+      if (e.area_name) set.add(e.area_name);
+    });
+    return Array.from(set).sort();
+  }, [employees]);
 
   // SEARCH & FILTER STATE: HORARIOS
   const [searchHorario, setSearchHorario] = useState('');
@@ -465,11 +513,22 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             >
               Turnos Laborales ({turnos.length})
             </button>
+            <button
+              onClick={() => setActiveTab('ASIGNACIONES')}
+              className={`px-3 py-1 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
+                activeTab === 'ASIGNACIONES'
+                  ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Asignación de Horarios ({employees.length})</span>
+            </button>
           </div>
 
           {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR' || activeRole === 'ADMIN_GENERAL' || activeRole === 'JEFE_RRHH' || activeRole === 'CONTROL_ASISTENCIA') && (
-            <div>
-              {activeTab === 'HORARIOS' ? (
+            <div className="flex items-center gap-2">
+              {activeTab === 'HORARIOS' && (
                 <button
                   onClick={handleOpenAddHorario}
                   className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
@@ -477,13 +536,27 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                   <Plus className="w-3.5 h-3.5" />
                   <span>Crear Horario Laboral</span>
                 </button>
-              ) : (
+              )}
+              {activeTab === 'TURNOS' && (
                 <button
                   onClick={handleOpenAddTurno}
                   className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Registrar Turno Laboral</span>
+                </button>
+              )}
+              {activeTab === 'ASIGNACIONES' && (
+                <button
+                  onClick={() => {
+                    setBulkHorarioId(horarios[0]?.id || '');
+                    setBulkAreaFilter('ALL');
+                    setShowBulkModal(true);
+                  }}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Asignación Masiva</span>
                 </button>
               )}
             </div>
@@ -1054,6 +1127,637 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 />
               </div>
             </>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 3: ASIGNACIÓN DE HORARIOS A SERVIDORES PÚBLICOS                       */}
+      {/* ========================================================================= */}
+      {activeTab === 'ASIGNACIONES' && (
+        <div className="space-y-4">
+          {/* Toast Banner */}
+          {scheduleToast && (
+            <div className="p-3 bg-emerald-950/90 border border-emerald-700/80 rounded-xl text-emerald-200 text-xs flex items-center justify-between shadow-lg animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="font-semibold">{scheduleToast}</span>
+              </div>
+              <button
+                onClick={() => setScheduleToast(null)}
+                className="text-emerald-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Quick Metrics */}
+          {(() => {
+            const totalEmps = employees.length;
+            const assignedEmps = employees.filter((e) => e.horario_id).length;
+            const unassignedEmps = totalEmps - assignedEmps;
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400">Total Servidores Registrados</div>
+                    <div className="text-xl font-extrabold text-white mt-0.5">{totalEmps}</div>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-indigo-950/60 border border-indigo-800/50 flex items-center justify-center text-indigo-400">
+                    <Users className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400">Con Horario Asignado</div>
+                    <div className="text-xl font-extrabold text-emerald-400 mt-0.5">{assignedEmps}</div>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-emerald-950/60 border border-emerald-800/50 flex items-center justify-center text-emerald-400">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400">Sin Horario Asignado</div>
+                    <div className="text-xl font-extrabold text-amber-400 mt-0.5">{unassignedEmps}</div>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-amber-950/60 border border-amber-800/50 flex items-center justify-center text-amber-400">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Search, Filter & Bulk Action Toolbar */}
+          <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              <input
+                type="text"
+                placeholder="🔍 Buscar por DNI, nombres, cargo o área..."
+                value={searchAssign}
+                onChange={(e) => {
+                  setSearchAssign(e.target.value);
+                  setPageAssign(1);
+                }}
+                className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded focus:outline-none focus:border-indigo-600 min-w-[240px]"
+              />
+
+              <select
+                value={filterAssignHorario}
+                onChange={(e) => {
+                  setFilterAssignHorario(e.target.value);
+                  setPageAssign(1);
+                }}
+                className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded focus:outline-none"
+              >
+                <option value="ALL">Todos los Horarios</option>
+                <option value="UNASSIGNED">⚠️ Sin Horario Asignado</option>
+                {horarios.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name} ({h.code})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={filterAssignArea}
+                onChange={(e) => {
+                  setFilterAssignArea(e.target.value);
+                  setPageAssign(1);
+                }}
+                className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded focus:outline-none"
+              >
+                <option value="ALL">Todas las Áreas</option>
+                {uniqueAreas.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
+                  </option>
+                ))}
+              </select>
+
+              {(searchAssign || filterAssignHorario !== 'ALL' || filterAssignArea !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchAssign('');
+                    setFilterAssignHorario('ALL');
+                    setFilterAssignArea('ALL');
+                    setPageAssign(1);
+                  }}
+                  className="text-slate-400 hover:text-white underline text-[11px]"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+
+            {/* Selected batch actions */}
+            {selectedEmpIds.length > 0 && (
+              <div className="flex items-center gap-2 bg-indigo-950/80 border border-indigo-700/60 px-3 py-1.5 rounded-lg text-indigo-200">
+                <span className="font-bold text-xs">{selectedEmpIds.length} seleccionados</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkHorarioId(horarios[0]?.id || '');
+                    setBulkAreaFilter('SELECTED');
+                    setShowBulkModal(true);
+                  }}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] rounded transition-colors"
+                >
+                  Asignar Horario
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEmpIds([])}
+                  className="text-slate-400 hover:text-white text-[11px] underline"
+                >
+                  Deseleccionar
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Employee Schedule Table */}
+          {(() => {
+            const filtered = employees.filter((emp) => {
+              if (searchAssign.trim()) {
+                const term = searchAssign.toLowerCase().trim();
+                const matchDni = emp.dni.toLowerCase().includes(term);
+                const matchName = `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(term);
+                const matchCargo = (emp.cargo_name || '').toLowerCase().includes(term);
+                const matchArea = (emp.area_name || '').toLowerCase().includes(term);
+                if (!matchDni && !matchName && !matchCargo && !matchArea) return false;
+              }
+              if (filterAssignHorario === 'UNASSIGNED') {
+                if (emp.horario_id) return false;
+              } else if (filterAssignHorario !== 'ALL') {
+                if (emp.horario_id !== filterAssignHorario) return false;
+              }
+              if (filterAssignArea !== 'ALL' && emp.area_name !== filterAssignArea) {
+                return false;
+              }
+              return true;
+            });
+
+            const paginated = filtered.slice(
+              (pageAssign - 1) * pageSizeAssign,
+              pageAssign * pageSizeAssign
+            );
+
+            const allSelected = paginated.length > 0 && paginated.every((e) => selectedEmpIds.includes(e.id));
+
+            const toggleSelectAll = () => {
+              if (allSelected) {
+                setSelectedEmpIds((prev) => prev.filter((id) => !paginated.some((e) => e.id === id)));
+              } else {
+                const newIds = new Set([...selectedEmpIds, ...paginated.map((e) => e.id)]);
+                setSelectedEmpIds(Array.from(newIds));
+              }
+            };
+
+            const toggleSelectOne = (id: string) => {
+              setSelectedEmpIds((prev) =>
+                prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+              );
+            };
+
+            if (filtered.length === 0) {
+              return (
+                <EmptyState
+                  icon={Users}
+                  title="No se encontraron servidores públicos"
+                  description="Ajuste los criterios de búsqueda o cree nuevos horarios laborales."
+                  isFiltered={Boolean(searchAssign) || filterAssignHorario !== 'ALL' || filterAssignArea !== 'ALL'}
+                  onAction={() => {
+                    setSearchAssign('');
+                    setFilterAssignHorario('ALL');
+                    setFilterAssignArea('ALL');
+                    setPageAssign(1);
+                  }}
+                />
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                <div className="overflow-x-auto border border-slate-800/80 rounded-xl bg-[#090A0D]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
+                        <th className="p-3 w-10 text-center">
+                          <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            {allSelected ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-400" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-600" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="p-3">Servidor Público</th>
+                        <th className="p-3">DNI</th>
+                        <th className="p-3">Área / Dependencia</th>
+                        <th className="p-3">Horario Asignado</th>
+                        <th className="p-3">Turnos & Horas</th>
+                        <th className="p-3 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {paginated.map((emp) => {
+                        const assignedHorario = horarios.find((h) => h.id === emp.horario_id);
+                        const t1 = assignedHorario ? turnos.find((t) => t.id === assignedHorario.turno1_id) : null;
+                        const t2 = assignedHorario && assignedHorario.turno2_id ? turnos.find((t) => t.id === assignedHorario.turno2_id) : null;
+                        const duration = assignedHorario ? calculateScheduleTotalDuration(t1, t2) : null;
+                        const isSelected = selectedEmpIds.includes(emp.id);
+
+                        return (
+                          <tr
+                            key={emp.id}
+                            className={`hover:bg-slate-900/40 transition-colors ${
+                              isSelected ? 'bg-indigo-950/20' : ''
+                            }`}
+                          >
+                            <td className="p-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectOne(emp.id)}
+                                className="text-slate-400 hover:text-white"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-600" />
+                                )}
+                              </button>
+                            </td>
+
+                            <td className="p-3">
+                              <div className="font-bold text-white flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-indigo-400">
+                                  {emp.first_name[0]}{emp.last_name[0]}
+                                </div>
+                                <span>{emp.first_name} {emp.last_name}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 pl-8">{emp.cargo_name || 'Servidor'}</div>
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px] text-indigo-300 font-bold">
+                              {emp.dni}
+                            </td>
+
+                            <td className="p-3 text-slate-400">
+                              <div>{emp.area_name || emp.dependencia_name || 'Sede Central'}</div>
+                              <div className="text-[10px] text-slate-500">{emp.dependencia_name}</div>
+                            </td>
+
+                            <td className="p-3">
+                              {assignedHorario ? (
+                                <div>
+                                  <div className="font-bold text-white flex items-center gap-1.5">
+                                    <span className="font-mono text-indigo-400 text-[10px]">{assignedHorario.code}</span>
+                                    <span>{assignedHorario.name}</span>
+                                  </div>
+                                  <div className="text-[10px] text-emerald-400 font-semibold mt-0.5">
+                                    {assignedHorario.turn_count === 2 ? '2 Turnos (Partida)' : '1 Turno (Continua)'}
+                                    {duration && ` • ${duration.totalDurationText}`}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/50">
+                                  ⚠️ Sin Asignar
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px]">
+                              {assignedHorario && t1 ? (
+                                <div className="space-y-0.5">
+                                  <div className="text-emerald-400">
+                                    T1: {t1.start_time} - {t1.end_time}
+                                  </div>
+                                  {t2 && (
+                                    <div className="text-indigo-400">
+                                      T2: {t2.start_time} - {t2.end_time}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
+
+                            <td className="p-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSingleAssignEmp(emp);
+                                  setSelectedHorarioForSingle(emp.horario_id || horarios[0]?.id || '');
+                                  setSingleEffectiveDate(new Date().toISOString().slice(0, 10));
+                                }}
+                                className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded border border-indigo-500/30 font-semibold text-[11px] transition-colors"
+                              >
+                                {emp.horario_id ? 'Cambiar Horario' : 'Asignar Horario'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+                  <DataTablePagination
+                    currentPage={pageAssign}
+                    pageSize={pageSizeAssign}
+                    totalItems={filtered.length}
+                    onPageChange={setPageAssign}
+                    onPageSizeChange={(newSize) => {
+                      setPageSizeAssign(newSize);
+                      setPageAssign(1);
+                    }}
+                    pageSizeOptions={[10, 15, 25, 50]}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* SINGLE ASSIGNMENT MODAL */}
+          {singleAssignEmp && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-indigo-400" />
+                    <h3 className="font-bold text-sm text-white">
+                      Asignar Horario Laboral al Servidor
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setSingleAssignEmp(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800 space-y-1">
+                  <div className="font-bold text-white text-xs">
+                    {singleAssignEmp.first_name} {singleAssignEmp.last_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    DNI: <span className="text-indigo-300 font-mono">{singleAssignEmp.dni}</span> | Cargo: {singleAssignEmp.cargo_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Área: {singleAssignEmp.area_name || singleAssignEmp.dependencia_name}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Seleccionar Horario Laboral:
+                    </label>
+                    <select
+                      value={selectedHorarioForSingle}
+                      onChange={(e) => setSelectedHorarioForSingle(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 font-semibold"
+                    >
+                      <option value="">[ Sin Horario Asignado ]</option>
+                      {horarios.map((h) => {
+                        const t1 = turnos.find((t) => t.id === h.turno1_id);
+                        const t2 = h.turno2_id ? turnos.find((t) => t.id === h.turno2_id) : null;
+                        const duration = calculateScheduleTotalDuration(t1, t2);
+                        return (
+                          <option key={h.id} value={h.id}>
+                            {h.code} - {h.name} ({duration.totalDurationText}, {h.turn_count === 2 ? '2 Turnos' : '1 Turno'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Fecha de Inicio de Vigencia:
+                    </label>
+                    <input
+                      type="date"
+                      value={singleEffectiveDate}
+                      onChange={(e) => setSingleEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  {/* Selected Horario Preview */}
+                  {(() => {
+                    const selectedH = horarios.find((h) => h.id === selectedHorarioForSingle);
+                    if (!selectedH) return null;
+                    const t1 = turnos.find((t) => t.id === selectedH.turno1_id);
+                    const t2 = selectedH.turno2_id ? turnos.find((t) => t.id === selectedH.turno2_id) : null;
+                    const duration = calculateScheduleTotalDuration(t1, t2);
+
+                    return (
+                      <div className="p-3 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs space-y-1 font-mono">
+                        <div className="font-bold text-emerald-400">{selectedH.name} ({duration.totalDurationText})</div>
+                        {t1 && <div className="text-slate-300">Turno 1: {t1.start_time} → {t1.end_time} (Tol: {t1.tolerance_minutes}m)</div>}
+                        {t2 && <div className="text-slate-300">Turno 2: {t2.start_time} → {t2.end_time} (Tol: {t2.tolerance_minutes}m)</div>}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setSingleAssignEmp(null)}
+                    className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onEditEmployee && singleAssignEmp) {
+                        const updated: Employee = {
+                          ...singleAssignEmp,
+                          horario_id: selectedHorarioForSingle || undefined,
+                        };
+                        onEditEmployee(updated);
+                        const hName = horarios.find((h) => h.id === selectedHorarioForSingle)?.name || 'Sin horario';
+                        setScheduleToast(`Horario "${hName}" asignado a ${singleAssignEmp.first_name} ${singleAssignEmp.last_name}.`);
+                        setSingleAssignEmp(null);
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors shadow-sm"
+                  >
+                    Guardar Asignación
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MASS / BATCH ASSIGNMENT MODAL */}
+          {showBulkModal && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-emerald-400" />
+                    <h3 className="font-bold text-sm text-white">
+                      Asignación Masiva de Horarios
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setShowBulkModal(false)}
+                    className="text-slate-400 hover:text-white p-1 rounded"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Grupo Destinatario:
+                    </label>
+                    <select
+                      value={bulkAreaFilter}
+                      onChange={(e) => setBulkAreaFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded focus:outline-none font-semibold"
+                    >
+                      {selectedEmpIds.length > 0 && (
+                        <option value="SELECTED">
+                          ✓ Los {selectedEmpIds.length} servidores seleccionados previamente
+                        </option>
+                      )}
+                      <option value="ALL">Todo el Personal de la Entidad DRAC ({employees.length})</option>
+                      <option value="UNASSIGNED">Solo Personal Sin Horario Asignado ({employees.filter((e) => !e.horario_id).length})</option>
+                      <optgroup label="Por Dirección / Área Específica">
+                        {uniqueAreas.map((area) => {
+                          const count = employees.filter((e) => e.area_name === area).length;
+                          return (
+                            <option key={area} value={area}>
+                              Área: {area} ({count} servidores)
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Horario Laboral a Asignar:
+                    </label>
+                    <select
+                      value={bulkHorarioId}
+                      onChange={(e) => setBulkHorarioId(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded focus:outline-none font-semibold"
+                    >
+                      {horarios.map((h) => {
+                        const t1 = turnos.find((t) => t.id === h.turno1_id);
+                        const t2 = h.turno2_id ? turnos.find((t) => t.id === h.turno2_id) : null;
+                        const duration = calculateScheduleTotalDuration(t1, t2);
+                        return (
+                          <option key={h.id} value={h.id}>
+                            {h.code} - {h.name} ({duration.totalDurationText})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">
+                      Fecha de Inicio de Vigencia:
+                    </label>
+                    <input
+                      type="date"
+                      value={bulkEffectiveDate}
+                      onChange={(e) => setBulkEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded font-mono"
+                    />
+                  </div>
+
+                  {/* Target summary count */}
+                  {(() => {
+                    let targets: Employee[] = [];
+                    if (bulkAreaFilter === 'SELECTED') {
+                      targets = employees.filter((e) => selectedEmpIds.includes(e.id));
+                    } else if (bulkAreaFilter === 'ALL') {
+                      targets = employees;
+                    } else if (bulkAreaFilter === 'UNASSIGNED') {
+                      targets = employees.filter((e) => !e.horario_id);
+                    } else {
+                      targets = employees.filter((e) => e.area_name === bulkAreaFilter);
+                    }
+
+                    return (
+                      <div className="p-3 bg-emerald-950/40 border border-emerald-800/40 rounded-lg text-emerald-300 space-y-1 font-mono text-[11px]">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Se asignará este horario a {targets.length} servidores públicos.</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkModal(false)}
+                    className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onEditEmployee) {
+                        let targets: Employee[] = [];
+                        if (bulkAreaFilter === 'SELECTED') {
+                          targets = employees.filter((e) => selectedEmpIds.includes(e.id));
+                        } else if (bulkAreaFilter === 'ALL') {
+                          targets = employees;
+                        } else if (bulkAreaFilter === 'UNASSIGNED') {
+                          targets = employees.filter((e) => !e.horario_id);
+                        } else {
+                          targets = employees.filter((e) => e.area_name === bulkAreaFilter);
+                        }
+
+                        targets.forEach((emp) => {
+                          onEditEmployee({
+                            ...emp,
+                            horario_id: bulkHorarioId,
+                          });
+                        });
+
+                        const hName = horarios.find((h) => h.id === bulkHorarioId)?.name || '';
+                        setScheduleToast(`Horario "${hName}" asignado exitosamente a ${targets.length} servidores.`);
+                        setSelectedEmpIds([]);
+                        setShowBulkModal(false);
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-colors shadow-sm"
+                  >
+                    Confirmar Asignación Masiva
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

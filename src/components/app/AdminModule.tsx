@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AuditLog, RoleType, Employee } from '../../types';
-import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter, UserCog, Eye, EyeOff, Info, X, Edit2 } from 'lucide-react';
+import { Shield, Lock, FileSpreadsheet, User, Key, Search, Clock, Building2, UserCheck, ShieldAlert, Filter, UserCog, Eye, EyeOff, Info, X, Edit2, CheckCircle2, Check, XCircle, AlertTriangle, Sparkles, Layers, RefreshCw } from 'lucide-react';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from '../common/AdvancedSearchFilter';
@@ -23,6 +23,32 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   onEditEmployee,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'USERS' | 'ROLES' | 'AUDIT'>(subTab || 'USERS');
+
+  // Sync subTab prop
+  useEffect(() => {
+    if (subTab) setActiveSubTab(subTab);
+  }, [subTab]);
+
+  // Toast Notification
+  const [adminToast, setAdminToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (adminToast) {
+      const timer = setTimeout(() => setAdminToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [adminToast]);
+
+  // ROLES VIEW SUB-TABS
+  const [rolesViewTab, setRolesViewTab] = useState<'MATRIX' | 'ASSIGNMENTS' | 'DEFINITIONS'>('MATRIX');
+  const [selectedRoleForMatrix, setSelectedRoleForMatrix] = useState<RoleType | 'ALL'>('ALL');
+
+  // ROLES ASSIGNMENT SEARCH & PAGINATION
+  const [roleAssignSearch, setRoleAssignSearch] = useState('');
+  const [roleAssignFilter, setRoleAssignFilter] = useState('ALL');
+  const [roleAssignPage, setRoleAssignPage] = useState(1);
+  const [roleAssignPageSize, setRoleAssignPageSize] = useState(10);
+  const [roleModalEmp, setRoleModalEmp] = useState<Employee | null>(null);
+  const [selectedAssignedRole, setSelectedAssignedRole] = useState<string>('TRABAJADOR');
 
   // USERS TAB SEARCH, FILTER, SORT & PAGINATION
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -450,131 +476,696 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
       {/* ROLES TAB */}
       {activeSubTab === 'ROLES' && (
-        <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-5">
-          <div className="border-b border-slate-800 pb-3">
-            <h2 className="font-bold text-sm text-white flex items-center gap-2">
-              <Lock className="w-4 h-4 text-amber-400" />
-              <span>Matriz General de Roles y Ámbitos Organizacionales (DRAC)</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Políticas institucionales de mínimo privilegio y delimitación de alcance para la Dirección Regional de Agricultura Cajamarca.
-            </p>
-          </div>
-
-          {/* Cards for 7 roles */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-indigo-600 text-white font-bold rounded-lg">
-                  1. Administrador General
-                </span>
-                <span className="text-[10px] text-indigo-400 font-mono font-bold">ADMIN_GENERAL</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
-                <div><strong className="text-white">Alcance:</strong> Módulos, usuarios, roles, parámetros, biométricos ZKTeco y auditoría.</div>
-                <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ⚠️ Restricción: No modifica marcaciones biométricas crudas ni registros históricos cerrados sin auditoría.
-                </div>
-              </div>
+        <div className="space-y-5">
+          {/* Subtabs Toolbar */}
+          <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-sm text-white flex items-center gap-2">
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>Control de Accesos y Matriz RBAC Institucional (DRAC)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Políticas de mínimo privilegio, delimitación de facultades jerárquicas y asignación de roles.
+              </p>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-slate-700 text-white font-bold rounded-lg">
-                  2. Trabajador Base
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono font-bold">TRABAJADOR</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Información Personal</div>
-                <div><strong className="text-white">Alcance:</strong> Consulta asistencia propia, solicita papeletas de salida y consulta saldo vacacional.</div>
-                <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ✓ Acceso autoservicio con firma digital.
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-amber-600 text-white font-bold rounded-lg">
-                  3. Jefe / Responsable
-                </span>
-                <span className="text-[10px] text-amber-400 font-mono font-bold">JEFE</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Su Dirección / Área</div>
-                <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel de papeletas del personal de su unidad y consulta asistencia de equipo.</div>
-                <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  🚫 Restricción: No aprueba papeletas de personal de otras Direcciones.
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-blue-600 text-white font-bold rounded-lg">
-                  4. Jefe de Recursos Humanos
-                </span>
-                <span className="text-[10px] text-blue-400 font-mono font-bold">JEFE_RRHH</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
-                <div><strong className="text-white">Alcance:</strong> VoBo 2º nivel de papeletas, gestión global de personal, legajos y aprobaciones.</div>
-                <div className="text-blue-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ✓ Autorización institucional final.
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-emerald-600 text-white font-bold rounded-lg">
-                  5. Vigilancia / Garita
-                </span>
-                <span className="text-[10px] text-emerald-400 font-mono font-bold">VIGILANCIA</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Garita Principal DRAC</div>
-                <div><strong className="text-white">Alcance:</strong> Registro de horas reales de salida y retorno de papeletas autorizadas del día.</div>
-                <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ✓ Soporta "Salida sin retorno" para comisiones finales.
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-purple-600 text-white font-bold rounded-lg">
-                  6. Director General
-                </span>
-                <span className="text-[10px] text-purple-400 font-mono font-bold">DIRECTOR_GENERAL</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad / Directivos</div>
-                <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel a papeletas de Directores Regionales y Jefes de Órganos.</div>
-                <div className="text-purple-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ✓ Nivel de aprobación superior jerárquico.
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2.5 py-1 text-[11px] bg-cyan-600 text-white font-bold rounded-lg">
-                  7. Control de Asistencia
-                </span>
-                <span className="text-[10px] text-cyan-400 font-mono font-bold">CONTROL_ASISTENCIA</span>
-              </div>
-              <div className="text-[11px] text-slate-300 space-y-1">
-                <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
-                <div><strong className="text-white">Alcance:</strong> Monitoreo de tardanzas, faltas, horas trabajadas y asignación de vacaciones.</div>
-                <div className="text-cyan-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
-                  ✓ Control operativo y regularizaciones.
-                </div>
-              </div>
+            <div className="flex items-center gap-1 bg-[#060709] p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setRolesViewTab('MATRIX')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
+                  rolesViewTab === 'MATRIX'
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Matriz de Permisos</span>
+              </button>
+              <button
+                onClick={() => setRolesViewTab('ASSIGNMENTS')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
+                  rolesViewTab === 'ASSIGNMENTS'
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <UserCog className="w-3.5 h-3.5" />
+                <span>Asignación de Roles ({employees.length})</span>
+              </button>
+              <button
+                onClick={() => setRolesViewTab('DEFINITIONS')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
+                  rolesViewTab === 'DEFINITIONS'
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Catálogo de 7 Roles</span>
+              </button>
             </div>
           </div>
+
+          {/* VIEW 1: RBAC PERMISSIONS MATRIX */}
+          {rolesViewTab === 'MATRIX' && (
+            <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-400" />
+                    <span>Matriz de Permisos por Módulo y Rol (RBAC)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Permisos de lectura, creación, modificación, aprobación por jerarquía y baja lógica.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400 font-medium">Filtrar por Rol:</span>
+                  <select
+                    value={selectedRoleForMatrix}
+                    onChange={(e) => setSelectedRoleForMatrix(e.target.value as any)}
+                    className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 font-semibold"
+                  >
+                    <option value="ALL">Todos los 7 Roles (Comparativa)</option>
+                    <option value="ADMIN_GENERAL">1. Administrador General (ADMIN_GENERAL)</option>
+                    <option value="HR_ADMIN">2. Administrador RRHH (HR_ADMIN / JEFE_RRHH)</option>
+                    <option value="DIRECTOR_GENERAL">3. Director General (DIRECTOR_GENERAL)</option>
+                    <option value="JEFE">4. Jefe Inmediato / Supervisor (JEFE)</option>
+                    <option value="CONTROL_ASISTENCIA">5. Control de Asistencia</option>
+                    <option value="VIGILANCIA">6. Vigilancia / Garita</option>
+                    <option value="TRABAJADOR">7. Trabajador Base (TRABAJADOR)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Matrix Table */}
+              <div className="overflow-x-auto border border-slate-800/80 rounded-lg">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
+                      <th className="p-3">Módulo / Función Institucional</th>
+                      <th className="p-3">Ámbito de Aplicación</th>
+                      <th className="p-3 text-center">VER (Lectura)</th>
+                      <th className="p-3 text-center">CREAR</th>
+                      <th className="p-3 text-center">EDITAR</th>
+                      <th className="p-3 text-center">APROBAR (VoBo)</th>
+                      <th className="p-3 text-center">ELIMINAR</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                    {[
+                      {
+                        module: '1. Dashboard Operativo',
+                        scope: 'Personal / Institucional según Rol',
+                        read: ['ALL'],
+                        create: [],
+                        edit: [],
+                        approve: [],
+                        delete: [],
+                      },
+                      {
+                        module: '2. Organización (Dependencias, Direcciones, Áreas, Cargos)',
+                        scope: 'Toda la Entidad DRAC',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        approve: ['ADMIN_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '3. Personal & Legajos (Directorio, Ficha, Asignaciones)',
+                        scope: 'Institucional / Por Área para Jefes',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        approve: ['ADMIN_GENERAL', 'JEFE_RRHH'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '4. Encargaturas Temporales (Delegación de Facultades)',
+                        scope: 'Jefaturas y Direcciones Subrogadas',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'DIRECTOR_GENERAL'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        approve: ['ADMIN_GENERAL', 'JEFE_RRHH', 'DIRECTOR_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '5. Horarios & Turnos Laborales',
+                        scope: 'Toda la Entidad DRAC',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        approve: ['ADMIN_GENERAL', 'JEFE_RRHH'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '6. Asistencia & Marcaciones Biométricas',
+                        scope: 'Propia (Trabajador) / Equipo (Jefe) / Global (RRHH)',
+                        read: ['ALL'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
+                        approve: ['ADMIN_GENERAL', 'JEFE_RRHH', 'CONTROL_ASISTENCIA'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '7. Biométricos ZKTeco & Sincronización PUSH',
+                        scope: 'Sede Central & Agencias Agrarias',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        approve: ['ADMIN_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '8. Papeletas de Salida & Comisiones',
+                        scope: 'Autoservicio (Trabajador) / VoBo 1° (Jefe) / VoBo 2° (RRHH)',
+                        read: ['ALL'],
+                        create: ['ALL'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        approve: ['JEFE', 'DIRECTOR_GENERAL', 'JEFE_RRHH', 'ADMIN_GENERAL', 'HR_ADMIN'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '9. Descanso Vacacional & Saldos',
+                        scope: 'Autoservicio (Trabajador) / VoBo (Jefe) / Autorización (RRHH)',
+                        read: ['ALL'],
+                        create: ['ALL'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        approve: ['JEFE', 'DIRECTOR_GENERAL', 'JEFE_RRHH', 'ADMIN_GENERAL', 'HR_ADMIN'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '10. Vigilancia & Garita Principal',
+                        scope: 'Control de Puerta Garita DRAC',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'VIGILANCIA', 'JEFE_RRHH'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'VIGILANCIA'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN', 'VIGILANCIA'],
+                        approve: ['ADMIN_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '11. Reportes Institucionales & Auditoría',
+                        scope: 'Área Propia (Jefe) / Institucional (RRHH & Director)',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'DIRECTOR_GENERAL', 'CONTROL_ASISTENCIA', 'JEFE'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH'],
+                        edit: ['ADMIN_GENERAL'],
+                        approve: ['ADMIN_GENERAL', 'DIRECTOR_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                      {
+                        module: '12. Administración de Usuarios, Roles & Seguridad',
+                        scope: 'Gobernanza Total del Sistema',
+                        read: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        create: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        edit: ['ADMIN_GENERAL', 'HR_ADMIN'],
+                        approve: ['ADMIN_GENERAL'],
+                        delete: ['ADMIN_GENERAL'],
+                      },
+                    ].map((row, idx) => {
+                      const checkAllowed = (list: string[]) => {
+                        if (list.includes('ALL')) return true;
+                        if (selectedRoleForMatrix === 'ALL') return list.length > 0;
+                        return list.includes(selectedRoleForMatrix);
+                      };
+
+                      return (
+                        <tr key={idx} className="hover:bg-slate-900/30 transition-colors">
+                          <td className="p-3 font-semibold text-white">
+                            {row.module}
+                          </td>
+                          <td className="p-3 text-slate-400 font-mono text-[11px]">
+                            {row.scope}
+                          </td>
+                          <td className="p-3 text-center">
+                            {checkAllowed(row.read) ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/80 text-emerald-300 border border-emerald-800/50">
+                                <Check className="w-3 h-3 mr-0.5" /> VER
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {checkAllowed(row.create) ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950/80 text-indigo-300 border border-indigo-800/50">
+                                <Check className="w-3 h-3 mr-0.5" /> CREAR
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {checkAllowed(row.edit) ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/80 text-amber-300 border border-amber-800/50">
+                                <Check className="w-3 h-3 mr-0.5" /> EDITAR
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {checkAllowed(row.approve) ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 text-purple-300 border border-purple-800/50">
+                                <Check className="w-3 h-3 mr-0.5" /> VoBo
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {checkAllowed(row.delete) ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-950/80 text-rose-300 border border-rose-800/50">
+                                <Check className="w-3 h-3 mr-0.5" /> BAJA
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl text-xs text-slate-300 space-y-1">
+                <div className="font-bold text-white flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-amber-400" />
+                  <span>Principio Institucional de Acumulación y Encargaturas Temporales:</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Todo servidor público registrado en la entidad conserva el rol base <strong className="text-slate-200 font-semibold">TRABAJADOR</strong> para sus gestiones personales. Cuando un trabajador asume una <strong className="text-indigo-300 font-semibold">Encargatura Temporal</strong> mediante documento oficial, el sistema le habilita automáticamente las facultades de aprobación del cargo encargado durante su período de vigencia sin alterar de forma permanente su rol asignado en base de datos.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW 2: USER ROLES ASSIGNMENT */}
+          {rolesViewTab === 'ASSIGNMENTS' && (
+            <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                    <UserCog className="w-4 h-4 text-indigo-400" />
+                    <span>Asignación de Roles a Servidores Públicos</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Configure el rol funcional principal para cada trabajador registrado en el sistema DRAC.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    placeholder="🔍 Buscar por DNI, nombre, cargo o área..."
+                    value={roleAssignSearch}
+                    onChange={(e) => {
+                      setRoleAssignSearch(e.target.value);
+                      setRoleAssignPage(1);
+                    }}
+                    className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 min-w-[240px]"
+                  />
+
+                  <select
+                    value={roleAssignFilter}
+                    onChange={(e) => {
+                      setRoleAssignFilter(e.target.value);
+                      setRoleAssignPage(1);
+                    }}
+                    className="px-3 py-1.5 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none"
+                  >
+                    <option value="ALL">Todos los Roles</option>
+                    <option value="ADMIN_GENERAL">ADMIN_GENERAL</option>
+                    <option value="HR_ADMIN">HR_ADMIN / JEFE_RRHH</option>
+                    <option value="DIRECTOR_GENERAL">DIRECTOR_GENERAL</option>
+                    <option value="JEFE">JEFE / SUPERVISOR</option>
+                    <option value="CONTROL_ASISTENCIA">CONTROL_ASISTENCIA</option>
+                    <option value="VIGILANCIA">VIGILANCIA</option>
+                    <option value="TRABAJADOR">TRABAJADOR</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Filtered Employees for Role Assignment */}
+              {(() => {
+                const filtered = employees.filter((emp) => {
+                  if (roleAssignSearch.trim()) {
+                    const term = roleAssignSearch.toLowerCase().trim();
+                    const matchDni = emp.dni.toLowerCase().includes(term);
+                    const matchName = `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(term);
+                    const matchCargo = (emp.cargo_name || '').toLowerCase().includes(term);
+                    const matchArea = (emp.area_name || '').toLowerCase().includes(term);
+                    if (!matchDni && !matchName && !matchCargo && !matchArea) return false;
+                  }
+                  if (roleAssignFilter !== 'ALL' && emp.role !== roleAssignFilter) return false;
+                  return true;
+                });
+
+                const paginated = filtered.slice(
+                  (roleAssignPage - 1) * roleAssignPageSize,
+                  roleAssignPage * roleAssignPageSize
+                );
+
+                if (filtered.length === 0) {
+                  return (
+                    <EmptyState
+                      icon={UserCog}
+                      title="No se encontraron servidores públicos"
+                      description="Modifique los filtros de búsqueda para localizar al personal."
+                      isFiltered={Boolean(roleAssignSearch) || roleAssignFilter !== 'ALL'}
+                      onAction={() => {
+                        setRoleAssignSearch('');
+                        setRoleAssignFilter('ALL');
+                        setRoleAssignPage(1);
+                      }}
+                    />
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <div className="overflow-x-auto border border-slate-800/80 rounded-lg">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
+                            <th className="p-3">Servidor Público</th>
+                            <th className="p-3">DNI / Usuario</th>
+                            <th className="p-3">Cargo Institucional</th>
+                            <th className="p-3">Área / Dependencia</th>
+                            <th className="p-3">Roles Habilitados</th>
+                            <th className="p-3">Estado Cuenta</th>
+                            <th className="p-3 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                          {paginated.map((emp) => {
+                            const isBaseWorker = emp.role === 'TRABAJADOR';
+
+                            return (
+                              <tr key={emp.id} className="hover:bg-slate-900/30 transition-colors">
+                                <td className="p-3">
+                                  <div className="font-bold text-white flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-indigo-400">
+                                      {emp.first_name[0]}{emp.last_name[0]}
+                                    </div>
+                                    <span>{emp.first_name} {emp.last_name}</span>
+                                  </div>
+                                </td>
+                                <td className="p-3 font-mono text-[11px]">
+                                  <div className="text-indigo-300 font-bold">{emp.dni}</div>
+                                  <div className="text-[10px] text-slate-500">@{emp.username || emp.dni}</div>
+                                </td>
+                                <td className="p-3 text-slate-200">
+                                  {emp.cargo_name || 'Servidor Público'}
+                                </td>
+                                <td className="p-3 text-slate-400">
+                                  <div>{emp.area_name || emp.dependencia_name || 'Sede Central'}</div>
+                                  <div className="text-[10px] text-slate-500 font-mono">{emp.dependencia_name}</div>
+                                </td>
+                                <td className="p-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                      TRABAJADOR (Base)
+                                    </span>
+                                    {!isBaseWorker && (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800/60">
+                                        {emp.role}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-3">
+                                  {emp.active !== false ? (
+                                    <span className="px-2 py-0.5 text-[10px] rounded bg-emerald-950/70 border border-emerald-800/50 text-emerald-300 font-semibold">
+                                      ● ACTIVO
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 text-[10px] rounded bg-rose-950/70 border border-rose-800/50 text-rose-300 font-semibold">
+                                      ● INACTIVO
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRoleModalEmp(emp);
+                                        setSelectedAssignedRole(emp.role);
+                                      }}
+                                      className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded border border-indigo-500/30 transition-colors flex items-center gap-1"
+                                      title="Modificar asignación de rol"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>Modificar Rol</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <DataTablePagination
+                      currentPage={roleAssignPage}
+                      pageSize={roleAssignPageSize}
+                      totalItems={filtered.length}
+                      onPageChange={setRoleAssignPage}
+                      onPageSizeChange={(newSize) => {
+                        setRoleAssignPageSize(newSize);
+                        setRoleAssignPage(1);
+                      }}
+                      pageSizeOptions={[10, 20, 50]}
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* VIEW 3: 7 ROLE DEFINITIONS */}
+          {rolesViewTab === 'DEFINITIONS' && (
+            <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-5 space-y-5">
+              <div className="border-b border-slate-800 pb-3">
+                <h2 className="font-bold text-sm text-white flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-400" />
+                  <span>Matriz General de Roles y Ámbitos Organizacionales (DRAC)</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Políticas institucionales de mínimo privilegio y delimitación de alcance para la Dirección Regional de Agricultura Cajamarca.
+                </p>
+              </div>
+
+              {/* Cards for 7 roles */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-indigo-600 text-white font-bold rounded-lg">
+                      1. Administrador General
+                    </span>
+                    <span className="text-[10px] text-indigo-400 font-mono font-bold">ADMIN_GENERAL</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                    <div><strong className="text-white">Alcance:</strong> Módulos, usuarios, roles, parámetros, biométricos ZKTeco y auditoría.</div>
+                    <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ⚠️ Restricción: No modifica marcaciones biométricas crudas ni registros históricos cerrados sin auditoría.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-slate-700 text-white font-bold rounded-lg">
+                      2. Trabajador Base
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono font-bold">TRABAJADOR</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Información Personal</div>
+                    <div><strong className="text-white">Alcance:</strong> Consulta asistencia propia, solicita papeletas de salida y consulta saldo vacacional.</div>
+                    <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ✓ Acceso autoservicio con firma digital.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-amber-600 text-white font-bold rounded-lg">
+                      3. Jefe / Responsable
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold">JEFE</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Su Dirección / Área</div>
+                    <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel de papeletas del personal de su unidad y consulta asistencia de equipo.</div>
+                    <div className="text-amber-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      🚫 Restricción: No aprueba papeletas de personal de otras Direcciones.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-blue-600 text-white font-bold rounded-lg">
+                      4. Jefe de Recursos Humanos
+                    </span>
+                    <span className="text-[10px] text-blue-400 font-mono font-bold">JEFE_RRHH</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                    <div><strong className="text-white">Alcance:</strong> VoBo 2º nivel de papeletas, gestión global de personal, legajos y aprobaciones.</div>
+                    <div className="text-blue-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ✓ Autorización institucional final.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-emerald-600 text-white font-bold rounded-lg">
+                      5. Vigilancia / Garita
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold">VIGILANCIA</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Garita Principal DRAC</div>
+                    <div><strong className="text-white">Alcance:</strong> Registro de horas reales de salida y retorno de papeletas autorizadas del día.</div>
+                    <div className="text-emerald-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ✓ Soporta "Salida sin retorno" para comisiones finales.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-purple-600 text-white font-bold rounded-lg">
+                      6. Director General
+                    </span>
+                    <span className="text-[10px] text-purple-400 font-mono font-bold">DIRECTOR_GENERAL</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Toda la Entidad / Directivos</div>
+                    <div><strong className="text-white">Alcance:</strong> VoBo 1º nivel a papeletas de Directores Regionales y Jefes de Órganos.</div>
+                    <div className="text-purple-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ✓ Nivel de aprobación superior jerárquico.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="px-2.5 py-1 text-[11px] bg-cyan-600 text-white font-bold rounded-lg">
+                      7. Control de Asistencia
+                    </span>
+                    <span className="text-[10px] text-cyan-400 font-mono font-bold">CONTROL_ASISTENCIA</span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 space-y-1">
+                    <div><strong className="text-white">Ámbito:</strong> Toda la Entidad</div>
+                    <div><strong className="text-white">Alcance:</strong> Monitoreo de tardanzas, faltas, horas trabajadas y asignación de vacaciones.</div>
+                    <div className="text-cyan-400 font-semibold text-[10px] pt-1 border-t border-slate-800/80">
+                      ✓ Control operativo y regularizaciones.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ROLE MODIFICATION MODAL */}
+          {roleModalEmp && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <UserCog className="w-5 h-5 text-indigo-400" />
+                    <h3 className="font-bold text-sm text-white">
+                      Modificar Rol Funcional del Servidor
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setRoleModalEmp(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800 space-y-1">
+                  <div className="font-bold text-white text-xs">
+                    {roleModalEmp.first_name} {roleModalEmp.last_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    DNI: <span className="text-indigo-300 font-mono">{roleModalEmp.dni}</span> | Cargo: {roleModalEmp.cargo_name}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Área: {roleModalEmp.area_name || roleModalEmp.dependencia_name}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Seleccionar Rol Funcional Principal:
+                  </label>
+                  <select
+                    value={selectedAssignedRole}
+                    onChange={(e) => setSelectedAssignedRole(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 font-semibold"
+                  >
+                    <option value="TRABAJADOR">TRABAJADOR (Servidor Base)</option>
+                    <option value="JEFE">JEFE (Responsable / Jefe de Área)</option>
+                    <option value="HR_ADMIN">HR_ADMIN (Jefe de Recursos Humanos)</option>
+                    <option value="DIRECTOR_GENERAL">DIRECTOR_GENERAL (Director Regional)</option>
+                    <option value="CONTROL_ASISTENCIA">CONTROL_ASISTENCIA (Operador de Asistencia)</option>
+                    <option value="VIGILANCIA">VIGILANCIA (Garita Principal)</option>
+                    <option value="ADMIN_GENERAL">ADMIN_GENERAL (Administrador del Sistema)</option>
+                  </select>
+                </div>
+
+                <div className="p-3 bg-amber-950/40 border border-amber-800/40 rounded-lg text-[11px] text-amber-300 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" />
+                    <span>Nota sobre Encargaturas Temporales:</span>
+                  </div>
+                  <p className="text-[10px] text-amber-200/90 leading-relaxed">
+                    Si este trabajador asume transitoriamente una jefatura, regístrela en el módulo <strong>Encargaturas Temporales</strong> con su resolución de sustento. El sistema transferirá las funciones automáticamente durante la vigencia sin necesidad de modificar permanentemente su rol base aquí.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setRoleModalEmp(null)}
+                    className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onEditEmployee && roleModalEmp) {
+                        const updated: Employee = {
+                          ...roleModalEmp,
+                          role: selectedAssignedRole as RoleType,
+                        };
+                        onEditEmployee(updated);
+                        setAdminToast(`Rol de ${roleModalEmp.first_name} ${roleModalEmp.last_name} actualizado a ${selectedAssignedRole}.`);
+                        setRoleModalEmp(null);
+                      }
+                    }}
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors"
+                  >
+                    Guardar Asignación
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
