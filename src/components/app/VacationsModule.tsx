@@ -55,6 +55,7 @@ import {
   filterWorkersForVacation,
   WorkerAdvancedFilterCriteria,
 } from '../../utils/vacationEngine';
+import { isWorkerInBossScope } from '../../utils/encargaturaUtils';
 
 interface VacationsModuleProps {
   activeView?: string;
@@ -102,6 +103,19 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     if (currentUser) return currentUser;
     return employees.find((e) => e.dni === activeUserDni) || employees[0] || null;
   }, [currentUser, employees, activeUserDni]);
+
+  const isEditorRole =
+    activeRole === 'HR_ADMIN' ||
+    activeRole === 'ADMIN_GENERAL' ||
+    activeRole === 'JEFE_RRHH' ||
+    activeRole === 'CONTROL_ASISTENCIA';
+
+  const isBossRole =
+    activeRole === 'JEFE' ||
+    activeRole === 'SUPERVISOR' ||
+    activeRole === 'DIRECTOR_GENERAL' ||
+    activeRole === 'ADMIN_GENERAL' ||
+    activeRole === 'JEFE_RRHH';
 
   // Tab State: 'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'
   const [activeTab, setActiveTab] = useState<'all' | 'boss_approvals' | 'hr_approvals' | 'my_vacations'>(() => {
@@ -398,8 +412,28 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
 
   // PENDING REQUESTS FOR IMMEDIATE BOSS TRAY
   const pendingBossRequests = useMemo(() => {
-    return vacaciones.filter((v) => v.status === 'SOLICITADA');
-  }, [vacaciones]);
+    return vacaciones.filter((v) => {
+      if (v.status !== 'SOLICITADA') return false;
+      // Admins and HR leadership can see all
+      if (
+        isEditorRole ||
+        activeRole === 'ADMIN_GENERAL' ||
+        activeRole === 'HR_ADMIN' ||
+        activeRole === 'JEFE_RRHH'
+      ) {
+        return true;
+      }
+      // For immediate boss or encargado, filter to requests within authority/scope
+      const requesterEmp = employees.find((e) => e.dni === v.employee_dni || e.id === v.employee_id);
+      if (!requesterEmp) return false;
+      return isWorkerInBossScope({
+        bossEmployee: activeEmp,
+        workerEmployee: requesterEmp,
+        allEncargaturas: encargaturas,
+        currentDate: v.start_date,
+      });
+    });
+  }, [vacaciones, isEditorRole, activeRole, employees, activeEmp, encargaturas]);
 
   // PENDING FOR HR TRAY
   const pendingHRRequests = useMemo(() => {
@@ -579,6 +613,11 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       return;
     }
 
+    if (!bossCheck.canApprove) {
+      alert(`⚠️ OPERACIÓN DENEGADA:\n\n${bossCheck.reason}`);
+      return;
+    }
+
     const bossName = activeEmp ? `${activeEmp.first_name} ${activeEmp.last_name}` : 'Jefe Inmediato DRAC';
     const bossFunction = bossCheck.isEncargado ? 'Jefe Encargado' : 'Jefe Titular';
 
@@ -720,19 +759,6 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       });
     }
   };
-
-  const isEditorRole =
-    activeRole === 'HR_ADMIN' ||
-    activeRole === 'ADMIN_GENERAL' ||
-    activeRole === 'JEFE_RRHH' ||
-    activeRole === 'CONTROL_ASISTENCIA';
-
-  const isBossRole =
-    activeRole === 'JEFE' ||
-    activeRole === 'SUPERVISOR' ||
-    activeRole === 'DIRECTOR_GENERAL' ||
-    activeRole === 'ADMIN_GENERAL' ||
-    activeRole === 'JEFE_RRHH';
 
   // Helper render status badge
   const renderStatusBadge = (status: VacacionStatus) => {

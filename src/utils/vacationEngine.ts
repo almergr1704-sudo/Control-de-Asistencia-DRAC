@@ -7,7 +7,13 @@ import {
   VacacionAudit,
   RoleType,
 } from '../types';
-import { computeEncargaturaStatus, getActiveEncargaturasForUser, getEmployeeAssignedRoles } from './encargaturaUtils';
+import {
+  computeEncargaturaStatus,
+  getActiveEncargaturasForUser,
+  getActiveEncargaturaForUnit,
+  getEmployeeAssignedRoles,
+  canApproveAsBoss,
+} from './encargaturaUtils';
 
 /**
  * Calcula los días calendario computables entre dos fechas (ambas inclusive)
@@ -205,78 +211,29 @@ export function canUserApproveVacation(params: {
     };
   }
 
-  // 1. Revisar Encargaturas Temporales Vigentes del aprobador
-  const activeEncargaturas = getActiveEncargaturasForUser(currentUserDni, allEncargaturas, targetDate);
-  for (const enc of activeEncargaturas) {
-    let matches = false;
-    if (enc.area_id && targetRequester.area_id === enc.area_id) matches = true;
-    if (enc.direccion_organo_id && targetRequester.direccion_organo_id === enc.direccion_organo_id) matches = true;
-    if (enc.dependencia_id && targetRequester.dependencia_id === enc.dependencia_id) matches = true;
-
-    if (matches) {
-      return {
-        canApprove: true,
-        isSelfApproval: false,
-        isEncargado: true,
-        delegationInfo: {
-          is_encargado: true,
-          encargatura_id: enc.id,
-          unidad_encargada: enc.cargo_encargado,
-          documento: `${enc.document_type} N.º ${enc.document_number}`,
-          vigencia: `${enc.start_date} al ${enc.end_date}`,
-        },
-        reason: `Jefe Encargado mediante ${enc.document_type} N.º ${enc.document_number}`,
-      };
-    }
-  }
-
-  // 2. Revisar si es Jefe Titular / Supervisor del solicitante
-  if (approverEmp) {
-    const roles = getEmployeeAssignedRoles(approverEmp);
-    const hasJefeRole = roles.includes('JEFE') || roles.includes('SUPERVISOR') || roles.includes('DIRECTOR_GENERAL');
-
-    if (hasJefeRole) {
-      // Supervisor directo asignado
-      if (targetRequester.supervisor_id === approverEmp.id || targetRequester.supervisor_id === approverEmp.dni) {
-        return {
-          canApprove: true,
-          isSelfApproval: false,
-          isEncargado: false,
-          reason: 'Jefe Inmediato Titular Directo',
-        };
-      }
-
-      // Director de la Dirección u Órgano
-      if (
-        approverEmp.is_jefe_director &&
-        approverEmp.direccion_organo_id &&
-        approverEmp.direccion_organo_id === targetRequester.direccion_organo_id
-      ) {
-        return {
-          canApprove: true,
-          isSelfApproval: false,
-          isEncargado: false,
-          reason: 'Director Titular de la Unidad Orgánica',
-        };
-      }
-
-      // Jefe de Área
-      if (approverEmp.area_id && approverEmp.area_id === targetRequester.area_id) {
-        return {
-          canApprove: true,
-          isSelfApproval: false,
-          isEncargado: false,
-          reason: 'Jefe Inmediato de Área',
-        };
-      }
-    }
-  }
+  // Delegar en la lógica centralizada de canApproveAsBoss
+  const bossEval = canApproveAsBoss({
+    bossDni: currentUserDni,
+    bossEmployee: approverEmp,
+    requesterEmployee: targetRequester,
+    allEncargaturas,
+    currentDate: targetDate,
+  });
 
   return {
-    canApprove: false,
+    canApprove: bossEval.canApprove,
     isSelfApproval: false,
-    isEncargado: false,
-    reason: 'El trabajador no se encuentra bajo su ámbito orgánico o supervisión directa.',
+    isEncargado: bossEval.isEncargado,
+    delegationInfo: bossEval.isEncargado && bossEval.activeEncargatura
+      ? {
+          is_encargado: true,
+          encargatura_id: bossEval.activeEncargatura.id,
+          unidad_encargada: bossEval.activeEncargatura.cargo_encargado,
+          documento: `${bossEval.activeEncargatura.document_type} N.º ${bossEval.activeEncargatura.document_number}`,
+          vigencia: `${bossEval.activeEncargatura.start_date} al ${bossEval.activeEncargatura.end_date}`,
+        }
+      : undefined,
+    reason: bossEval.reason,
   };
 }
 
