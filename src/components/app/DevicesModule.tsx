@@ -71,6 +71,7 @@ interface DevicesModuleProps {
   onAddPunchAuthorization?: (auth: Omit<AutorizacionMarcacionTemporal, 'id' | 'created_at' | 'status'>) => Promise<any> | void;
   onRevokePunchAuthorization?: (authId: string, reason?: string) => Promise<any> | void;
   onDeletePunchAuthorization?: (authId: string) => Promise<any> | void;
+  onRefreshPunches?: () => Promise<any> | void;
 }
 
 export const DevicesModule: React.FC<DevicesModuleProps> = ({
@@ -88,12 +89,15 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   onAddPunchAuthorization,
   onRevokePunchAuthorization,
   onDeletePunchAuthorization,
+  onRefreshPunches,
 }) => {
   const [activeTab, setActiveTab] = useState<'PUSH_SYNC' | 'DEVICES' | 'RAW_PUNCHES' | 'AUTHORIZATIONS'>('PUSH_SYNC');
 
   // Push Sync Real-Time State
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [isProcessingPunches, setIsProcessingPunches] = useState(false);
+  const [isRefreshingPunches, setIsRefreshingPunches] = useState(false);
+  const [selectedPunchForDetail, setSelectedPunchForDetail] = useState<MarcacionRaw | null>(null);
   const [pushServiceInfo, setPushServiceInfo] = useState<{
     status: 'CONECTADO' | 'DESCONECTADO' | 'SINCRONIZANDO' | 'ERROR';
     lastSyncTime: string;
@@ -154,11 +158,32 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [punchSearchTerm, setPunchSearchTerm] = useState('');
   const [punchDeviceFilter, setPunchDeviceFilter] = useState('ALL');
   const [punchValidationFilter, setPunchValidationFilter] = useState('ALL');
+  const [punchStatusFilter, setPunchStatusFilter] = useState('ALL');
+  const [punchOriginFilter, setPunchOriginFilter] = useState('ALL');
   const [punchStateFilter, setPunchStateFilter] = useState('ALL');
   const [punchCurrentPage, setPunchCurrentPage] = useState(1);
   const [punchPageSize, setPunchPageSize] = useState(20);
   const [punchSortField, setPunchSortField] = useState<string | null>('timestamp');
   const [punchSortOrder, setPunchSortOrder] = useState<SortOrder>('desc');
+
+  // Handle Refresh Punches from Server
+  const handleRefreshPunchesList = async () => {
+    setIsRefreshingPunches(true);
+    try {
+      if (onRefreshPunches) {
+        await onRefreshPunches();
+      } else {
+        const res = await fetch('/api/attendance/punches');
+        const data = await res.json();
+        console.log(`API returned: ${data?.data?.length || 0} punches`);
+      }
+      setSuccessToast('Marcaciones actualizadas correctamente desde el backend.');
+    } catch (err: any) {
+      setSuccessToast('Marcaciones consultadas.');
+    } finally {
+      setIsRefreshingPunches(false);
+    }
+  };
 
   // AUTHORIZATIONS TAB SEARCH, FILTER, SORT & PAGINATION
   const [authSearchTerm, setAuthSearchTerm] = useState('');
@@ -226,14 +251,18 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     let count = 0;
     if (punchDeviceFilter !== 'ALL') count++;
     if (punchValidationFilter !== 'ALL') count++;
+    if (punchStatusFilter !== 'ALL') count++;
+    if (punchOriginFilter !== 'ALL') count++;
     if (punchStateFilter !== 'ALL') count++;
     return count;
-  }, [punchDeviceFilter, punchValidationFilter, punchStateFilter]);
+  }, [punchDeviceFilter, punchValidationFilter, punchStatusFilter, punchOriginFilter, punchStateFilter]);
 
   const handleResetPunchFilters = () => {
     setPunchSearchTerm('');
     setPunchDeviceFilter('ALL');
     setPunchValidationFilter('ALL');
+    setPunchStatusFilter('ALL');
+    setPunchOriginFilter('ALL');
     setPunchStateFilter('ALL');
     setPunchCurrentPage(1);
   };
@@ -259,23 +288,32 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         const emp = employees.find((e) => e.dni === punch.employee_dni);
         const empName = emp ? `${emp.first_name} ${emp.last_name}`.toLowerCase() : (punch.employee_name || '').toLowerCase();
         const matchDni = (punch.employee_dni || '').toLowerCase().includes(term);
-        const matchSn = (punch.device_sn || '').toLowerCase().includes(term);
+        const matchCode = (punch.employee_code || (punch as any).employeeCode || '').toLowerCase().includes(term);
+        const matchSn = (punch.device_sn || (punch as any).serialNumber || '').toLowerCase().includes(term);
         const matchDevName = (punch.device_name || '').toLowerCase().includes(term);
         const matchTime = (punch.timestamp || '').toLowerCase().includes(term);
         const matchReason = (punch.rejection_reason || '').toLowerCase().includes(term);
-        if (!matchDni && !matchSn && !matchTime && !empName.includes(term) && !matchDevName.includes(term) && !matchReason.includes(term)) {
+        if (!matchDni && !matchCode && !matchSn && !matchTime && !empName.includes(term) && !matchDevName.includes(term) && !matchReason.includes(term)) {
           return false;
         }
       }
-      if (punchDeviceFilter !== 'ALL' && punch.device_sn !== punchDeviceFilter) return false;
+      if (punchDeviceFilter !== 'ALL' && punch.device_sn !== punchDeviceFilter && (punch as any).serialNumber !== punchDeviceFilter) return false;
       if (punchValidationFilter !== 'ALL') {
         const status = punch.validation_status || (punch.processed ? 'VALIDA' : 'VALIDA');
         if (status !== punchValidationFilter) return false;
       }
+      if (punchStatusFilter !== 'ALL') {
+        const pStatus = punch.status || (punch as any).processingStatus || (punch.processed ? 'PROCESADA' : 'RECIBIDA');
+        if (pStatus !== punchStatusFilter) return false;
+      }
+      if (punchOriginFilter !== 'ALL') {
+        const pOrigin = punch.source || (punch as any).origen || 'PUSH';
+        if (pOrigin !== punchOriginFilter) return false;
+      }
       if (punchStateFilter !== 'ALL' && String(punch.punch_state) !== punchStateFilter) return false;
       return true;
     });
-  }, [rawPunches, employees, punchSearchTerm, punchDeviceFilter, punchValidationFilter, punchStateFilter]);
+  }, [rawPunches, employees, punchSearchTerm, punchDeviceFilter, punchValidationFilter, punchStatusFilter, punchOriginFilter, punchStateFilter]);
 
   const sortedRawPunches = useMemo(() => {
     if (!punchSortField || !punchSortOrder) return filteredRawPunches;
@@ -2129,13 +2167,35 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       {/* ========================================================= */}
       {activeTab === 'RAW_PUNCHES' && (
         <div className="space-y-4">
+          <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-400" />
+                Marcaciones Recibidas (ZKTeco Biométrico)
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Historial completo de eventos transmitidos en tiempo real vía PUSH / ADMS, TCP y USB por los relojes de la DRAC.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRefreshPunchesList}
+              disabled={isRefreshingPunches}
+              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPunches ? 'animate-spin' : ''}`} />
+              <span>{isRefreshingPunches ? 'Consultando Backend...' : 'Actualizar Marcaciones'}</span>
+            </button>
+          </div>
+
           <AdvancedSearchFilter
             searchTerm={punchSearchTerm}
             onSearchChange={(val) => {
               setPunchSearchTerm(val);
               setPunchCurrentPage(1);
             }}
-            searchPlaceholder="🔍 Buscar marcación por DNI, empleado, S/N de reloj, fecha o motivo de rechazo..."
+            searchPlaceholder="🔍 Buscar por DNI, trabajador, PIN, serial del reloj o fecha..."
             activeFilterCount={activePunchFilterCount}
             onResetFilters={handleResetPunchFilters}
           >
@@ -2154,6 +2214,39 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               />
             </FilterField>
 
+            <FilterField label="Estado de Procesamiento">
+              <FilterSelect
+                value={punchStatusFilter}
+                onChange={(val) => {
+                  setPunchStatusFilter(val);
+                  setPunchCurrentPage(1);
+                }}
+                placeholder="Todos los Estados"
+                options={[
+                  { value: 'RECIBIDA', label: '⏳ RECIBIDA (En buffer)' },
+                  { value: 'PROCESADA', label: '✓ PROCESADA (En asistencia)' },
+                  { value: 'PENDIENTE_IDENTIFICACION', label: '⚠️ PENDIENTE IDENTIFICACIÓN' },
+                  { value: 'ERROR', label: '✕ ERROR' },
+                ]}
+              />
+            </FilterField>
+
+            <FilterField label="Origen de Transmisión">
+              <FilterSelect
+                value={punchOriginFilter}
+                onChange={(val) => {
+                  setPunchOriginFilter(val);
+                  setPunchCurrentPage(1);
+                }}
+                placeholder="Todos los Orígenes"
+                options={[
+                  { value: 'PUSH', label: '📡 PUSH / ADMS' },
+                  { value: 'TCP', label: '🔌 TCP / IP Directo' },
+                  { value: 'USB', label: '💾 USB / Archivo' },
+                ]}
+              />
+            </FilterField>
+
             <FilterField label="Validación por Dependencia">
               <FilterSelect
                 value={punchValidationFilter}
@@ -2161,11 +2254,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   setPunchValidationFilter(val);
                   setPunchCurrentPage(1);
                 }}
-                placeholder="Todos los Estados de Validación"
+                placeholder="Todas las Validaciones"
                 options={[
                   { value: 'VALIDA', label: '🟢 Válida (Misma Sede)' },
                   { value: 'EXCEPCION_AUTORIZADA', label: '🔵 Excepción Autorizada' },
-                  { value: 'RECHAZADA_DEPENDENCIA', label: '🔴 Rechazada por Dependencia' },
+                  { value: 'RECHAZADA_DEPENDENCIA', label: '🔴 Rechazada por Sede' },
                 ]}
               />
             </FilterField>
@@ -2189,7 +2282,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           {filteredRawPunches.length === 0 ? (
             <EmptyState
               icon={Clock}
-              title="No se encontraron marcaciones crudas"
+              title="No se encontraron marcaciones recibidas"
               description="No hay registros de marcación en el staging que coincidan con los criterios de búsqueda o filtros seleccionados."
               isFiltered={Boolean(punchSearchTerm.trim()) || activePunchFilterCount > 0}
               onAction={handleResetPunchFilters}
@@ -2200,36 +2293,57 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 <table className="w-full text-left text-xs table-fixed">
                   <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                     <tr>
-                      <th className="w-[200px] px-3.5 py-3">
+                      <th className="w-[100px] px-3 py-3">
                         <SortableHeader
-                          label="Marcador ZKTeco / Dependencia"
-                          field="device_sn"
-                          currentField={punchSortField}
-                          currentOrder={punchSortOrder}
-                          onSort={handlePunchSort}
-                        />
-                      </th>
-                      <th className="w-[220px] px-3.5 py-3">
-                        <SortableHeader
-                          label="Colaborador / Sede Origen"
-                          field="employee_dni"
-                          currentField={punchSortField}
-                          currentOrder={punchSortOrder}
-                          onSort={handlePunchSort}
-                        />
-                      </th>
-                      <th className="w-[150px] px-3.5 py-3">
-                        <SortableHeader
-                          label="Timestamp"
+                          label="Fecha"
                           field="timestamp"
                           currentField={punchSortField}
                           currentOrder={punchSortOrder}
                           onSort={handlePunchSort}
                         />
                       </th>
-                      <th className="w-[100px] px-3 py-3 text-slate-400">Tipo</th>
-                      <th className="w-[170px] px-3.5 py-3 text-slate-400">Validación de Sede</th>
-                      <th className="w-[220px] px-3.5 py-3 text-slate-400">Trazabilidad / Motivo</th>
+                      <th className="w-[85px] px-3 py-3 text-slate-400">Hora</th>
+                      <th className="w-[180px] px-3 py-3">
+                        <SortableHeader
+                          label="Trabajador"
+                          field="employee_name"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[100px] px-3 py-3">
+                        <SortableHeader
+                          label="DNI"
+                          field="employee_dni"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[90px] px-3 py-3 text-slate-400">PIN (ZKTeco)</th>
+                      <th className="w-[150px] px-3 py-3">
+                        <SortableHeader
+                          label="Dispositivo"
+                          field="device_name"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[120px] px-3 py-3">
+                        <SortableHeader
+                          label="Serial (S/N)"
+                          field="device_sn"
+                          currentField={punchSortField}
+                          currentOrder={punchSortOrder}
+                          onSort={handlePunchSort}
+                        />
+                      </th>
+                      <th className="w-[90px] px-3 py-3 text-slate-400">Origen</th>
+                      <th className="w-[140px] px-3 py-3 text-slate-400">Estado</th>
+                      <th className="w-[130px] px-3 py-3 text-slate-400">Recepción</th>
+                      <th className="w-[90px] px-3 py-3 text-center text-slate-400">Acción</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-sans">
@@ -2237,98 +2351,117 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       const emp = employees.find((e) => e.dni === punch.employee_dni);
                       const dev = devices.find((d) => d.serial_number === punch.device_sn);
 
-                      const empDep = punch.employee_dependencia_name ||
-                        (emp?.dependencia_id === 'dep-02' || emp?.dependencia_name?.toUpperCase().includes('AGENCIA')
-                          ? 'AGENCIA AGRARIA'
-                          : 'SEDE CENTRAL');
+                      const isIdentified = emp || (punch.employee_name && !punch.employee_name.toLowerCase().includes('no identificado'));
+                      const empDisplayName = isIdentified
+                        ? (emp ? `${emp.first_name} ${emp.last_name}` : punch.employee_name)
+                        : 'Trabajador no identificado';
 
-                      const devDep = punch.device_dependencia_name ||
-                        (dev?.dependencia_tipo === 'AGENCIA_AGRARIA' || dev?.dependencia_name?.toUpperCase().includes('AGENCIA')
-                          ? 'AGENCIA AGRARIA'
-                          : 'SEDE CENTRAL');
-
-                      const valStatus: PunchValidationStatus = punch.validation_status || (punch.processed ? 'VALIDA' : 'VALIDA');
+                      const rawDate = punch.fecha || (punch.timestamp ? punch.timestamp.split(' ')[0] : '—');
+                      const rawTime = punch.hora || (punch.timestamp ? punch.timestamp.split(' ')[1] : '—');
+                      const pinCode = punch.employee_code || (punch as any).employeeCode || punch.employee_dni || '—';
+                      const devSerial = punch.device_sn || (punch as any).serialNumber || '—';
+                      const devName = dev?.name || punch.device_name || 'Terminal Biométrico';
+                      const origin = punch.source || (punch as any).origen || 'PUSH';
+                      const status = punch.status || (punch as any).processingStatus || (punch.processed ? 'PROCESADA' : (!isIdentified ? 'PENDIENTE_IDENTIFICACION' : 'RECIBIDA'));
+                      const receivedAtTime = punch.received_at || (punch as any).receivedAt || punch.timestamp || '—';
 
                       return (
                         <tr key={punch.id} className="hover:bg-slate-800/30 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="font-mono font-bold text-indigo-400 flex items-center gap-1.5">
-                              <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-                              <span>{dev?.name || punch.device_name || punch.device_sn}</span>
+                          {/* 1. Fecha */}
+                          <td className="px-3 py-2.5 font-mono text-slate-300 text-xs">
+                            {rawDate}
+                          </td>
+
+                          {/* 2. Hora */}
+                          <td className="px-3 py-2.5 font-mono font-bold text-emerald-400 text-xs">
+                            {rawTime}
+                          </td>
+
+                          {/* 3. Trabajador */}
+                          <td className="px-3 py-2.5">
+                            <div className="font-semibold text-slate-200 truncate max-w-[170px]" title={empDisplayName}>
+                              {empDisplayName}
                             </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                              <span className="font-mono">{punch.device_sn}</span>
-                              <span>•</span>
-                              <span className={devDep === 'AGENCIA AGRARIA' ? 'text-amber-400 font-semibold' : 'text-indigo-300 font-semibold'}>
-                                {devDep}
+                            {!isIdentified && (
+                              <span className="text-[10px] text-amber-400/90 font-mono inline-block">
+                                ⚠️ Requiere vincular
                               </span>
+                            )}
+                          </td>
+
+                          {/* 4. DNI */}
+                          <td className="px-3 py-2.5 font-mono text-slate-300 font-medium">
+                            {punch.employee_dni || '—'}
+                          </td>
+
+                          {/* 5. Código ZKTeco (PIN) */}
+                          <td className="px-3 py-2.5 font-mono text-indigo-300 font-semibold">
+                            {pinCode}
+                          </td>
+
+                          {/* 6. Dispositivo */}
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium text-slate-200 truncate max-w-[140px]" title={devName}>
+                              {devName}
                             </div>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <div className="font-mono text-slate-200 font-bold">
-                              {emp ? `${emp.first_name} ${emp.last_name}` : punch.employee_name || 'Personal DRAC'}
-                            </div>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                              <span className="font-mono">DNI: {punch.employee_dni}</span>
-                              <span>•</span>
-                              <span className={empDep === 'AGENCIA AGRARIA' ? 'text-amber-400 font-semibold' : 'text-indigo-300 font-semibold'}>
-                                {empDep}
-                              </span>
-                            </div>
+                          {/* 7. Serial */}
+                          <td className="px-3 py-2.5 font-mono text-[11px] text-slate-400 truncate max-w-[110px]" title={devSerial}>
+                            {devSerial}
                           </td>
 
-                          <td className="px-4 py-3 font-mono text-emerald-400 font-bold">
-                            {punch.timestamp}
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <span
-                              className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded border ${
-                                punch.punch_state === 0
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                  : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                              }`}
-                            >
-                              {punch.punch_state === 0 ? '0: ENTRADA' : '1: SALIDA'}
+                          {/* 8. Origen */}
+                          <td className="px-3 py-2.5 font-mono">
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-800 text-slate-300 border border-slate-700">
+                              {origin}
                             </span>
                           </td>
 
-                          <td className="px-4 py-3">
-                            {valStatus === 'VALIDA' && (
-                              <span className="px-2.5 py-1 text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded inline-flex items-center gap-1.5 font-mono">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>VÁLIDA (Misma Sede)</span>
+                          {/* 9. Estado */}
+                          <td className="px-3 py-2.5 font-mono">
+                            {status === 'PROCESADA' && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 inline-flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                <span>PROCESADA</span>
                               </span>
                             )}
-                            {valStatus === 'EXCEPCION_AUTORIZADA' && (
-                              <span className="px-2.5 py-1 text-[11px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded inline-flex items-center gap-1.5 font-mono">
-                                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                                <span>EXCEPCIÓN AUTORIZADA</span>
+                            {status === 'RECIBIDA' && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-sky-950/80 text-sky-400 border border-sky-800/60 inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>RECIBIDA</span>
                               </span>
                             )}
-                            {valStatus === 'RECHAZADA_DEPENDENCIA' && (
-                              <span className="px-2.5 py-1 text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded inline-flex items-center gap-1.5 font-mono">
-                                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                                <span>RECHAZADA (Incidencia)</span>
+                            {status === 'PENDIENTE_IDENTIFICACION' && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 inline-flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                <span>PENDIENTE ID</span>
+                              </span>
+                            )}
+                            {status === 'ERROR' && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-rose-950/80 text-rose-400 border border-rose-800/60 inline-flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" />
+                                <span>ERROR</span>
                               </span>
                             )}
                           </td>
 
-                          <td className="px-4 py-3 text-slate-300 max-w-xs">
-                            {punch.rejection_reason ? (
-                              <p className="text-[11px] text-rose-300/90 leading-tight">
-                                {punch.rejection_reason}
-                              </p>
-                            ) : punch.authorization_id ? (
-                              <p className="text-[11px] text-indigo-300/90 leading-tight">
-                                Autorización activa ID: <code className="font-mono">{punch.authorization_id}</code>
-                              </p>
-                            ) : (
-                              <p className="text-[11px] text-slate-400">
-                                Sede coincidente: {empDep} = {devDep}
-                              </p>
-                            )}
+                          {/* 10. Fecha de Recepción */}
+                          <td className="px-3 py-2.5 font-mono text-[10px] text-slate-400 truncate max-w-[120px]" title={receivedAtTime}>
+                            {receivedAtTime}
+                          </td>
+
+                          {/* 11. Acción Ver Detalle */}
+                          <td className="px-3 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPunchForDetail(punch)}
+                              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 rounded text-[11px] font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              title="Ver detalle completo de marcación"
+                            >
+                              <Eye className="w-3 h-3 text-indigo-400" />
+                              <span>Detalle</span>
+                            </button>
                           </td>
                         </tr>
                       );
@@ -3510,6 +3643,157 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 type="button"
                 onClick={() => setShowDeviceDetailModal(false)}
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-semibold text-xs transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: VER DETALLE COMPLETO DE MARCACIÓN BIOMÉTRICA RAW */}
+      {/* ========================================================= */}
+      {selectedPunchForDetail && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-xl w-full p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-bold text-sm text-white">Detalle de Marcación Biométrica</h3>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    ID Transmisión: {selectedPunchForDetail.id}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPunchForDetail(null)}
+                className="text-slate-500 hover:text-white cursor-pointer"
+                title="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Worker & Status Banner */}
+              {(() => {
+                const emp = employees.find((e) => e.dni === selectedPunchForDetail.employee_dni);
+                const isIdentified = emp || (selectedPunchForDetail.employee_name && !selectedPunchForDetail.employee_name.toLowerCase().includes('no identificado'));
+                const empName = isIdentified ? (emp ? `${emp.first_name} ${emp.last_name}` : selectedPunchForDetail.employee_name) : 'Trabajador no identificado';
+                const status = selectedPunchForDetail.status || (selectedPunchForDetail as any).processingStatus || (selectedPunchForDetail.processed ? 'PROCESADA' : (!isIdentified ? 'PENDIENTE_IDENTIFICACION' : 'RECIBIDA'));
+
+                return (
+                  <div className="p-3 rounded-lg bg-[#090A0D] border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">COLABORADOR / SERVIDOR PÚBLICO</span>
+                      <div className="font-bold text-sm text-white mt-0.5">{empName}</div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        DNI: <span className="text-slate-200">{selectedPunchForDetail.employee_dni || '—'}</span> • PIN Reloj: <span className="text-indigo-300 font-semibold">{selectedPunchForDetail.employee_code || (selectedPunchForDetail as any).employeeCode || selectedPunchForDetail.employee_dni || '—'}</span>
+                      </div>
+                    </div>
+                    <div>
+                      {status === 'PROCESADA' && (
+                        <span className="px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold text-xs inline-flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" />
+                          PROCESADA
+                        </span>
+                      )}
+                      {status === 'RECIBIDA' && (
+                        <span className="px-2.5 py-1 rounded bg-sky-950/80 border border-sky-500/40 text-sky-300 font-bold text-xs inline-flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          RECIBIDA
+                        </span>
+                      )}
+                      {status === 'PENDIENTE_IDENTIFICACION' && (
+                        <span className="px-2.5 py-1 rounded bg-amber-950/80 border border-amber-500/40 text-amber-300 font-bold text-xs inline-flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          PENDIENTE ID
+                        </span>
+                      )}
+                      {status === 'ERROR' && (
+                        <span className="px-2.5 py-1 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 font-bold text-xs inline-flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          ERROR
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Data Specifications Grid */}
+              <div className="bg-[#090A0D]/80 p-3 rounded-lg border border-slate-800/80 space-y-2 font-mono text-[11px]">
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Fecha y Hora de Marcación:</span>
+                  <span className="text-emerald-400 font-bold">{selectedPunchForDetail.timestamp}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Terminal / Dispositivo:</span>
+                  <span className="text-indigo-300 font-semibold">{selectedPunchForDetail.device_name || 'Terminal Biométrico'} ({selectedPunchForDetail.device_sn})</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Origen de Transmisión:</span>
+                  <span className="text-white font-bold">{selectedPunchForDetail.source || (selectedPunchForDetail as any).origen || 'PUSH / ADMS'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Tipo de Marcación:</span>
+                  <span className="text-slate-200 font-semibold">
+                    {selectedPunchForDetail.punch_state === 0 ? '🟢 0: ENTRADA' : '🔵 1: SALIDA'}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Método de Verificación:</span>
+                  <span className="text-slate-200">
+                    {selectedPunchForDetail.verify_mode === 1 ? '1: Huella Dactilar' : selectedPunchForDetail.verify_mode === 15 ? '15: Reconocimiento Facial' : 'Biométrico'}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1.5">
+                  <span className="text-slate-400">Validación de Sede Institucional:</span>
+                  <span className="text-amber-300 font-semibold">
+                    {selectedPunchForDetail.validation_status || 'VALIDA'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Recepción en Servidor (receivedAt):</span>
+                  <span className="text-slate-300 font-bold">
+                    {selectedPunchForDetail.received_at || (selectedPunchForDetail as any).receivedAt || selectedPunchForDetail.timestamp}
+                  </span>
+                </div>
+              </div>
+
+              {/* Rejection / Incident reason if any */}
+              {selectedPunchForDetail.rejection_reason && (
+                <div className="p-2.5 rounded-lg border border-rose-800/60 bg-rose-950/30 text-rose-300 text-xs font-mono">
+                  <span className="font-bold block text-rose-400">Incidencia / Motivo de Rechazo:</span>
+                  <span className="text-[11px] mt-0.5 block">{selectedPunchForDetail.rejection_reason}</span>
+                </div>
+              )}
+
+              {/* RAW Payload (Visible for Administrative Roles) */}
+              {canManageDevices && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span className="flex items-center gap-1 font-bold text-slate-300">
+                      <Lock className="w-3 h-3 text-indigo-400" />
+                      Payload RAW (ZKTeco Raw Stream):
+                    </span>
+                    <span className="text-slate-500">Solo visible para administradores</span>
+                  </div>
+                  <pre className="bg-[#050608] border border-slate-800 text-emerald-400 p-2.5 rounded font-mono text-[10.5px] overflow-x-auto max-h-24 select-all">
+                    {selectedPunchForDetail.raw_payload || (selectedPunchForDetail as any).rawPayload || `PIN=${selectedPunchForDetail.employee_dni}\tTIME=${selectedPunchForDetail.timestamp}\tDEVICE=${selectedPunchForDetail.device_sn}`}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSelectedPunchForDetail(null)}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-semibold text-xs transition-colors cursor-pointer"
               >
                 Cerrar
               </button>

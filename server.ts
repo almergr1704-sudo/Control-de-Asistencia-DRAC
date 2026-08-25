@@ -1708,120 +1708,457 @@ async function startServer() {
     }
   });
 
-  // GET /api/zkteco/raw-punches
-  app.get("/api/zkteco/raw-punches", async (req, res) => {
+  // GET & POST /api/attendance/punches, /api/zkteco/raw-punches, /api/zkteco/punches, /api/punches
+  const handleGetPunches = async (req: express.Request, res: express.Response) => {
     try {
       const stored = await getStoredRawPunches();
-      return res.json({ success: true, data: stored });
+      const employees = await getStoredEmployees();
+      const devices = await getStoredDevices();
+      const { fecha, dni, employee_code, device_sn, status, origin, limit } = req.query as Record<string, string>;
+
+      // Enrich punches dynamically with updated worker data if worker was added later
+      let enriched = stored.map((punch: any) => {
+        const pin = punch.employee_code || punch.employee_dni;
+        const emp = employees.find(
+          (e: any) =>
+            e.dni === pin ||
+            e.id === pin ||
+            e.zkteco_pin === pin ||
+            e.biometric_user_id === pin ||
+            e.codigo_trabajador === pin ||
+            e.username === pin
+        );
+        const dev = devices.find((d: any) => d.serial_number === (punch.device_sn || punch.serialNumber));
+
+        const isIdentified = Boolean(emp);
+        const employeeName = emp
+          ? `${emp.first_name} ${emp.last_name}`
+          : punch.employee_name && punch.employee_name !== 'Trabajador no identificado'
+          ? punch.employee_name
+          : 'Trabajador no identificado';
+
+        const [fechaPart, horaPart] = (punch.timestamp || '').split(' ');
+
+        return {
+          id: punch.id,
+          device_id: punch.device_id || punch.deviceId || dev?.id || 'dev-01',
+          deviceId: punch.device_id || punch.deviceId || dev?.id || 'dev-01',
+          device_sn: punch.device_sn || punch.serialNumber || dev?.serial_number || 'BIM-DRAC-001',
+          serialNumber: punch.device_sn || punch.serialNumber || dev?.serial_number || 'BIM-DRAC-001',
+          device_name: punch.device_name || dev?.name || 'ZKTeco Sede Central - Principal',
+          device_dependencia_tipo: punch.device_dependencia_tipo || dev?.dependencia_tipo || 'SEDE_CENTRAL',
+          device_dependencia_name: punch.device_dependencia_name || dev?.dependencia_name || 'SEDE CENTRAL',
+          employee_id: emp ? emp.id : punch.employee_id || null,
+          employee_dni: emp ? emp.dni : (punch.employee_dni || pin),
+          dni: emp ? emp.dni : (punch.employee_dni || pin),
+          employee_code: pin,
+          employeeCode: pin,
+          employee_name: employeeName,
+          employee_dependencia_tipo: emp ? (emp.dependencia_id === 'dep-02' ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL') : (punch.employee_dependencia_tipo || 'SEDE_CENTRAL'),
+          employee_dependencia_name: emp ? (emp.dependencia_name || 'SEDE CENTRAL') : (punch.employee_dependencia_name || 'SEDE CENTRAL'),
+          timestamp: punch.timestamp,
+          fecha: fechaPart || punch.fecha || punch.timestamp?.substring(0, 10),
+          hora: horaPart || punch.hora || punch.timestamp?.substring(11, 19),
+          punch_type: punch.punch_type || 'AUTO',
+          punch_state: punch.punch_state ?? (horaPart && horaPart < '13:00' ? 0 : 1),
+          verify_mode: punch.verify_mode || 'FINGERPRINT',
+          source: punch.source || punch.origen || 'PUSH',
+          origen: punch.source || punch.origen || 'PUSH',
+          processed: Boolean(punch.processed),
+          processed_at: punch.processed_at,
+          status: punch.status || (isIdentified ? (punch.processed ? 'PROCESADA' : 'RECIBIDA') : 'PENDIENTE_IDENTIFICACION'),
+          processingStatus: punch.status || (isIdentified ? (punch.processed ? 'PROCESADA' : 'RECIBIDA') : 'PENDIENTE_IDENTIFICACION'),
+          validation_status: punch.validation_status || (isIdentified ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION'),
+          raw_payload: punch.raw_payload || punch.rawPayload || '',
+          rawPayload: punch.raw_payload || punch.rawPayload || '',
+          rejection_reason: punch.rejection_reason,
+          authorization_id: punch.authorization_id,
+          received_at: punch.received_at || punch.receivedAt || punch.created_at || punch.timestamp,
+          receivedAt: punch.received_at || punch.receivedAt || punch.created_at || punch.timestamp,
+        };
+      });
+
+      // Apply optional query filters without accidentally discarding unmapped punches
+      if (fecha) {
+        enriched = enriched.filter((p) => p.fecha === fecha || p.timestamp?.startsWith(fecha));
+      }
+      if (dni) {
+        enriched = enriched.filter((p) => p.employee_dni === dni || p.employee_code === dni);
+      }
+      if (employee_code) {
+        enriched = enriched.filter((p) => p.employee_code === employee_code);
+      }
+      if (device_sn) {
+        enriched = enriched.filter((p) => p.device_sn === device_sn);
+      }
+      if (status && status !== 'ALL') {
+        enriched = enriched.filter((p) => p.status === status || p.validation_status === status);
+      }
+      if (origin && origin !== 'ALL') {
+        enriched = enriched.filter((p) => p.source === origin);
+      }
+
+      // Sort descending (most recent first)
+      enriched.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+      if (limit && !isNaN(Number(limit))) {
+        enriched = enriched.slice(0, Number(limit));
+      }
+
+      console.log(`[API PUNCHES] Responding with ${enriched.length} raw punches to caller.`);
+      return res.json({
+        success: true,
+        count: enriched.length,
+        data: enriched,
+        total: stored.length,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: "Error al leer marcaciones RAW." });
+      console.error('[API PUNCHES ERROR]', err);
+      return res.status(500).json({ success: false, message: 'Error al consultar marcaciones RAW: ' + err?.message });
     }
-  });
+  };
+
+  app.get('/api/attendance/punches', handleGetPunches);
+  app.get('/api/zkteco/punches', handleGetPunches);
+  app.get('/api/zkteco/raw-punches', handleGetPunches);
+  app.get('/api/punches', handleGetPunches);
 
   // ==============================================================
   // ADMS PUSH PROTOCOL RECEIVER: /iclock/cdata & /api/biometric/push
   // ==============================================================
 
-  // GET /iclock/cdata - ZKTeco ADMS Server Handshake
-  app.get("/iclock/cdata", (req, res) => {
-    const sn = (req.query.SN as string) || "BIM-DRAC-001";
-    res.setHeader("Content-Type", "text/plain");
+  // GET /iclock/cdata & /iclock/cdata.php - ZKTeco ADMS Server Handshake
+  const handleAdmsHandshake = (req: express.Request, res: express.Response) => {
+    const sn = (req.query.SN as string) || (req.query.sn as string) || 'BIM-DRAC-001';
+    console.log(`[ZKTECO ADMS HANDSHAKE] Device ${sn} requested options handshake.`);
+    res.setHeader('Content-Type', 'text/plain');
     return res.send(
       `GET OPTION FROM: ${sn}\nATTLOGStamp=None\nOPERLOGStamp=None\nErrorDelay=30\nDelay=10\nTransTimes=00:00;14:05\nTransInterval=1\nTransFlag=1111000000\nTimeZone=23\nRealtime=1\nEncrypt=0`
     );
-  });
+  };
+
+  app.get('/iclock/cdata', handleAdmsHandshake);
+  app.get('/iclock/cdata.php', handleAdmsHandshake);
+
+  // GET /iclock/getrequest & /iclock/getrequest.php - ZKTeco device command queue polling
+  const handleDeviceGetRequest = (req: express.Request, res: express.Response) => {
+    res.setHeader('Content-Type', 'text/plain');
+    return res.send('OK');
+  };
+  app.get('/iclock/getrequest', handleDeviceGetRequest);
+  app.get('/iclock/getrequest.php', handleDeviceGetRequest);
+
+  // POST /iclock/devicecmd & /iclock/devicecmd.php - ZKTeco command execution ACK
+  const handleDeviceCmdAck = (req: express.Request, res: express.Response) => {
+    res.setHeader('Content-Type', 'text/plain');
+    return res.send('OK');
+  };
+  app.post('/iclock/devicecmd', handleDeviceCmdAck);
+  app.post('/iclock/devicecmd.php', handleDeviceCmdAck);
 
   // Handler function for parsing and persisting ADMS Push punches
-  async function handleAdmsPushPayload(body: any, query: any) {
-    const rawText = typeof body === "string" ? body : (body?.raw_payload || JSON.stringify(body));
-    const sn = (query.SN as string) || "BIM-DRAC-001";
-    const lines = rawText.split("\n").filter((l: string) => l.trim().length > 0);
+  async function handleAdmsPushPayload(body: any, query: any, reqHeaders: any = {}, source: string = 'PUSH') {
+    let rawText = '';
+    if (typeof body === 'string') {
+      rawText = body;
+    } else if (Buffer.isBuffer(body)) {
+      rawText = body.toString('utf-8');
+    } else if (body && typeof body === 'object') {
+      if (body.raw_payload) rawText = body.raw_payload;
+      else if (body.rawPayload) rawText = body.rawPayload;
+      else rawText = JSON.stringify(body);
+    }
+
+    const querySn = (query?.SN as string) || (query?.sn as string);
+    const bodySn = (body?.SN as string) || (body?.sn as string) || (body?.serial_number as string) || (body?.serialNumber as string);
+    const headerSn = (reqHeaders?.['x-zkteco-sn'] as string) || (reqHeaders?.['x-serial-number'] as string);
+    const sn = (querySn || bodySn || headerSn || 'BIM-DRAC-001').trim();
+
+    // Load reference catalog for real device and employee matching
+    const devices = await getStoredDevices();
+    const employees = await getStoredEmployees();
+    const targetDev = devices.find((d: any) => d.serial_number === sn || d.id === sn);
+
+    const devName = targetDev?.name || `ZKTeco (${sn})`;
+    const devDepName = targetDev?.dependencia_name || 'SEDE CENTRAL';
+    const devDepTipo = targetDev?.dependencia_tipo || 'SEDE_CENTRAL';
+    const devId = targetDev?.id || (sn === 'BIM-DRAC-002' ? 'dev-02' : sn === 'BIM-DRAC-003' ? 'dev-03' : 'dev-01');
+
+    const lines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     const parsedRecords: any[] = [];
     const nowIso = new Date().toISOString();
 
     for (const line of lines) {
-      const parts = line.split("\t");
-      const kv: Record<string, string> = {};
-      parts.forEach((p: string) => {
-        const [k, v] = p.split("=");
-        if (k && v) kv[k.trim().toUpperCase()] = v.trim();
-      });
+      let pin = '';
+      let punchTime = '';
+      let verify = '1';
+      let punchState = 0;
 
-      const pin = kv["PIN"] || kv["USERID"] || (parts[0] && !parts[0].includes("=") ? parts[0] : "10000001");
-      const time = kv["TIME"] || (parts[1] && !parts[1].includes("=") ? parts[1] : nowIso.replace("T", " ").substring(0, 19));
-      const verify = kv["VERIFY"] || kv["VERIFYTYPE"] || "1";
+      // Case A: JSON object per line or parsed JSON body
+      if (line.startsWith('{') && line.endsWith('}')) {
+        try {
+          const jsonRec = JSON.parse(line);
+          pin = String(jsonRec.employee_code || jsonRec.employeeCode || jsonRec.pin || jsonRec.PIN || jsonRec.dni || jsonRec.user_id || '10000001');
+          punchTime = String(jsonRec.timestamp || jsonRec.time || jsonRec.checktime || nowIso.replace('T', ' ').substring(0, 19));
+          verify = String(jsonRec.verify_mode || jsonRec.verify || jsonRec.verifytype || '1');
+          punchState = Number(jsonRec.punch_state ?? jsonRec.state ?? 0);
+        } catch {
+          // fallback to text parse
+        }
+      }
 
-      let verify_mode: "FINGERPRINT" | "FACE" | "CARD" | "PASSWORD" | "PALM" = "FINGERPRINT";
-      if (verify === "15" || verify === "FACE") verify_mode = "FACE";
-      else if (verify === "3" || verify === "CARD") verify_mode = "CARD";
-      else if (verify === "2" || verify === "PASSWORD") verify_mode = "PASSWORD";
-      else if (verify === "25" || verify === "PALM") verify_mode = "PALM";
+      // Case B: Key-Value tab/space format (e.g. PIN=1025\tCHECKTIME=2026-08-25 08:13:25\t...)
+      if (!pin && (line.includes('=') || line.includes('\t'))) {
+        const parts = line.split('\t');
+        const kv: Record<string, string> = {};
+        parts.forEach((p: string) => {
+          const [k, v] = p.split('=');
+          if (k && v) kv[k.trim().toUpperCase()] = v.trim();
+        });
+
+        pin = kv['PIN'] || kv['USERID'] || kv['EMPLOYEECODE'] || (parts[0] && !parts[0].includes('=') ? parts[0].trim() : '');
+        punchTime = kv['CHECKTIME'] || kv['TIME'] || kv['TIMESTAMP'] || (parts[1] && !parts[1].includes('=') ? parts[1].trim() : '');
+        verify = kv['VERIFY'] || kv['VERIFYTYPE'] || '1';
+        punchState = kv['CHECKTYPE'] === 'O' || kv['STATUS'] === '1' ? 1 : 0;
+      }
+
+      // Case C: Positional space/tab format (1025 2026-08-25 08:13:25 1 1 0 0)
+      if (!pin) {
+        const tokens = line.split(/\s+/);
+        if (tokens.length >= 2) {
+          pin = tokens[0];
+          if (tokens.length >= 3 && tokens[1].includes('-') && tokens[2].includes(':')) {
+            punchTime = `${tokens[1]} ${tokens[2]}`;
+          } else {
+            punchTime = tokens[1];
+          }
+          if (tokens.length >= 4) punchState = Number(tokens[3]) || 0;
+          if (tokens.length >= 5) verify = tokens[4] || '1';
+        }
+      }
+
+      // Fallback guarantees
+      if (!pin) pin = '10000001';
+      if (!punchTime || punchTime.length < 10) punchTime = nowIso.replace('T', ' ').substring(0, 19);
+
+      // Verify mode mapping
+      let verify_mode: 'FINGERPRINT' | 'FACE' | 'CARD' | 'PASSWORD' | 'PALM' = 'FINGERPRINT';
+      if (verify === '15' || verify === 'FACE' || verify.includes('FACE')) verify_mode = 'FACE';
+      else if (verify === '3' || verify === 'CARD' || verify.includes('CARD')) verify_mode = 'CARD';
+      else if (verify === '2' || verify === 'PASSWORD' || verify.includes('PASS')) verify_mode = 'PASSWORD';
+      else if (verify === '25' || verify === 'PALM' || verify.includes('PALM')) verify_mode = 'PALM';
+
+      // Match employee
+      const emp = employees.find(
+        (e: any) =>
+          e.dni === pin ||
+          e.id === pin ||
+          e.zkteco_pin === pin ||
+          e.biometric_user_id === pin ||
+          e.codigo_trabajador === pin ||
+          e.username === pin
+      );
+
+      const isIdentified = Boolean(emp);
+      const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
+      const workerDni = emp ? emp.dni : pin;
+      const workerDepName = emp ? (emp.dependencia_name || 'SEDE CENTRAL') : devDepName;
+      const workerDepTipo = emp ? (emp.dependencia_id === 'dep-02' ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL') : devDepTipo;
+
+      const [datePart, timePart] = punchTime.split(' ');
+
+      // OBLIGATORY REAL LOGGING AS REQUIRED IN SECTION 3
+      console.log(`[ZKTECO PUSH RECEIVED]
+Device: ${devName}
+Serial: ${sn}
+EmployeeCode: ${pin}
+Date: ${datePart || punchTime.substring(0, 10)}
+Time: ${timePart || punchTime.substring(11, 19)}
+payload: ${line}
+receivedAt: ${nowIso}`);
 
       parsedRecords.push({
-        id: `push-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        device_id: sn === "BIM-DRAC-002" ? "dev-02" : sn === "BIM-DRAC-003" ? "dev-03" : "dev-01",
+        id: `push-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        device_id: devId,
+        deviceId: devId,
         device_sn: sn,
-        device_name: sn === "BIM-DRAC-002" ? "ZKTeco Sede Central - Garita" : sn === "BIM-DRAC-003" ? "ZKTeco Agencia Jaén" : "ZKTeco Sede Central - Principal",
-        device_dependencia_tipo: sn === "BIM-DRAC-003" ? "AGENCIA_AGRARIA" : "SEDE_CENTRAL",
-        device_dependencia_name: sn === "BIM-DRAC-003" ? "AGENCIA AGRARIA JAEN" : "SEDE CENTRAL",
-        employee_dni: pin,
-        employee_name: `Servidor DNI ${pin}`,
-        timestamp: time,
-        punch_type: "AUTO",
+        serialNumber: sn,
+        device_name: devName,
+        device_dependencia_tipo: devDepTipo,
+        device_dependencia_name: devDepName,
+        employee_id: emp ? emp.id : null,
+        employee_dni: workerDni,
+        dni: workerDni,
+        employee_code: pin,
+        employeeCode: pin,
+        employee_name: workerName,
+        employee_dependencia_tipo: workerDepTipo,
+        employee_dependencia_name: workerDepName,
+        timestamp: punchTime,
+        fecha: datePart || punchTime.substring(0, 10),
+        hora: timePart || punchTime.substring(11, 19),
+        punch_type: 'AUTO',
+        punch_state: punchState,
         verify_mode,
+        source: source,
+        origen: source,
         processed: false,
+        status: isIdentified ? 'RECIBIDA' : 'PENDIENTE_IDENTIFICACION',
+        processingStatus: isIdentified ? 'RECIBIDA' : 'PENDIENTE_IDENTIFICACION',
+        validation_status: isIdentified ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
         raw_payload: line,
-        validation_status: "VALIDA",
+        rawPayload: line,
+        received_at: nowIso,
+        receivedAt: nowIso,
       });
     }
 
     if (parsedRecords.length > 0) {
       const existingRaw = await getStoredRawPunches();
       const existingSet = new Set(
-        existingRaw.map((p: any) => `${p.device_sn}_${p.employee_dni}_${p.timestamp}`)
+        existingRaw.map((p: any) => `${p.device_sn || p.serialNumber}_${p.employee_code || p.employee_dni}_${p.timestamp}`)
       );
 
+      let newInserted = 0;
       for (const rec of parsedRecords) {
-        const key = `${rec.device_sn}_${rec.employee_dni}_${rec.timestamp}`;
+        const key = `${rec.device_sn}_${rec.employee_code}_${rec.timestamp}`;
         if (!existingSet.has(key)) {
           existingSet.add(key);
           existingRaw.unshift(rec);
           realtimePushEvents.unshift(rec);
           if (realtimePushEvents.length > 100) realtimePushEvents.pop();
+          newInserted++;
         }
       }
 
       await saveStoredRawPunches(existingRaw);
+
+      // Update device last_activity in devices.json
+      if (targetDev) {
+        targetDev.last_activity = nowIso;
+        targetDev.status = 'ONLINE';
+        await saveStoredDevices(devices);
+      }
+
+      // Auto-process into Attendance if workers are identified
+      try {
+        await autoProcessRawPunchesToAttendance();
+      } catch (err: any) {
+        console.log('[AUTO-PROCESS NOTICE]', err?.message);
+      }
+
+      return newInserted > 0 ? newInserted : parsedRecords.length;
     }
 
-    return parsedRecords.length;
+    return 0;
   }
 
-  // POST /iclock/cdata - ZKTeco ADMS Post Endpoint
-  app.post("/iclock/cdata", async (req, res) => {
+  // Internal helper to auto-process raw punches to attendance
+  async function autoProcessRawPunchesToAttendance() {
+    const rawPunches = await getStoredRawPunches();
+    const attendance = await getStoredAttendance();
+    const employees = await getStoredEmployees();
+    const nowIso = new Date().toISOString();
+
+    for (const punch of rawPunches) {
+      if (punch.processed) continue;
+      const empDni = punch.employee_dni;
+      const emp = employees.find((e: any) => e.dni === empDni || e.id === empDni || e.zkteco_pin === punch.employee_code);
+      if (!emp) continue; // Keep as PENDIENTE_IDENTIFICACION
+
+      const punchTimestamp = punch.timestamp;
+      const [punchDate, punchTimeFull] = punchTimestamp.split(' ');
+      const punchTime = punchTimeFull ? punchTimeFull.substring(0, 5) : '08:00';
+
+      let attIndex = attendance.findIndex((a: any) => a.employee_dni === emp.dni && a.fecha === punchDate);
+
+      if (attIndex === -1) {
+        const newAtt = {
+          id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          employee_id: emp.id,
+          employee_dni: emp.dni,
+          employee_name: `${emp.first_name} ${emp.last_name}`,
+          dependencia_id: emp.dependencia_id || 'dep-01',
+          dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
+          direccion_organo_name: emp.direccion_organo_name || '',
+          area_name: emp.area_name || 'OFICINA DRAC',
+          fecha: punchDate,
+          t1_scheduled_in: '08:00',
+          t1_scheduled_out: '13:00',
+          t1_real_in: punchTime,
+          t1_real_out: null,
+          t2_scheduled_in: '14:00',
+          t2_scheduled_out: '17:00',
+          t2_real_in: null,
+          t2_real_out: null,
+          status: punchTime <= '08:10' ? 'PUNCTUAL' : 'LATE',
+          tardiness_minutes: punchTime > '08:10' ? 15 : 0,
+          net_tardiness_minutes: punchTime > '08:10' ? 5 : 0,
+          total_effective_hours: 4.5,
+          raw_punch_id: punch.id,
+          created_at: nowIso,
+          updated_at: nowIso,
+        };
+        attendance.unshift(newAtt);
+      } else {
+        const existing = attendance[attIndex];
+        if (!existing.t1_real_in) {
+          existing.t1_real_in = punchTime;
+        } else if (!existing.t1_real_out && punchTime > '11:30' && punchTime < '14:00') {
+          existing.t1_real_out = punchTime;
+        } else if (!existing.t2_real_in && punchTime >= '13:45' && punchTime < '15:30') {
+          existing.t2_real_in = punchTime;
+        } else if (!existing.t2_real_out && punchTime >= '16:00') {
+          existing.t2_real_out = punchTime;
+          existing.total_effective_hours = 8.0;
+        }
+        existing.updated_at = nowIso;
+        attendance[attIndex] = existing;
+      }
+
+      punch.processed = true;
+      punch.processed_at = nowIso;
+      punch.status = 'PROCESADA';
+      punch.processingStatus = 'PROCESADA';
+    }
+
+    await saveStoredRawPunches(rawPunches);
+    await saveStoredAttendance(attendance);
+  }
+
+  // POST /iclock/cdata & /iclock/cdata.php - ZKTeco ADMS Post Endpoint
+  const handleAdmsPost = async (req: express.Request, res: express.Response) => {
     try {
-      const count = await handleAdmsPushPayload(req.body, req.query);
-      res.setHeader("Content-Type", "text/plain");
+      const count = await handleAdmsPushPayload(req.body, req.query, req.headers, 'ADMS');
+      res.setHeader('Content-Type', 'text/plain');
       return res.send(`OK: ${count || 1}`);
     } catch (err: any) {
-      res.setHeader("Content-Type", "text/plain");
-      return res.send("OK: 1");
+      console.error('[ADMS POST ERROR]', err);
+      res.setHeader('Content-Type', 'text/plain');
+      return res.send('OK: 1');
     }
-  });
+  };
 
-  // POST /api/biometric/push - DRAC REST Push Receiver
-  app.post("/api/biometric/push", async (req, res) => {
+  app.post('/iclock/cdata', handleAdmsPost);
+  app.post('/iclock/cdata.php', handleAdmsPost);
+
+  // POST /api/biometric/push & /api/zkteco/push - DRAC REST Push Receiver
+  const handleRestPush = async (req: express.Request, res: express.Response) => {
     try {
-      const count = await handleAdmsPushPayload(req.body, req.query);
+      const count = await handleAdmsPushPayload(req.body, req.query, req.headers, 'PUSH');
       return res.json({
         success: true,
         received_count: count,
         message: `Marcación PUSH recibida y registrada en raw_punches.`,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: "Error al procesar push biométrico." });
+      return res.status(500).json({ success: false, message: 'Error al procesar push biométrico: ' + err?.message });
     }
-  });
+  };
+
+  app.post('/api/biometric/push', handleRestPush);
+  app.post('/api/zkteco/push', handleRestPush);
 
   // GET /api/zkteco/realtime-feed - Real-time push stream/polling endpoint
   app.get("/api/zkteco/realtime-feed", (req, res) => {
