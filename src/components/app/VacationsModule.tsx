@@ -2192,30 +2192,21 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </div>
 
               {/* Workers Paginator */}
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                <span>
-                  Mostrando {paginatedProgWorkers.length} de {filteredProgWorkers.length} servidores
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={progWorkerPage <= 1}
-                    onClick={() => setProgWorkerPage((p) => Math.max(1, p - 1))}
-                    className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-200"
-                  >
-                    Anterior
-                  </button>
-                  <span className="px-2 font-mono text-white">{progWorkerPage}</span>
-                  <button
-                    type="button"
-                    disabled={progWorkerPage * progWorkerPageSize >= filteredProgWorkers.length}
-                    onClick={() => setProgWorkerPage((p) => p + 1)}
-                    className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 rounded text-slate-200"
-                  >
-                    Siguiente
-                  </button>
+              {filteredProgWorkers.length > 0 && (
+                <div className="pt-2">
+                  <DataTablePagination
+                    currentPage={progWorkerPage}
+                    pageSize={progWorkerPageSize}
+                    totalItems={filteredProgWorkers.length}
+                    onPageChange={setProgWorkerPage}
+                    onPageSizeChange={(newSize) => {
+                      setProgWorkerPageSize(newSize);
+                      setProgWorkerPage(1);
+                    }}
+                    pageSizeOptions={[10, 20, 50]}
+                  />
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Step 2: Ficha Informativa del Trabajador Seleccionado (Automatic & Read-Only) */}

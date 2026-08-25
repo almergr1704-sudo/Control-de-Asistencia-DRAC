@@ -97,7 +97,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
 
   // Pagination for tables
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 10;
+  const [pageSize, setPageSize] = useState<number>(10);
 
   // Active user resolution
   const authenticatedWorker = useMemo(() => {
@@ -1443,20 +1443,43 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
               </div>
             </div>
 
-            {/* Table */}
-            <div className="overflow-x-auto border border-slate-800 rounded-lg">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#090A0D] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+            {/* Table (Zero-horizontal-overflow with fixed responsive layout) */}
+            <div className="border border-slate-800 rounded-lg overflow-hidden bg-[#090A0D]">
+              <table className="w-full text-left text-xs table-fixed border-collapse">
+                <thead className="bg-[#060709] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
                   <tr>
-                    <th className="px-4 py-3">Servidor / DNI</th>
-                    <th className="px-4 py-3">Área / Régimen</th>
-                    <th className="px-4 py-3">Estado Hoy</th>
-                    <th className="px-4 py-3">Asistencias</th>
-                    <th className="px-4 py-3">Tardanzas</th>
-                    <th className="px-4 py-3">Min. Tardanza</th>
-                    <th className="px-4 py-3">Faltas</th>
-                    <th className="px-4 py-3">Horas Trab.</th>
-                    <th className="px-4 py-3 text-right">Acciones</th>
+                    <th className="w-[23%] px-3 py-2.5 text-left text-[11px] text-slate-300">
+                      Servidor / DNI
+                    </th>
+                    <th className="w-[21%] px-2.5 py-2.5 text-left text-[11px] text-slate-300">
+                      Área / Régimen
+                    </th>
+                    <th className="w-[11%] px-1.5 py-2.5 text-center text-[11px] text-slate-300">
+                      <span>Estado</span>
+                      <span className="block text-[9.5px] text-slate-400 font-normal">Hoy</span>
+                    </th>
+                    <th className="w-[8%] px-1 py-2.5 text-center text-[11px] text-slate-300">
+                      <span>Asist.</span>
+                      <span className="block text-[9.5px] text-slate-400 font-normal">Días</span>
+                    </th>
+                    <th className="w-[8%] px-1 py-2.5 text-center text-[11px] text-slate-300">
+                      <span>Tard.</span>
+                      <span className="block text-[9.5px] text-slate-400 font-normal">Cant.</span>
+                    </th>
+                    <th className="w-[10%] px-1.5 py-2.5 text-center text-[11px] text-slate-300">
+                      <span>Min.</span>
+                      <span className="block text-[9.5px] text-slate-400 font-normal">Tardanza</span>
+                    </th>
+                    <th className="w-[6%] px-1 py-2.5 text-center text-[11px] text-slate-300">
+                      Faltas
+                    </th>
+                    <th className="w-[7%] px-1 py-2.5 text-center text-[11px] text-slate-300">
+                      <span>Horas</span>
+                      <span className="block text-[9.5px] text-slate-400 font-normal">Trab.</span>
+                    </th>
+                    <th className="w-[6%] px-1.5 py-2.5 text-center text-[11px] text-slate-300">
+                      Acción
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80 text-slate-300 font-sans">
@@ -1469,44 +1492,47 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
                   ) : (
                     paginatedGlobalEmployees.map(({ employee: emp, indicators: inds, today_record: tr }) => (
                       <tr key={emp.id} className="hover:bg-slate-800/30 transition-colors">
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="font-semibold text-white">
+                        <td className="px-3 py-2.5 min-w-0">
+                          <div className="font-semibold text-white truncate text-xs" title={`${emp.first_name} ${emp.last_name}`}>
                             {emp.first_name} {emp.last_name}
                           </div>
-                          <div className="text-[11px] text-slate-400 font-mono">DNI: {emp.dni}</div>
+                          <div className="text-[10.5px] text-slate-400 font-mono">DNI: {emp.dni}</div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="text-slate-200 truncate max-w-[200px]" title={emp.area_name}>
+                        <td className="px-2.5 py-2.5 min-w-0">
+                          <div className="text-slate-200 truncate text-[11.5px]" title={emp.area_name}>
                             {emp.area_name}
                           </div>
-                          <div className="text-[11px] text-slate-500">{emp.regimen_laboral || 'D.L. 276'}</div>
+                          <div className="text-[10px] text-slate-400 truncate" title={emp.regimen_laboral}>
+                            {emp.regimen_laboral || 'D.L. 276'}
+                          </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-1.5 py-2.5 text-center">
                           {renderStatusBadge(tr?.status, tr?.net_tardiness_minutes)}
                         </td>
-                        <td className="px-4 py-3 font-mono font-medium text-emerald-400 whitespace-nowrap">
+                        <td className="px-1 py-2.5 text-center font-mono font-medium text-emerald-400 text-xs">
                           {inds.dias_asistidos} d
                         </td>
-                        <td className="px-4 py-3 font-mono text-amber-400 font-medium whitespace-nowrap">
+                        <td className="px-1 py-2.5 text-center font-mono text-amber-400 font-medium text-xs">
                           {inds.tardanzas_count}
                         </td>
-                        <td className="px-4 py-3 font-mono text-amber-400 font-bold whitespace-nowrap">
-                          {inds.minutos_tardanza_total} min
+                        <td className="px-1.5 py-2.5 text-center font-mono text-amber-400 font-bold text-xs">
+                          {inds.minutos_tardanza_total} m
                         </td>
-                        <td className="px-4 py-3 font-mono text-rose-400 font-medium whitespace-nowrap">
+                        <td className="px-1 py-2.5 text-center font-mono text-rose-400 font-medium text-xs">
                           {inds.dias_falta}
                         </td>
-                        <td className="px-4 py-3 font-mono text-indigo-300 font-medium whitespace-nowrap">
+                        <td className="px-1 py-2.5 text-center font-mono text-indigo-300 font-medium text-xs">
                           {inds.horas_trabajadas} h
                         </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <td className="px-1.5 py-2.5 text-center">
                           <button
                             type="button"
                             onClick={() => setSelectedWorkerDetail(emp)}
-                            className="px-2.5 py-1 rounded-md bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            className="px-2 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-500/30 text-[11px] font-semibold transition-colors inline-flex items-center justify-center gap-1 cursor-pointer"
+                            title={`Ver ficha detallada de ${emp.first_name} ${emp.last_name}`}
                           >
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>Ver Detalle</span>
+                            <Eye className="w-3 h-3 text-indigo-400" />
+                            <span>Ver</span>
                           </button>
                         </td>
                       </tr>
@@ -1517,14 +1543,18 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
             </div>
 
             {/* Pagination Controls */}
-            {filteredGlobalEmployees.length > pageSize && (
+            {filteredGlobalEmployees.length > 0 && (
               <div className="pt-2">
                 <DataTablePagination
                   currentPage={currentPage}
-                  totalPages={Math.ceil(filteredGlobalEmployees.length / pageSize)}
-                  totalItems={filteredGlobalEmployees.length}
                   pageSize={pageSize}
+                  totalItems={filteredGlobalEmployees.length}
                   onPageChange={setCurrentPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  pageSizeOptions={[10, 20, 50]}
                 />
               </div>
             )}
