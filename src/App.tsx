@@ -800,30 +800,24 @@ export default function App() {
       firmware_version: newDev.firmware_version || 'Ver 8.0.4.3-2026',
     };
 
-    try {
-      const res = await fetch('/api/devices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newDev),
-      });
+    const res = await fetch('/api/devices', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': activeRole,
+      },
+      body: JSON.stringify(newDev),
+    });
 
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const resData = await res.json();
-        if (!res.ok || !resData.success) {
-          const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
-          console.error('[App] Error reportado por API:', errMsg);
-          throw new Error(errMsg);
-        }
-        if (resData.data) {
-          createdDevice = resData.data;
-        }
-      }
-    } catch (err: any) {
-      if (err?.message && (err.message.includes('duplicado') || err.message.includes('ya existe') || err.message.includes('obligatorio'))) {
-        throw err;
-      }
-      console.warn('[App.tsx] API backend no disponible, guardando en persistencia local:', err);
+    const resData = await res.json();
+    if (!res.ok || !resData.success) {
+      const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
+      console.error('[App] Error reportado por API:', errMsg);
+      throw new Error(errMsg);
+    }
+
+    if (resData.data) {
+      createdDevice = resData.data;
     }
 
     setDevices((prev) => {
@@ -838,7 +832,7 @@ export default function App() {
       'BIOMETRICOS',
       'REGISTRAR_DISPOSITIVO',
       createdDevice.id,
-      `Nuevo Biométrico: ${createdDevice.name} (${createdDevice.serial_number}) - Dependencia: ${createdDevice.dependencia_name}`
+      `Nuevo Biométrico: ${createdDevice.name} (S/N: ${createdDevice.serial_number}, IP: ${createdDevice.ip_address}:${createdDevice.port}) - Dependencia: ${createdDevice.dependencia_name}`
     );
 
     return {
@@ -848,29 +842,79 @@ export default function App() {
     };
   };
 
-  const handleEditDevice = async (updatedDev: DispositivoZkTeco) => {
-    setDevices((prev) => prev.map((d) => (d.id === updatedDev.id ? updatedDev : d)));
-    try {
-      await fetch(`/api/devices/${updatedDev.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedDev),
-      });
-    } catch (e) {
-      console.warn('[App] Sincronización offline para edición de marcador:', e);
+  const handleEditDevice = async (
+    updatedDev: DispositivoZkTeco
+  ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
+    const prevDev = devices.find((d) => d.id === updatedDev.id);
+
+    const res = await fetch(`/api/devices/${updatedDev.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-role': activeRole,
+      },
+      body: JSON.stringify(updatedDev),
+    });
+
+    const resData = await res.json();
+    if (!res.ok || !resData.success) {
+      const errMsg = resData.message || 'No fue posible actualizar el marcador en la base de datos.';
+      console.error('[App] Error reportado por API al editar marcador:', errMsg);
+      throw new Error(errMsg);
     }
-    addAuditLog('BIOMETRICOS', 'EDITAR_DISPOSITIVO', updatedDev.id, `Actualización Biométrico: ${updatedDev.name}`);
+
+    const savedDevice: DispositivoZkTeco = resData.data || updatedDev;
+
+    setDevices((prev) => prev.map((d) => (d.id === savedDevice.id ? savedDevice : d)));
+
+    // Track modified fields for audit log
+    const changedFields: string[] = [];
+    if (prevDev) {
+      if (prevDev.name !== savedDevice.name) changedFields.push(`Nombre: '${prevDev.name}' ➔ '${savedDevice.name}'`);
+      if (prevDev.ip_address !== savedDevice.ip_address || prevDev.port !== savedDevice.port) {
+        changedFields.push(`IP/Puerto: '${prevDev.ip_address}:${prevDev.port}' ➔ '${savedDevice.ip_address}:${savedDevice.port}'`);
+      }
+      if (prevDev.location_detail !== savedDevice.location_detail) {
+        changedFields.push(`Ubicación: '${prevDev.location_detail}' ➔ '${savedDevice.location_detail}'`);
+      }
+      if (prevDev.dependencia_name !== savedDevice.dependencia_name) {
+        changedFields.push(`Dependencia: '${prevDev.dependencia_name}' ➔ '${savedDevice.dependencia_name}'`);
+      }
+      if (prevDev.status !== savedDevice.status) {
+        changedFields.push(`Estado: '${prevDev.status}' ➔ '${savedDevice.status}'`);
+      }
+    }
+
+    const auditDetail = changedFields.length > 0
+      ? `Actualización Biométrico ${savedDevice.name} (${savedDevice.serial_number}): [${changedFields.join(', ')}]`
+      : `Actualización Biométrico ${savedDevice.name} (${savedDevice.serial_number})`;
+
+    addAuditLog('BIOMETRICOS', 'EDITAR_DISPOSITIVO', savedDevice.id, auditDetail);
+
+    return {
+      success: true,
+      message: 'Marcador actualizado correctamente.',
+      device: savedDevice,
+    };
   };
 
   const handleDeleteDevice = async (deviceId: string) => {
-    setDevices((prev) => prev.filter((d) => d.id !== deviceId));
     try {
-      await fetch(`/api/devices/${deviceId}`, {
+      const res = await fetch(`/api/devices/${deviceId}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': activeRole,
+        },
       });
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.message || 'Error al eliminar marcador.');
+      }
     } catch (e) {
-      console.warn('[App] Sincronización offline para eliminación de marcador:', e);
+      console.warn('[App] Error al eliminar marcador en servidor:', e);
     }
+    setDevices((prev) => prev.filter((d) => d.id !== deviceId));
     addAuditLog('BIOMETRICOS', 'ELIMINAR_DISPOSITIVO', deviceId, `Eliminación de Biométrico ID ${deviceId}`);
   };
 

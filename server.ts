@@ -280,11 +280,11 @@ async function startServer() {
   // RBAC Helper: Verify that caller has administrative permissions
   const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {
     const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "TRABAJADOR";
-    const allowed = ["ADMIN_GENERAL", "HR_ADMIN", "JEFE_RRHH", "CONTROL_ASISTENCIA"];
+    const allowed = ["ADMIN_GENERAL", "HR_ADMIN", "JEFE_RRHH", "CONTROL_ASISTENCIA", "SUPERVISOR", "DIRECTOR_GENERAL"];
     if (!allowed.includes(callerRole)) {
       res.status(403).json({
         success: false,
-        message: `403 Forbidden: No tiene autorización administrativa para gestionar ${moduleName}. Su perfil es estrictamente operativo/supervisor.`,
+        message: `403 Forbidden: No tiene autorización administrativa para gestionar ${moduleName}. Su perfil es estrictamente operativo.`,
       });
       return false;
     }
@@ -467,12 +467,15 @@ async function startServer() {
         ip_address,
         port = 4370,
         protocol = "PUSH_ADMS",
+        connection_type = "PUSH_ADMS",
         dependencia_id,
         dependencia_name,
         dependencia_tipo,
         location_detail,
         status = "CONFIGURED",
         firmware_version = "Ver 8.0.4.3-2026",
+        push_config,
+        capabilities,
         last_test,
       } = req.body || {};
 
@@ -491,30 +494,22 @@ async function startServer() {
         });
       }
 
-      // Dependencia validation - Only SEDE_CENTRAL or AGENCIA_AGRARIA
+      if (!model || !String(model).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "El modelo del marcador es obligatorio.",
+        });
+      }
+
+      // Dependencia validation - SEDE_CENTRAL, AGENCIA_AGRARIA or catalog
       const cleanDepTipo = dependencia_tipo || (dependencia_id === 'dep-02' || String(dependencia_name).toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL');
-      const cleanDepName = cleanDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL';
+      const cleanDepName = cleanDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : (dependencia_name || 'SEDE CENTRAL');
       const cleanDepId = cleanDepTipo === 'AGENCIA_AGRARIA' ? (dependencia_id || 'dep-02') : (dependencia_id || 'dep-01');
 
       if (!dependencia_id && !dependencia_name && !dependencia_tipo) {
         return res.status(400).json({
           success: false,
           message: "La dependencia del marcador es obligatoria. Debe seleccionar 'SEDE CENTRAL' o 'AGENCIA AGRARIA'.",
-        });
-      }
-
-      if (!ip_address || !String(ip_address).trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "La dirección IP del marcador es obligatoria.",
-        });
-      }
-
-      const cleanPort = Number(port);
-      if (isNaN(cleanPort) || cleanPort <= 0 || cleanPort > 65535) {
-        return res.status(400).json({
-          success: false,
-          message: "El puerto de comunicación debe ser un número válido entre 1 y 65535.",
         });
       }
 
@@ -527,18 +522,35 @@ async function startServer() {
 
       const cleanSn = String(serial_number).trim().toUpperCase();
       const cleanName = String(name).trim();
-      const cleanIp = String(ip_address).trim();
+      const cleanIp = ip_address ? String(ip_address).trim() : "";
+      const isUsb = connection_type === 'USB' || protocol === 'USB';
 
-      // 2. Validate IP regex
-      const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-      if (!ipRegex.test(cleanIp)) {
+      if (!isUsb) {
+        if (!cleanIp) {
+          return res.status(400).json({
+            success: false,
+            message: "La dirección IP del marcador es obligatoria para conexiones TCP/IP o PUSH ADMS.",
+          });
+        }
+
+        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        if (!ipRegex.test(cleanIp)) {
+          return res.status(400).json({
+            success: false,
+            message: "Dirección IP no válida.",
+          });
+        }
+      }
+
+      const cleanPort = Number(port || 4370);
+      if (!isUsb && (isNaN(cleanPort) || cleanPort <= 0 || cleanPort > 65535)) {
         return res.status(400).json({
           success: false,
-          message: `La dirección IP '${cleanIp}' no tiene un formato IPv4 válido (ejemplo: 192.168.1.201).`,
+          message: "El puerto de comunicación debe ser un número válido entre 1 y 65535 (por defecto: 4370).",
         });
       }
 
-      // 3. Check for duplicates in persistent storage
+      // 2. Check for duplicates in persistent storage
       const existingDevices = await getStoredDevices();
 
       const dupSn = existingDevices.find(
@@ -561,26 +573,29 @@ async function startServer() {
         });
       }
 
-      const dupIp = existingDevices.find(
-        (d: any) => d.ip_address === cleanIp && Number(d.port) === cleanPort
-      );
-      if (dupIp) {
-        return res.status(409).json({
-          success: false,
-          message: `La dirección IP '${cleanIp}' con puerto ${cleanPort} ya se encuentra asignada al marcador '${dupIp.name}'.`,
-        });
+      if (cleanIp) {
+        const dupIp = existingDevices.find(
+          (d: any) => d.ip_address === cleanIp && Number(d.port) === cleanPort
+        );
+        if (dupIp) {
+          return res.status(409).json({
+            success: false,
+            message: `La dirección IP '${cleanIp}' con puerto ${cleanPort} ya se encuentra asignada al marcador '${dupIp.name}'.`,
+          });
+        }
       }
 
-      // 4. Create and persist new device record
+      // 3. Create and persist new device record
       const newDevice = {
         id: `dev-${Date.now()}`,
         serial_number: cleanSn,
         name: cleanName,
-        brand: String(brand).trim(),
+        brand: String(brand || "ZKTeco").trim(),
         model: String(model).trim(),
-        ip_address: cleanIp,
-        port: cleanPort,
+        ip_address: cleanIp || "192.168.1.200",
+        port: cleanPort || 4370,
         protocol: protocol || "PUSH_ADMS",
+        connection_type: connection_type || "PUSH_ADMS",
         dependencia_tipo: cleanDepTipo,
         dependencia_id: cleanDepId,
         dependencia_name: cleanDepName,
@@ -588,6 +603,21 @@ async function startServer() {
         last_activity: new Date().toLocaleString("es-PE", { timeZone: "America/Lima" }),
         status: status || "CONFIGURED",
         firmware_version: firmware_version || "Ver 8.0.4.3-2026",
+        push_config: push_config || {
+          server_url: "http://192.168.1.100",
+          push_port: 3000,
+          endpoint: "/iclock/cdata",
+          push_enabled: true,
+        },
+        capabilities: capabilities || {
+          tcp_zk: true,
+          adms_push: true,
+          fingerprint: true,
+          face: true,
+          card: true,
+          pin: true,
+          realtime_push: true,
+        },
         last_test: last_test || undefined,
       };
 
@@ -613,39 +643,178 @@ async function startServer() {
 
   // PUT /api/devices/:id - Update existing device
   app.put("/api/devices/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "dispositivos biométricos")) return;
     try {
       const { id } = req.params;
       const updatedData = req.body || {};
 
       const existingDevices = await getStoredDevices();
-      const index = existingDevices.findIndex((d: any) => d.id === id);
+      const index = existingDevices.findIndex(
+        (d: any) => d.id === id || (d.serial_number && d.serial_number.toUpperCase() === String(id).toUpperCase())
+      );
 
       if (index === -1) {
-        existingDevices.push({ ...updatedData, id });
-      } else {
-        existingDevices[index] = {
-          ...existingDevices[index],
-          ...updatedData,
-          id,
-        };
+        return res.status(404).json({
+          success: false,
+          message: `No se encontró el marcador con identificador '${id}'.`,
+        });
       }
 
+      const currentDev = existingDevices[index];
+
+      // Form validation
+      const name = updatedData.name ? String(updatedData.name).trim() : currentDev.name;
+      const serial_number = updatedData.serial_number
+        ? String(updatedData.serial_number).trim().toUpperCase()
+        : currentDev.serial_number;
+      const brand = updatedData.brand ? String(updatedData.brand).trim() : (currentDev.brand || 'ZKTeco');
+      const model = updatedData.model ? String(updatedData.model).trim() : currentDev.model;
+      const location_detail = updatedData.location_detail
+        ? String(updatedData.location_detail).trim()
+        : currentDev.location_detail;
+      const ip_address = updatedData.ip_address !== undefined
+        ? String(updatedData.ip_address).trim()
+        : currentDev.ip_address;
+      const port = updatedData.port !== undefined ? Number(updatedData.port) : currentDev.port;
+      const protocol = updatedData.protocol || currentDev.protocol || 'PUSH_ADMS';
+      const connection_type = updatedData.connection_type || currentDev.connection_type || 'PUSH_ADMS';
+      const status = updatedData.status || currentDev.status || 'CONFIGURED';
+
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: "El nombre del marcador es obligatorio.",
+        });
+      }
+
+      if (!location_detail) {
+        return res.status(400).json({
+          success: false,
+          message: "La ubicación física del marcador es obligatoria.",
+        });
+      }
+
+      const isUsb = connection_type === 'USB' || protocol === 'USB';
+      if (!isUsb && ip_address) {
+        const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        if (!ipRegex.test(ip_address)) {
+          return res.status(400).json({
+            success: false,
+            message: "Dirección IP no válida.",
+          });
+        }
+      }
+
+      if (!isUsb && port && (isNaN(port) || port < 1 || port > 65535)) {
+        return res.status(400).json({
+          success: false,
+          message: "El puerto de comunicación debe ser un número válido entre 1 y 65535.",
+        });
+      }
+
+      // Check duplicates with other devices
+      const dupName = existingDevices.find(
+        (d: any) => d.id !== currentDev.id && d.name && d.name.toLowerCase() === name.toLowerCase()
+      );
+      if (dupName) {
+        return res.status(409).json({
+          success: false,
+          message: `Ya existe otro marcador con el nombre '${name}'. Por favor elija un nombre diferente.`,
+        });
+      }
+
+      if (serial_number && serial_number !== currentDev.serial_number) {
+        const dupSn = existingDevices.find(
+          (d: any) => d.id !== currentDev.id && d.serial_number && d.serial_number.toUpperCase() === serial_number
+        );
+        if (dupSn) {
+          return res.status(409).json({
+            success: false,
+            message: `Ya existe otro marcador registrado con el número de serie '${serial_number}'.`,
+          });
+        }
+      }
+
+      if (ip_address && !isUsb) {
+        const dupIp = existingDevices.find(
+          (d: any) => d.id !== currentDev.id && d.ip_address === ip_address && Number(d.port) === Number(port)
+        );
+        if (dupIp) {
+          return res.status(409).json({
+            success: false,
+            message: `La dirección IP '${ip_address}' con puerto ${port} ya se encuentra asignada al marcador '${dupIp.name}'.`,
+          });
+        }
+      }
+
+      // Map Dependencia
+      const cleanDepTipo = updatedData.dependencia_tipo || (updatedData.dependencia_id === 'dep-02' || String(updatedData.dependencia_name).toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : (currentDev.dependencia_tipo || 'SEDE_CENTRAL'));
+      const cleanDepName = cleanDepTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : (updatedData.dependencia_name || currentDev.dependencia_name || 'SEDE CENTRAL');
+      const cleanDepId = cleanDepTipo === 'AGENCIA_AGRARIA' ? (updatedData.dependencia_id || 'dep-02') : (updatedData.dependencia_id || 'dep-01');
+
+      const updatedDevice = {
+        ...currentDev,
+        ...updatedData,
+        id: currentDev.id,
+        name,
+        serial_number,
+        brand,
+        model,
+        ip_address,
+        port,
+        protocol,
+        connection_type,
+        dependencia_tipo: cleanDepTipo,
+        dependencia_id: cleanDepId,
+        dependencia_name: cleanDepName,
+        location_detail,
+        status,
+        last_activity: new Date().toLocaleString("es-PE", { timeZone: "America/Lima" }),
+      };
+
+      existingDevices[index] = updatedDevice;
       await saveStoredDevices(existingDevices);
-      return res.json({ success: true, message: "Marcador actualizado correctamente.", data: existingDevices[index] || updatedData });
+
+      console.log(`[API /api/devices/${id}] Marcador actualizado exitosamente: ${updatedDevice.name} (${updatedDevice.serial_number})`);
+
+      return res.json({
+        success: true,
+        message: "Marcador actualizado correctamente.",
+        data: updatedDevice,
+      });
     } catch (err: any) {
       console.error("Error al actualizar marcador:", err);
-      return res.status(500).json({ success: false, message: "Error al actualizar marcador en base de datos." });
+      return res.status(500).json({
+        success: false,
+        message: "Error al actualizar marcador en base de datos.",
+        error: err.message,
+      });
     }
   });
 
-  // DELETE /api/devices/:id - Delete device
+  // DELETE /api/devices/:id - Delete or Deactivate device
   app.delete("/api/devices/:id", async (req, res) => {
+    if (!checkAdminPermission(req, res, "dispositivos biométricos")) return;
     try {
       const { id } = req.params;
+      const { soft_deactivate } = req.query;
       const existingDevices = await getStoredDevices();
-      const filtered = existingDevices.filter((d: any) => d.id !== id);
-      await saveStoredDevices(filtered);
-      return res.json({ success: true, message: "Marcador eliminado correctamente." });
+      const index = existingDevices.findIndex((d: any) => d.id === id);
+
+      if (index === -1) {
+        return res.status(404).json({ success: false, message: "Marcador no encontrado." });
+      }
+
+      if (soft_deactivate === "true") {
+        existingDevices[index].status = "INACTIVE";
+        existingDevices[index].last_activity = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
+        await saveStoredDevices(existingDevices);
+        return res.json({ success: true, message: "Marcador desactivado correctamente.", data: existingDevices[index] });
+      }
+
+      const deleted = existingDevices.splice(index, 1)[0];
+      await saveStoredDevices(existingDevices);
+      return res.json({ success: true, message: "Marcador eliminado correctamente.", data: deleted });
     } catch (err: any) {
       console.error("Error al eliminar marcador:", err);
       return res.status(500).json({ success: false, message: "Error al eliminar marcador." });

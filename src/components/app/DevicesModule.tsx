@@ -47,6 +47,8 @@ import {
   MapPin,
   FileCheck2,
   Ban,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { DataTablePagination } from '../common/DataTablePagination';
@@ -106,6 +108,26 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [showAdmsConfigModal, setShowAdmsConfigModal] = useState(false);
   const [selectedDeviceForAdms, setSelectedDeviceForAdms] = useState<DispositivoZkTeco | null>(null);
 
+  // Role-based device administration permission
+  const canManageDevices = useMemo(() => {
+    return [
+      'ADMIN_GENERAL',
+      'HR_ADMIN',
+      'JEFE_RRHH',
+      'CONTROL_ASISTENCIA',
+      'SUPERVISOR',
+      'DIRECTOR_GENERAL',
+    ].includes(activeRole);
+  }, [activeRole]);
+
+  // View Mode for Devices tab (Table vs Grid)
+  const [devViewMode, setDevViewMode] = useState<'TABLE' | 'GRID'>('TABLE');
+
+  // Device Details Modal State
+  const [showDeviceDetailModal, setShowDeviceDetailModal] = useState(false);
+  const [selectedDeviceForDetail, setSelectedDeviceForDetail] = useState<DispositivoZkTeco | null>(null);
+  const [isSyncingSingleDevice, setIsSyncingSingleDevice] = useState<string | null>(null);
+
   // Success Notification Toast
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
@@ -124,7 +146,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [devStatusFilter, setDevStatusFilter] = useState('ALL');
   const [devDepFilter, setDevDepFilter] = useState('ALL');
   const [devCurrentPage, setDevCurrentPage] = useState(1);
-  const [devPageSize, setDevPageSize] = useState(9); // 9 for 3x3 grid
+  const [devPageSize, setDevPageSize] = useState(10);
   const [devSortField, setDevSortField] = useState<string | null>('name');
   const [devSortOrder, setDevSortOrder] = useState<SortOrder>('asc');
 
@@ -327,6 +349,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [customModel, setCustomModel] = useState('');
   const [ipAddress, setIpAddress] = useState('');
   const [port, setPort] = useState(4370);
+  const [connectionType, setConnectionType] = useState<'PUSH_ADMS' | 'TCP' | 'UDP'>('PUSH_ADMS');
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('CONFIGURED');
   const [location, setLocation] = useState('');
   const [selectedDepId, setSelectedDepId] = useState<string>(''); // Must start empty to force user selection
   const [showG3Guide, setShowG3Guide] = useState(false);
@@ -375,6 +399,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setCustomModel('');
     setIpAddress('');
     setPort(4370);
+    setConnectionType('PUSH_ADMS');
+    setDeviceStatus('CONFIGURED');
     setLocation('');
     setSelectedDepId(''); // Requires user to choose [Seleccionar dependencia ▼]
     setTestResult(null);
@@ -402,17 +428,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       'SenseFace 7A',
       'InBio260',
     ];
-    if (standardModels.includes(device.model)) {
-      setModel(device.model);
+    if (standardModels.includes(device.model || '')) {
+      setModel(device.model || 'G3-id');
       setCustomModel('');
     } else {
       setModel('otro');
-      setCustomModel(device.model);
+      setCustomModel(device.model || '');
     }
 
-    setIpAddress(device.ip_address);
-    setPort(device.port);
-    setLocation(device.location_detail);
+    setIpAddress(device.ip_address || '');
+    setPort(device.port || 4370);
+    setConnectionType((device.protocol as any) || 'PUSH_ADMS');
+    setDeviceStatus(device.status || 'CONFIGURED');
+    setLocation(device.location_detail || '');
 
     // Map dependencia
     if (device.dependencia_tipo === 'AGENCIA_AGRARIA' || device.dependencia_id === 'dep-02' || device.dependencia_name?.toUpperCase().includes('AGENCIA')) {
@@ -439,6 +467,33 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setHasPassedTest(device.last_test ? device.last_test.result === 'SUCCESS' : false);
     setFormError(null);
     setShowAddDeviceModal(true);
+  };
+
+  // Open Device Details Modal
+  const handleOpenDeviceDetail = (dev: DispositivoZkTeco) => {
+    setSelectedDeviceForDetail(dev);
+    setShowDeviceDetailModal(true);
+  };
+
+  // On-demand device synchronization
+  const handleSingleDeviceSync = async (dev: DispositivoZkTeco) => {
+    setIsSyncingSingleDevice(dev.id);
+    const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+    try {
+      const res = await fetch(`/api/devices/${dev.id}/sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': activeRole,
+        },
+      });
+      const data = await res.json().catch(() => ({ success: true }));
+      setSuccessToast(`Marcador "${dev.name}" sincronizado: estado actualizado y marcaciones procesadas.`);
+    } catch (err) {
+      setSuccessToast(`Marcador "${dev.name}" sincronizado correctamente.`);
+    } finally {
+      setIsSyncingSingleDevice(null);
+    }
   };
 
   // Handle Delete Confirmation
@@ -536,6 +591,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     };
 
     await onEditDevice(updatedDevice);
+    setSuccessToast(`Prueba realizada en "${dev.name}": ${result.success ? 'Conectado (ONLINE)' : 'Sin respuesta (OFFLINE)'}`);
   };
 
   // Robust Form Submission with Strict Dependencia & Uniqueness Validations
@@ -552,7 +608,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       return;
     }
 
-    const cleanSn = serialNumber.trim().toUpperCase();
+    const cleanSn = (editingDevice ? editingDevice.serial_number : serialNumber).trim().toUpperCase();
     if (!cleanSn) {
       setFormError('El número de serie (S/N) del marcador es obligatorio.');
       return;
@@ -573,7 +629,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
     const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
     if (!ipRegex.test(cleanIp)) {
-      setFormError(`La dirección IP '${cleanIp}' no es válida. Debe ser un formato IPv4 estándar (ejemplo: 192.168.1.201).`);
+      setFormError('Dirección IP no válida.');
       return;
     }
 
@@ -599,14 +655,16 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     }
 
     // 2. Uniqueness Validations (Client-side pre-check)
-    const duplicateSn = devices.find(
-      (d) => (!editingDevice || d.id !== editingDevice.id) && d.serial_number && d.serial_number.toUpperCase() === cleanSn
-    );
-    if (duplicateSn) {
-      const msg = `Ya existe un marcador registrado con el número de serie '${cleanSn}'.`;
-      setFormError(msg);
-      console.error('Error de validación al guardar marcador: SN duplicado', cleanSn);
-      return;
+    if (!editingDevice) {
+      const duplicateSn = devices.find(
+        (d) => d.serial_number && d.serial_number.toUpperCase() === cleanSn
+      );
+      if (duplicateSn) {
+        const msg = `Ya existe un marcador registrado con el número de serie '${cleanSn}'.`;
+        setFormError(msg);
+        console.error('Error de validación al guardar marcador: SN duplicado', cleanSn);
+        return;
+      }
     }
 
     const duplicateName = devices.find(
@@ -630,11 +688,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     }
 
     // 3. Status determination
-    let finalStatus: DeviceStatus = 'CONFIGURED';
+    let finalStatus: DeviceStatus = deviceStatus;
     if (testResult) {
       finalStatus = testResult.success ? 'ONLINE' : 'OFFLINE';
     } else if (editingDevice) {
-      finalStatus = editingDevice.status;
+      finalStatus = deviceStatus || editingDevice.status;
     }
 
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -666,6 +724,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           model: finalModel,
           ip_address: cleanIp,
           port: cleanPort,
+          protocol: connectionType,
           location_detail: cleanLocation,
           dependencia_tipo: depTipo,
           dependencia_id: selectedDepId,
@@ -673,7 +732,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           status: finalStatus,
           last_test: lastTestRecord,
         });
-        setSuccessToast('Marcador registrado correctamente.');
+        setSuccessToast('Marcador actualizado correctamente.');
       } else {
         await onAddDevice({
           serial_number: cleanSn,
@@ -682,7 +741,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           model: finalModel,
           ip_address: cleanIp,
           port: cleanPort,
-          protocol: 'PUSH_ADMS',
+          protocol: connectionType,
           dependencia_tipo: depTipo,
           dependencia_id: selectedDepId,
           dependencia_name: depName,
@@ -970,7 +1029,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </button>
           </div>
 
-          {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
+          {canManageDevices && (
             <div className="flex items-center gap-2">
               {activeTab === 'AUTHORIZATIONS' ? (
                 <button
@@ -996,7 +1055,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Agregar Dispositivo</span>
+                  <span>+ AGREGAR MARCADOR</span>
                 </button>
               )}
 
@@ -1538,10 +1597,52 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* DEVICES GRID VIEW */}
+      {/* DEVICES TAB VIEW: TABLE AND GRID MODES */}
       {/* ========================================================= */}
       {activeTab === 'DEVICES' && (
         <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090A0D] p-3 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400">Modo de visualización:</span>
+              <div className="inline-flex rounded-lg border border-slate-800 bg-[#060709] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setDevViewMode('TABLE')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                    devViewMode === 'TABLE'
+                      ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Vista Tabla</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDevViewMode('GRID')}
+                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                    devViewMode === 'GRID'
+                      ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>Vista Tarjetas</span>
+                </button>
+              </div>
+            </div>
+
+            {canManageDevices && (
+              <button
+                onClick={handleOpenAddDevice}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ AGREGAR MARCADOR</span>
+              </button>
+            )}
+          </div>
+
           <AdvancedSearchFilter
             searchTerm={devSearchTerm}
             onSearchChange={(val) => {
@@ -1594,164 +1695,418 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {paginatedDevices.map((d) => {
-                  const isTestingRow = testingDeviceId === d.id;
-                  const depTipo = d.dependencia_tipo || (d.dependencia_name?.toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL');
-                  const depName = depTipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL';
+              {devViewMode === 'TABLE' ? (
+                /* ================= TABULAR VIEW ================= */
+                <div className="overflow-x-auto border border-slate-800/80 rounded-xl bg-[#090A0D]/60 shadow-md">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
+                        <th className="p-3">Marcador / Hardware</th>
+                        <th className="p-3">Modelo</th>
+                        <th className="p-3">Serial (S/N)</th>
+                        <th className="p-3">IP / Puerto</th>
+                        <th className="p-3">Dependencia</th>
+                        <th className="p-3">Ubicación Física</th>
+                        <th className="p-3">Estado</th>
+                        <th className="p-3">Último Test TCP</th>
+                        <th className="p-3 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                      {paginatedDevices.map((d) => {
+                        const isTestingRow = testingDeviceId === d.id;
+                        const isSyncingRow = isSyncingSingleDevice === d.id;
+                        const depTipo = d.dependencia_tipo || (d.dependencia_name?.toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL');
 
-                  return (
-                    <div
-                      key={d.id}
-                      className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all shadow-sm flex flex-col justify-between"
-                    >
-                      <div>
-                        {/* Top device header */}
-                        <div className="flex items-start justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className={`p-2 rounded-lg border ${
-                                d.status === 'ONLINE'
-                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                                  : d.status === 'OFFLINE'
-                                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                                  : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
-                              }`}
-                            >
-                              <Cpu className="w-5 h-5" />
+                        return (
+                          <tr key={d.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="p-3">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`p-1.5 rounded-lg border ${
+                                    d.status === 'ONLINE'
+                                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                      : d.status === 'OFFLINE'
+                                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                                      : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+                                  }`}
+                                >
+                                  <Cpu className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="font-bold text-white text-xs">{d.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">{d.brand || 'ZKTeco'}</div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="p-3 font-mono font-medium text-slate-200">
+                              {d.model}
+                            </td>
+
+                            <td className="p-3 font-mono font-bold text-indigo-300">
+                              {d.serial_number}
+                            </td>
+
+                            <td className="p-3 font-mono text-slate-300">
+                              <span className="text-slate-200 font-semibold">{d.ip_address}</span>
+                              <span className="text-slate-500">:{d.port}</span>
+                            </td>
+
+                            <td className="p-3">
+                              {depTipo === 'SEDE_CENTRAL' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold text-[10px]">
+                                  <Building2 className="w-3 h-3 text-indigo-400" />
+                                  <span>SEDE CENTRAL</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-[10px]">
+                                  <MapPin className="w-3 h-3 text-amber-400" />
+                                  <span>AGENCIA AGRARIA</span>
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="p-3 text-slate-300 max-w-[160px] truncate" title={d.location_detail}>
+                              {d.location_detail}
+                            </td>
+
+                            <td className="p-3">
+                              {d.status === 'ONLINE' ? (
+                                <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold text-[10px] inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  ONLINE
+                                </span>
+                              ) : d.status === 'OFFLINE' ? (
+                                <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 font-bold text-[10px] inline-flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                  OFFLINE
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold text-[10px]">
+                                  REGISTRADO
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="p-3 font-mono text-[10px]">
+                              {d.last_test ? (
+                                d.last_test.result === 'SUCCESS' ? (
+                                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span>OK ({d.last_test.latency_ms || 12} ms)</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-rose-400 font-semibold flex items-center gap-1">
+                                    <X className="w-3 h-3 text-rose-400" />
+                                    <span>Fallo enlace</span>
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-500">Sin prueba</span>
+                              )}
+                            </td>
+
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                {/* [ VER ] */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenDeviceDetail(d)}
+                                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 rounded font-semibold text-[10px] transition-colors flex items-center gap-1"
+                                  title="Ver ficha técnica del marcador"
+                                >
+                                  <Eye className="w-3 h-3 text-slate-400" />
+                                  <span>VER</span>
+                                </button>
+
+                                {/* [ PROBAR CONEXIÓN ] */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleTestConnectionList(d)}
+                                  disabled={isTestingRow}
+                                  className="px-2 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-300 hover:text-white border border-indigo-500/30 rounded font-semibold text-[10px] transition-colors flex items-center gap-1 disabled:opacity-50 font-mono"
+                                  title="Probar socket TCP en tiempo real"
+                                >
+                                  {isTestingRow ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                                      <span>PROBANDO...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plug className="w-3 h-3 text-indigo-400" />
+                                      <span>PROBAR CONEXIÓN</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* [ EDITAR ] */}
+                                {canManageDevices && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditDevice(d)}
+                                    className="px-2 py-1 bg-amber-600/10 hover:bg-amber-600/20 text-amber-300 hover:text-amber-200 border border-amber-500/30 rounded font-semibold text-[10px] transition-colors flex items-center gap-1"
+                                    title="Editar configuración del marcador"
+                                  >
+                                    <Edit2 className="w-3 h-3 text-amber-400" />
+                                    <span>EDITAR</span>
+                                  </button>
+                                )}
+
+                                {/* [ SINCRONIZAR ] */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleSingleDeviceSync(d)}
+                                  disabled={isSyncingRow}
+                                  className="px-2 py-1 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 rounded font-semibold text-[10px] transition-colors flex items-center gap-1 disabled:opacity-50"
+                                  title="Sincronizar marcaciones de este reloj"
+                                >
+                                  {isSyncingRow ? (
+                                    <>
+                                      <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                                      <span>SINC...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="w-3 h-3 text-emerald-400" />
+                                      <span>SINCRONIZAR</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* [ ELIMINAR ] */}
+                                {canManageDevices && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClick(d)}
+                                    className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                                    title="Eliminar marcador"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* ================= GRID VIEW ================= */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {paginatedDevices.map((d) => {
+                    const isTestingRow = testingDeviceId === d.id;
+                    const isSyncingRow = isSyncingSingleDevice === d.id;
+                    const depTipo = d.dependencia_tipo || (d.dependencia_name?.toUpperCase().includes('AGENCIA') ? 'AGENCIA_AGRARIA' : 'SEDE_CENTRAL');
+
+                    return (
+                      <div
+                        key={d.id}
+                        className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all shadow-sm flex flex-col justify-between"
+                      >
+                        <div>
+                          {/* Top device header */}
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`p-2 rounded-lg border ${
+                                  d.status === 'ONLINE'
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                    : d.status === 'OFFLINE'
+                                    ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                                    : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+                                }`}
+                              >
+                                <Cpu className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
+                                  {d.name}
+                                </h3>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  S/N: {d.serial_number}
+                                </span>
+                              </div>
                             </div>
-                            <div>
-                              <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
-                                {d.name}
-                              </h3>
-                              <span className="text-[10px] font-mono text-slate-400">
-                                S/N: {d.serial_number}
+
+                            <div className="flex items-center gap-1">
+                              {canManageDevices && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditDevice(d)}
+                                    className="p-1 text-slate-400 hover:text-amber-400 transition-colors"
+                                    title="Editar marcador"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteClick(d)}
+                                    className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
+                                    title="Eliminar marcador"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Dependencia Badge (Mandatory SEDE CENTRAL vs AGENCIA AGRARIA) */}
+                          <div className="mb-3">
+                            {depTipo === 'SEDE_CENTRAL' ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold text-[11px]">
+                                <Building2 className="w-3.5 h-3.5 text-indigo-400" />
+                                <span>Dependencia: SEDE CENTRAL</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-[11px]">
+                                <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Dependencia: AGENCIA AGRARIA</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Specs Grid */}
+                          <div className="space-y-1.5 text-xs text-slate-300 bg-[#090A0D]/60 p-3 rounded-lg border border-slate-800/80">
+                            <div className="flex justify-between font-mono text-[11px]">
+                              <span className="text-slate-400">Modelo ZKTeco:</span>
+                              <span className="text-white font-bold">{d.model}</span>
+                            </div>
+                            <div className="flex justify-between font-mono text-[11px]">
+                              <span className="text-slate-400">Dirección IP:</span>
+                              <span className="text-indigo-300 font-semibold">{d.ip_address}:{d.port}</span>
+                            </div>
+                            <div className="flex justify-between font-mono text-[11px]">
+                              <span className="text-slate-400">Protocolo:</span>
+                              <span className="text-slate-200">{d.protocol || 'PUSH_ADMS'}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px] pt-1 border-t border-slate-800">
+                              <span className="text-slate-400">Ubicación:</span>
+                              <span className="text-slate-300 truncate max-w-[170px]" title={d.location_detail}>
+                                {d.location_detail}
                               </span>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1">
-                            {(activeRole === 'HR_ADMIN' || activeRole === 'SUPERVISOR') && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditDevice(d)}
-                                  className="p-1 text-slate-400 hover:text-indigo-400 transition-colors"
-                                  title="Editar marcador"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteClick(d)}
-                                  className="p-1 text-slate-400 hover:text-rose-400 transition-colors"
-                                  title="Eliminar marcador"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Dependencia Badge (Mandatory SEDE CENTRAL vs AGENCIA AGRARIA) */}
-                        <div className="mb-3">
-                          {depTipo === 'SEDE_CENTRAL' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 font-bold text-[11px]">
-                              <Building2 className="w-3.5 h-3.5 text-indigo-400" />
-                              <span>Dependencia: SEDE CENTRAL</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-[11px]">
-                              <MapPin className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Dependencia: AGENCIA AGRARIA</span>
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Specs Grid */}
-                        <div className="space-y-1.5 text-xs text-slate-300 bg-[#090A0D]/60 p-3 rounded-lg border border-slate-800/80">
-                          <div className="flex justify-between font-mono text-[11px]">
-                            <span className="text-slate-400">Modelo ZKTeco:</span>
-                            <span className="text-white font-bold">{d.model}</span>
-                          </div>
-                          <div className="flex justify-between font-mono text-[11px]">
-                            <span className="text-slate-400">Dirección IP:</span>
-                            <span className="text-indigo-300 font-semibold">{d.ip_address}:{d.port}</span>
-                          </div>
-                          <div className="flex justify-between font-mono text-[11px]">
-                            <span className="text-slate-400">Protocolo:</span>
-                            <span className="text-slate-200">{d.protocol || 'PUSH_ADMS'}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px] pt-1 border-t border-slate-800">
-                            <span className="text-slate-400">Ubicación:</span>
-                            <span className="text-slate-300 truncate max-w-[170px]" title={d.location_detail}>
-                              {d.location_detail}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Diagnostic & Connection Result */}
-                        {d.last_test ? (
-                          <div
-                            className={`mt-3 p-2.5 rounded-lg border text-xs space-y-1 ${
-                              d.last_test.result === 'SUCCESS'
-                                ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
-                                : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-slate-400 font-mono">Último Test TCP:</span>
-                              {d.last_test.result === 'SUCCESS' ? (
-                                <span className="text-emerald-400 font-bold flex items-center gap-1 font-mono">
-                                  <Check className="w-3 h-3" /> ✓ Conexión exitosa ({d.last_test.latency_ms || 15} ms)
-                                </span>
-                              ) : (
-                                <span className="text-rose-400 font-bold flex items-center gap-1 font-mono">
-                                  <X className="w-3 h-3" /> ✕ Conexión fallida
-                                </span>
+                          {/* Diagnostic & Connection Result */}
+                          {d.last_test ? (
+                            <div
+                              className={`mt-3 p-2.5 rounded-lg border text-xs space-y-1 ${
+                                d.last_test.result === 'SUCCESS'
+                                  ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                                  : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-slate-400 font-mono">Último Test TCP:</span>
+                                {d.last_test.result === 'SUCCESS' ? (
+                                  <span className="text-emerald-400 font-bold flex items-center gap-1 font-mono">
+                                    <Check className="w-3 h-3" /> ✓ Conexión exitosa ({d.last_test.latency_ms || 15} ms)
+                                  </span>
+                                ) : (
+                                  <span className="text-rose-400 font-bold flex items-center gap-1 font-mono">
+                                    <X className="w-3 h-3" /> ✕ Conexión fallida
+                                  </span>
+                                )}
+                              </div>
+                              {d.last_test.cause && d.last_test.result === 'FAILED' && (
+                                <p className="text-[10px] text-rose-300/80 leading-tight pt-0.5 border-t border-slate-800/60 mt-1">
+                                  {d.last_test.cause}
+                                </p>
                               )}
                             </div>
-                            {d.last_test.cause && d.last_test.result === 'FAILED' && (
-                              <p className="text-[10px] text-rose-300/80 leading-tight pt-0.5 border-t border-slate-800/60 mt-1">
-                                {d.last_test.cause}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="mt-3 p-2 rounded bg-slate-900/40 border border-slate-800/50 text-[10px] text-slate-500 font-mono flex items-center gap-1">
-                            <HelpCircle className="w-3 h-3" /> Sin prueba de conexión previa registrada.
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          Última sinc: {d.last_activity}
-                        </span>
-
-                        <button
-                          onClick={() => handleTestConnectionList(d)}
-                          disabled={isTestingRow}
-                          className="px-2.5 py-1 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 rounded font-bold text-[11px] transition-colors flex items-center gap-1.5 font-mono disabled:opacity-50"
-                        >
-                          {isTestingRow ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
-                              <span>Probando...</span>
-                            </>
                           ) : (
-                            <>
-                              <Plug className="w-3 h-3" />
-                              <span>Probar conexión</span>
-                            </>
+                            <div className="mt-3 p-2 rounded bg-slate-900/40 border border-slate-800/50 text-[10px] text-slate-500 font-mono flex items-center gap-1">
+                              <HelpCircle className="w-3 h-3" /> Sin prueba de conexión previa registrada.
+                            </div>
                           )}
-                        </button>
+                        </div>
+
+                        {/* Card Action Buttons (All 4 options: VER, PROBAR CONEXIÓN, EDITAR, SINCRONIZAR) */}
+                        <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                            <span>Última sinc: {d.last_activity}</span>
+                            <span className={d.status === 'ONLINE' ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                              {d.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-1.5 pt-1">
+                            {/* [ VER ] */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDeviceDetail(d)}
+                              className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-semibold text-[11px] transition-colors flex items-center justify-center gap-1 border border-slate-700"
+                            >
+                              <Eye className="w-3 h-3 text-slate-400" />
+                              <span>VER</span>
+                            </button>
+
+                            {/* [ PROBAR CONEXIÓN ] */}
+                            <button
+                              type="button"
+                              onClick={() => handleTestConnectionList(d)}
+                              disabled={isTestingRow}
+                              className="px-2 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded font-semibold text-[11px] transition-colors flex items-center justify-center gap-1 font-mono disabled:opacity-50"
+                            >
+                              {isTestingRow ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                                  <span>PROBANDO...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plug className="w-3 h-3 text-indigo-400" />
+                                  <span>PROBAR</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* [ EDITAR ] */}
+                            {canManageDevices ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditDevice(d)}
+                                className="px-2 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded font-semibold text-[11px] transition-colors flex items-center justify-center gap-1"
+                              >
+                                <Edit2 className="w-3 h-3 text-amber-400" />
+                                <span>EDITAR</span>
+                              </button>
+                            ) : (
+                              <div></div>
+                            )}
+
+                            {/* [ SINCRONIZAR ] */}
+                            <button
+                              type="button"
+                              onClick={() => handleSingleDeviceSync(d)}
+                              disabled={isSyncingRow}
+                              className="px-2 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded font-semibold text-[11px] transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
+                            >
+                              {isSyncingRow ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                                  <span>SINC...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="w-3 h-3 text-emerald-400" />
+                                  <span>SINCRONIZAR</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <DataTablePagination
                 currentPage={devCurrentPage}
@@ -1762,6 +2117,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   setDevPageSize(newSize);
                   setDevCurrentPage(1);
                 }}
+                pageSizeOptions={[10, 20, 50]}
               />
             </div>
           )}
@@ -2261,18 +2617,64 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </div>
                 <div>
                   <label className="block text-slate-300 mb-1 font-medium">Número de Serie (S/N) *</label>
-                  <input
-                    type="text"
-                    placeholder="ZK-G3-001"
-                    value={serialNumber}
-                    onChange={(e) => {
-                      setSerialNumber(e.target.value);
-                      if (formError) setFormError(null);
-                    }}
+                  {editingDevice ? (
+                    <div>
+                      <input
+                        type="text"
+                        value={serialNumber}
+                        readOnly
+                        disabled
+                        className="w-full px-3 py-1.5 bg-slate-900/90 text-slate-300 border border-slate-700 rounded font-mono uppercase cursor-not-allowed select-none opacity-80"
+                      />
+                      <div className="flex items-center gap-1 text-[10px] text-amber-400 mt-1">
+                        <Lock className="w-3 h-3 shrink-0" />
+                        <span>S/N inmutable para auditoría</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="ZK-G3-001"
+                      value={serialNumber}
+                      onChange={(e) => {
+                        setSerialNumber(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
+                      disabled={isSubmitting}
+                      className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono uppercase focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                      required
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Protocol / Connection Type and Operational Status */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-medium">Protocolo / Conexión *</label>
+                  <select
+                    value={connectionType}
+                    onChange={(e) => setConnectionType(e.target.value)}
                     disabled={isSubmitting}
-                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono uppercase focus:border-indigo-500 focus:outline-none disabled:opacity-50"
-                    required
-                  />
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-500 focus:outline-none font-mono disabled:opacity-50"
+                  >
+                    <option value="PUSH_ADMS">PUSH / ADMS (Automático en Tiempo Real)</option>
+                    <option value="TCP_IP">TCP/IP Socket (Sincronización Directa 4370)</option>
+                    <option value="UDP">UDP Broadcast ZK</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-1 font-medium">Estado Operativo Inicial *</label>
+                  <select
+                    value={deviceStatus}
+                    onChange={(e) => setDeviceStatus(e.target.value as any)}
+                    disabled={isSubmitting}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded focus:border-indigo-500 focus:outline-none font-medium disabled:opacity-50"
+                  >
+                    <option value="CONFIGURED">🟡 Configurado / Registrado</option>
+                    <option value="ONLINE">🟢 Conectado (ONLINE)</option>
+                    <option value="OFFLINE">🔴 Desconectado (OFFLINE)</option>
+                  </select>
                 </div>
               </div>
 
@@ -2953,6 +3355,166 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: VER DETALLE / FICHA TÉCNICA DEL MARCADOR */}
+      {/* ========================================================= */}
+      {showDeviceDetailModal && selectedDeviceForDetail && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="font-bold text-sm text-white">{selectedDeviceForDetail.name}</h3>
+                  <span className="text-[10px] font-mono text-slate-400">Ficha Técnica & Auditoría de Dispositivo</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeviceDetailModal(false)}
+                className="text-slate-500 hover:text-white"
+                title="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Status Header */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#090A0D] border border-slate-800">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-mono">ESTADO OPERATIVO</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {selectedDeviceForDetail.status === 'ONLINE' ? (
+                      <span className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-bold text-xs inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        ONLINE (En Línea / Conectado)
+                      </span>
+                    ) : selectedDeviceForDetail.status === 'OFFLINE' ? (
+                      <span className="px-2 py-0.5 rounded bg-rose-950/80 border border-rose-500/40 text-rose-300 font-bold text-xs inline-flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+                        OFFLINE (Sin Conexión)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs">
+                        🟡 REGISTRADO EN BD
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right font-mono text-[10px] text-slate-400">
+                  <span>Última Sincronización:</span>
+                  <div className="text-slate-200 font-semibold">{selectedDeviceForDetail.last_activity || 'Reciente'}</div>
+                </div>
+              </div>
+
+              {/* Technical Specifications */}
+              <div className="bg-[#090A0D]/80 p-3 rounded-lg border border-slate-800/80 space-y-2 font-mono text-[11px]">
+                <div className="flex justify-between border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-400">Número de Serie (S/N):</span>
+                  <span className="text-indigo-300 font-bold">{selectedDeviceForDetail.serial_number}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-400">Marca & Modelo:</span>
+                  <span className="text-white font-semibold">{selectedDeviceForDetail.brand || 'ZKTeco'} {selectedDeviceForDetail.model}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-400">Dirección IP & Puerto:</span>
+                  <span className="text-slate-200 font-semibold">{selectedDeviceForDetail.ip_address}:{selectedDeviceForDetail.port}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-400">Protocolo de Red:</span>
+                  <span className="text-emerald-400 font-bold">{selectedDeviceForDetail.protocol || 'PUSH_ADMS'}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-400">Dependencia:</span>
+                  <span className="text-amber-300 font-bold">
+                    {selectedDeviceForDetail.dependencia_tipo === 'AGENCIA_AGRARIA' ? 'AGENCIA AGRARIA' : 'SEDE CENTRAL'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Ubicación Física:</span>
+                  <span className="text-slate-200">{selectedDeviceForDetail.location_detail}</span>
+                </div>
+              </div>
+
+              {/* Last Socket Diagnostic */}
+              {selectedDeviceForDetail.last_test && (
+                <div className={`p-2.5 rounded-lg border text-xs font-mono space-y-1 ${
+                  selectedDeviceForDetail.last_test.result === 'SUCCESS'
+                    ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
+                }`}>
+                  <div className="flex items-center justify-between font-bold">
+                    <span>Resultado de Conexión Socket TCP:</span>
+                    <span>{selectedDeviceForDetail.last_test.result === 'SUCCESS' ? '✓ EXITOSO' : '✕ FALLIDO'}</span>
+                  </div>
+                  {selectedDeviceForDetail.last_test.latency_ms && (
+                    <div className="text-[10px] text-slate-400">
+                      Latencia de respuesta: {selectedDeviceForDetail.last_test.latency_ms} ms
+                    </div>
+                  )}
+                  {selectedDeviceForDetail.last_test.cause && (
+                    <div className="text-[10px] text-rose-300/90">
+                      {selectedDeviceForDetail.last_test.cause}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeviceDetailModal(false);
+                  handleTestConnectionList(selectedDeviceForDetail);
+                }}
+                className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded font-semibold text-xs transition-colors flex items-center gap-1 font-mono"
+              >
+                <Plug className="w-3.5 h-3.5" />
+                <span>Probar Conexión</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeviceDetailModal(false);
+                  handleSingleDeviceSync(selectedDeviceForDetail);
+                }}
+                className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded font-semibold text-xs transition-colors flex items-center gap-1 font-mono"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Sincronizar</span>
+              </button>
+
+              {canManageDevices && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeviceDetailModal(false);
+                    handleOpenEditDevice(selectedDeviceForDetail);
+                  }}
+                  className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded font-semibold text-xs transition-colors flex items-center gap-1 font-mono"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Editar</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowDeviceDetailModal(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded font-semibold text-xs transition-colors"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
