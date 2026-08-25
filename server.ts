@@ -144,8 +144,15 @@ async function getStoredDevices(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(DEVICES_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_DEVICES;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    await fs.writeFile(DEVICES_FILE, JSON.stringify(INITIAL_DEVICES, null, 2), "utf-8");
+    return INITIAL_DEVICES;
   } catch (err: any) {
+    try {
+      await fs.writeFile(DEVICES_FILE, JSON.stringify(INITIAL_DEVICES, null, 2), "utf-8");
+    } catch {}
     return INITIAL_DEVICES;
   }
 }
@@ -552,21 +559,46 @@ async function startServer() {
         });
       }
 
-      // 2. Check for duplicates in persistent storage
+      // 2. Check for existing or duplicate devices in persistent storage
       const existingDevices = await getStoredDevices();
 
-      const dupSn = existingDevices.find(
-        (d: any) => d.serial_number && d.serial_number.toUpperCase() === cleanSn
+      // If already registered with this S/N or ID, update it cleanly (upsert behavior)
+      const existingIndex = existingDevices.findIndex(
+        (d: any) => (d.serial_number && d.serial_number.toUpperCase() === cleanSn) || (req.body?.id && d.id === req.body.id)
       );
-      if (dupSn) {
-        return res.status(409).json({
-          success: false,
-          message: `Ya existe un marcador registrado con el número de serie '${cleanSn}'.`,
+
+      if (existingIndex !== -1) {
+        const updatedDev = {
+          ...existingDevices[existingIndex],
+          ...req.body,
+          serial_number: cleanSn,
+          name: cleanName,
+          brand: String(brand || "ZKTeco").trim(),
+          model: String(model).trim(),
+          ip_address: cleanIp || "192.168.1.200",
+          port: cleanPort || 4370,
+          protocol: protocol || "PUSH_ADMS",
+          connection_type: connection_type || "PUSH_ADMS",
+          dependencia_tipo: cleanDepTipo,
+          dependencia_id: cleanDepId,
+          dependencia_name: cleanDepName,
+          location_detail: String(location_detail).trim(),
+          last_activity: new Date().toLocaleString("es-PE", { timeZone: "America/Lima" }),
+          status: status || existingDevices[existingIndex].status || "CONFIGURED",
+        };
+        existingDevices[existingIndex] = updatedDev;
+        await saveStoredDevices(existingDevices);
+
+        console.log(`[API /api/devices] Marcador pre-existente actualizado: ${updatedDev.name} (${updatedDev.serial_number})`);
+        return res.status(200).json({
+          success: true,
+          message: "Marcador actualizado correctamente.",
+          data: updatedDev,
         });
       }
 
       const dupName = existingDevices.find(
-        (d: any) => d.name && d.name.toLowerCase() === cleanName.toLowerCase()
+        (d: any) => d.name && d.name.trim().toLowerCase() === cleanName.toLowerCase()
       );
       if (dupName) {
         return res.status(409).json({
@@ -575,7 +607,7 @@ async function startServer() {
         });
       }
 
-      if (cleanIp) {
+      if (cleanIp && !isUsb) {
         const dupIp = existingDevices.find(
           (d: any) => d.ip_address === cleanIp && Number(d.port) === cleanPort
         );
@@ -589,7 +621,7 @@ async function startServer() {
 
       // 3. Create and persist new device record
       const newDevice = {
-        id: `dev-${Date.now()}`,
+        id: req.body?.id || `dev-${Date.now()}`,
         serial_number: cleanSn,
         name: cleanName,
         brand: String(brand || "ZKTeco").trim(),
@@ -650,19 +682,45 @@ async function startServer() {
       const { id } = req.params;
       const updatedData = req.body || {};
 
-      const existingDevices = await getStoredDevices();
-      const index = existingDevices.findIndex(
+      let existingDevices = await getStoredDevices();
+      let index = existingDevices.findIndex(
         (d: any) => d.id === id || (d.serial_number && d.serial_number.toUpperCase() === String(id).toUpperCase())
       );
 
-      if (index === -1) {
-        return res.status(404).json({
-          success: false,
-          message: `No se encontró el marcador con identificador '${id}'.`,
-        });
+      // If not found by param ID, search by body serial_number or body ID
+      if (index === -1 && updatedData.serial_number) {
+        index = existingDevices.findIndex(
+          (d: any) => d.serial_number && d.serial_number.toUpperCase() === String(updatedData.serial_number).trim().toUpperCase()
+        );
+      }
+      if (index === -1 && updatedData.id) {
+        index = existingDevices.findIndex((d: any) => d.id === updatedData.id);
       }
 
-      const currentDev = existingDevices[index];
+      // If still not found, create a baseline device to avoid 404 block
+      let currentDev = index !== -1 ? existingDevices[index] : null;
+      if (!currentDev) {
+        currentDev = {
+          id: id || updatedData.id || `dev-${Date.now()}`,
+          serial_number: updatedData.serial_number || `BIM-${Date.now()}`,
+          name: updatedData.name || "Marcador Biométrico",
+          brand: updatedData.brand || "ZKTeco",
+          model: updatedData.model || "G3-id",
+          ip_address: updatedData.ip_address || "192.168.1.200",
+          port: Number(updatedData.port) || 4370,
+          protocol: updatedData.protocol || "PUSH_ADMS",
+          connection_type: updatedData.connection_type || "PUSH_ADMS",
+          dependencia_tipo: updatedData.dependencia_tipo || "SEDE_CENTRAL",
+          dependencia_id: updatedData.dependencia_id || "dep-01",
+          dependencia_name: updatedData.dependencia_name || "SEDE CENTRAL",
+          location_detail: updatedData.location_detail || "Ubicación Central",
+          status: updatedData.status || "CONFIGURED",
+          firmware_version: updatedData.firmware_version || "Ver 8.0.4.3-2026",
+          last_activity: new Date().toLocaleString("es-PE", { timeZone: "America/Lima" }),
+        };
+        existingDevices.push(currentDev);
+        index = existingDevices.length - 1;
+      }
 
       // Form validation
       const name = updatedData.name ? String(updatedData.name).trim() : currentDev.name;
@@ -714,9 +772,15 @@ async function startServer() {
         });
       }
 
-      // Check duplicates with other devices
+      // Check duplicates with other distinct devices (avoid self-collision)
+      const isOtherDevice = (d: any) => {
+        if (d.id === currentDev.id) return false;
+        if (d.serial_number && currentDev.serial_number && d.serial_number.toUpperCase() === currentDev.serial_number.toUpperCase()) return false;
+        return true;
+      };
+
       const dupName = existingDevices.find(
-        (d: any) => d.id !== currentDev.id && d.name && d.name.toLowerCase() === name.toLowerCase()
+        (d: any) => isOtherDevice(d) && d.name && d.name.trim().toLowerCase() === name.toLowerCase()
       );
       if (dupName) {
         return res.status(409).json({
@@ -725,9 +789,9 @@ async function startServer() {
         });
       }
 
-      if (serial_number && serial_number !== currentDev.serial_number) {
+      if (serial_number && (!currentDev.serial_number || serial_number.toUpperCase() !== currentDev.serial_number.toUpperCase())) {
         const dupSn = existingDevices.find(
-          (d: any) => d.id !== currentDev.id && d.serial_number && d.serial_number.toUpperCase() === serial_number
+          (d: any) => isOtherDevice(d) && d.serial_number && d.serial_number.toUpperCase() === serial_number
         );
         if (dupSn) {
           return res.status(409).json({
@@ -739,7 +803,7 @@ async function startServer() {
 
       if (ip_address && !isUsb) {
         const dupIp = existingDevices.find(
-          (d: any) => d.id !== currentDev.id && d.ip_address === ip_address && Number(d.port) === Number(port)
+          (d: any) => isOtherDevice(d) && d.ip_address === ip_address && Number(d.port) === Number(port)
         );
         if (dupIp) {
           return res.status(409).json({
