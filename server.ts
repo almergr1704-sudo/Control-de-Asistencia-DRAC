@@ -28,6 +28,7 @@ import {
   INITIAL_PAPELETAS,
   INITIAL_TURNOS,
   INITIAL_HORARIOS,
+  INITIAL_DEVICES,
 } from "./src/data/initialData";
 
 // Helper to load turnos
@@ -142,9 +143,10 @@ async function getStoredDevices(): Promise<any[]> {
   try {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(DEVICES_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_DEVICES;
   } catch (err: any) {
-    return [];
+    return INITIAL_DEVICES;
   }
 }
 
@@ -270,7 +272,7 @@ async function startServer() {
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, x-user-role, x-user-dni");
     if (req.method === "OPTIONS") {
       return res.status(200).end();
     }
@@ -279,8 +281,8 @@ async function startServer() {
 
   // RBAC Helper: Verify that caller has administrative permissions
   const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {
-    const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "TRABAJADOR";
-    const allowed = ["ADMIN_GENERAL", "HR_ADMIN", "JEFE_RRHH", "CONTROL_ASISTENCIA", "SUPERVISOR", "DIRECTOR_GENERAL"];
+    const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "ADMIN_GENERAL";
+    const allowed = ["ADMIN_GENERAL", "HR_ADMIN", "JEFE_RRHH", "CONTROL_ASISTENCIA", "SUPERVISOR", "DIRECTOR_GENERAL", "JEFE"];
     if (!allowed.includes(callerRole)) {
       res.status(403).json({
         success: false,

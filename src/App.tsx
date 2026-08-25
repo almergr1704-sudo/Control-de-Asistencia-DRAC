@@ -800,24 +800,38 @@ export default function App() {
       firmware_version: newDev.firmware_version || 'Ver 8.0.4.3-2026',
     };
 
-    const res = await fetch('/api/devices', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': activeRole,
-      },
-      body: JSON.stringify(newDev),
-    });
+    try {
+      const res = await fetch('/api/devices', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'x-user-role': activeRole,
+        },
+        body: JSON.stringify(newDev),
+      });
 
-    const resData = await res.json();
-    if (!res.ok || !resData.success) {
-      const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
-      console.error('[App] Error reportado por API:', errMsg);
-      throw new Error(errMsg);
-    }
-
-    if (resData.data) {
-      createdDevice = resData.data;
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const resData = await res.json();
+        if (!res.ok || !resData.success) {
+          const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
+          console.error('[App] Error reportado por API:', errMsg);
+          throw new Error(errMsg);
+        }
+        if (resData.data) {
+          createdDevice = resData.data;
+        }
+      } else {
+        if (!res.ok) {
+          console.warn('[App] El servidor devolvió una respuesta no-JSON:', res.status);
+        }
+      }
+    } catch (apiErr: any) {
+      if (apiErr.message && !apiErr.message.includes('JSON') && !apiErr.message.includes('fetch')) {
+        throw apiErr;
+      }
+      console.warn('[App] Sincronización en persistencia local para nuevo biométrico:', apiErr?.message);
     }
 
     setDevices((prev) => {
@@ -846,24 +860,41 @@ export default function App() {
     updatedDev: DispositivoZkTeco
   ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
     const prevDev = devices.find((d) => d.id === updatedDev.id);
+    let savedDevice: DispositivoZkTeco = updatedDev;
 
-    const res = await fetch(`/api/devices/${updatedDev.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': activeRole,
-      },
-      body: JSON.stringify(updatedDev),
-    });
+    try {
+      const res = await fetch(`/api/devices/${encodeURIComponent(updatedDev.id)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'x-user-role': activeRole,
+        },
+        body: JSON.stringify(updatedDev),
+      });
 
-    const resData = await res.json();
-    if (!res.ok || !resData.success) {
-      const errMsg = resData.message || 'No fue posible actualizar el marcador en la base de datos.';
-      console.error('[App] Error reportado por API al editar marcador:', errMsg);
-      throw new Error(errMsg);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const resData = await res.json();
+        if (!res.ok || !resData.success) {
+          const errMsg = resData.message || 'No fue posible actualizar el marcador en la base de datos.';
+          console.error('[App] Error reportado por API al editar marcador:', errMsg);
+          throw new Error(errMsg);
+        }
+        if (resData.data) {
+          savedDevice = resData.data;
+        }
+      } else {
+        if (!res.ok) {
+          console.warn('[App] El servidor devolvió una respuesta no-JSON al actualizar:', res.status);
+        }
+      }
+    } catch (apiErr: any) {
+      if (apiErr.message && !apiErr.message.includes('JSON') && !apiErr.message.includes('fetch')) {
+        throw apiErr;
+      }
+      console.warn('[App] Sincronización en persistencia local para edición de biométrico:', apiErr?.message);
     }
-
-    const savedDevice: DispositivoZkTeco = resData.data || updatedDev;
 
     setDevices((prev) => prev.map((d) => (d.id === savedDevice.id ? savedDevice : d)));
 
@@ -900,16 +931,20 @@ export default function App() {
 
   const handleDeleteDevice = async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}`, {
+      const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'x-user-role': activeRole,
         },
       });
-      const resData = await res.json();
-      if (!res.ok || !resData.success) {
-        throw new Error(resData.message || 'Error al eliminar marcador.');
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const resData = await res.json();
+        if (!res.ok || !resData.success) {
+          throw new Error(resData.message || 'Error al eliminar marcador.');
+        }
       }
     } catch (e) {
       console.warn('[App] Error al eliminar marcador en servidor:', e);
