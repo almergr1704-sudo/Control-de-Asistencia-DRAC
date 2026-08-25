@@ -1168,7 +1168,7 @@ export const INITIAL_DEVICES: DispositivoZkTeco[] = [
   },
 ];
 
-export const INITIAL_RAW_PUNCHES: MarcacionRaw[] = [];
+export { INITIAL_RAW_PUNCHES } from './initialRawPunches';
 
 export const INITIAL_PAPELETAS: PapeletaSalida[] = [
   {

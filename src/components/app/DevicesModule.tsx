@@ -516,7 +516,6 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   // On-demand device synchronization
   const handleSingleDeviceSync = async (dev: DispositivoZkTeco) => {
     setIsSyncingSingleDevice(dev.id);
-    const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
     try {
       const res = await fetch(`/api/devices/${dev.id}/sync`, {
         method: 'POST',
@@ -525,10 +524,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           'x-user-role': activeRole,
         },
       });
-      const data = await res.json().catch(() => ({ success: true }));
-      setSuccessToast(`Marcador "${dev.name}" sincronizado: estado actualizado y marcaciones procesadas.`);
-    } catch (err) {
-      setSuccessToast(`Marcador "${dev.name}" sincronizado correctamente.`);
+      const data = await res.json().catch(() => null);
+      if (onRefreshPunches) {
+        await onRefreshPunches();
+      }
+      if (data && data.message) {
+        setSuccessToast(data.message);
+      } else {
+        setSuccessToast(`Conexión exitosa con ${dev.name}. Marcaciones verificadas.`);
+      }
+    } catch (err: any) {
+      setSuccessToast(`Error al sincronizar ${dev.name}: ${err?.message || 'Error de red'}`);
     } finally {
       setIsSyncingSingleDevice(null);
     }
@@ -1224,21 +1230,28 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 onClick={async () => {
                   setIsSyncingAll(true);
                   try {
-                    const res = await fetch('/api/zkteco/push-status');
+                    const res = await fetch('/api/zkteco/sync-all', { method: 'POST' });
                     const data = await res.json();
+                    if (onRefreshPunches) {
+                      await onRefreshPunches();
+                    }
                     setPushServiceInfo((prev) => ({
                       ...prev,
                       lastSyncTime: new Date().toLocaleTimeString('es-PE'),
                       status: 'CONECTADO',
                     }));
-                    setSuccessToast('Sincronización PUSH ejecutada con éxito en todos los terminales.');
-                  } catch {
-                    setSuccessToast('Sincronización PUSH completada con éxito.');
+                    if (data && data.message) {
+                      setSuccessToast(data.message);
+                    } else {
+                      setSuccessToast('Sincronización PUSH ejecutada con éxito en todos los terminales.');
+                    }
+                  } catch (err: any) {
+                    setSuccessToast(`Error al sincronizar terminales: ${err?.message || 'Error de conexión'}`);
                   } finally {
                     setIsSyncingAll(false);
                   }
                 }}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {isSyncingAll ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1256,16 +1269,21 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   try {
                     const res = await fetch('/api/zkteco/process-punches', { method: 'POST' });
                     const data = await res.json();
-                    setSuccessToast(
-                      data.message || 'Marcaciones RAW procesadas y convertidas a Asistencia calculada.'
-                    );
-                  } catch {
-                    setSuccessToast('Marcaciones procesadas correctamente.');
+                    if (onRefreshPunches) {
+                      await onRefreshPunches();
+                    }
+                    if (data && data.message) {
+                      setSuccessToast(data.message);
+                    } else {
+                      setSuccessToast('Marcaciones RAW procesadas y convertidas a Asistencia calculada.');
+                    }
+                  } catch (err: any) {
+                    setSuccessToast(`Error al procesar marcaciones: ${err?.message || 'Error de conexión'}`);
                   } finally {
                     setIsProcessingPunches(false);
                   }
                 }}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {isProcessingPunches ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />

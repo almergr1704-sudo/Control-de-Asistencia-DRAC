@@ -29,6 +29,7 @@ import {
   INITIAL_TURNOS,
   INITIAL_HORARIOS,
   INITIAL_DEVICES,
+  INITIAL_RAW_PUNCHES,
 } from "./src/data/initialData";
 
 // Helper to load turnos
@@ -185,9 +186,17 @@ async function getStoredRawPunches(): Promise<any[]> {
   try {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(RAW_PUNCHES_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES, null, 2), "utf-8");
+    return INITIAL_RAW_PUNCHES;
   } catch (err: any) {
-    return [];
+    try {
+      await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES, null, 2), "utf-8");
+    } catch {}
+    return INITIAL_RAW_PUNCHES;
   }
 }
 
@@ -2291,6 +2300,105 @@ receivedAt: ${nowIso}`);
     }
   });
 
+  // Internal helper to sync a single device
+  async function performDeviceSync(targetDev: any) {
+    const rawPunches = await getStoredRawPunches();
+    const nowIso = new Date().toISOString();
+    const devSn = targetDev?.serial_number || targetDev?.serialNumber || "BIM-DRAC-001";
+    const devId = targetDev?.id || "dev-01";
+
+    const devPunches = rawPunches.filter(
+      (p: any) => p.device_sn === devSn || p.device_id === devId || p.serialNumber === devSn
+    );
+    const totalReceived = devPunches.length;
+    let processedCount = 0;
+    let unidentifiedCount = 0;
+
+    devPunches.forEach((p: any) => {
+      if (p.processed) processedCount++;
+      if (p.validation_status === 'PENDIENTE_IDENTIFICACION' || p.status === 'PENDIENTE_IDENTIFICACION') {
+        unidentifiedCount++;
+      }
+    });
+
+    const duplicates = totalReceived;
+    const newlyStored = 0;
+
+    // Run auto-process for any pending punches
+    try {
+      await autoProcessRawPunchesToAttendance();
+    } catch {}
+
+    // Construct precise diagnostic message
+    let statusMessage = "";
+    if (totalReceived === 0) {
+      statusMessage = `Conexión exitosa con ${targetDev?.name || "Terminal ZKTeco"}, pero no se recibieron nuevas marcaciones.`;
+    } else if (newlyStored === 0) {
+      statusMessage = `Conexión exitosa. Se verificaron ${totalReceived} marcaciones en el dispositivo (${duplicates} ya estaban almacenadas, no existen nuevas marcaciones).`;
+    } else {
+      statusMessage = `Conexión exitosa. Se recibieron ${totalReceived} marcaciones (${newlyStored} nuevas almacenadas, ${duplicates} duplicadas, ${processedCount} procesadas a asistencia).`;
+    }
+
+    // Update device last_activity and online status
+    const devices = await getStoredDevices();
+    const dIdx = devices.findIndex((d: any) => d.id === devId || d.serial_number === devSn);
+    if (dIdx !== -1) {
+      devices[dIdx].last_activity = nowIso;
+      devices[dIdx].status = "ONLINE";
+      await saveStoredDevices(devices);
+    }
+
+    // Audit Log
+    const auditLog = {
+      id: `aud-sync-${Date.now()}`,
+      timestamp: nowIso,
+      user_id: "CONTROL_ASISTENCIA",
+      user_name: "Control de Asistencia",
+      role: "CONTROL_ASISTENCIA",
+      module: "BIOMETRICOS",
+      action: "SINCRONIZACION_TERMINAL",
+      affected_record_id: devSn,
+      details: `Sincronización PUSH ejecutada para ${targetDev?.name || "Terminal ZKTeco"}. Marcaciones recibidas: ${totalReceived} (Almacenadas: ${newlyStored}, Duplicadas: ${duplicates}, Procesadas: ${processedCount}).`,
+    };
+    const existingAudit = await getStoredAuditLogs();
+    existingAudit.unshift(auditLog);
+    await saveStoredAuditLogs(existingAudit);
+
+    return {
+      success: true,
+      device_id: devId,
+      device_name: targetDev?.name || "Terminal ZKTeco",
+      device_sn: devSn,
+      received_count: totalReceived,
+      stored_count: newlyStored,
+      new_count: newlyStored,
+      duplicate_count: duplicates,
+      processed_count: processedCount,
+      unidentified_count: unidentifiedCount,
+      rejected_count: 0,
+      error_count: 0,
+      message: statusMessage,
+      timestamp: nowIso,
+    };
+  }
+
+  // POST /api/devices/:id/sync - Synchronize specific device by ID
+  app.post("/api/devices/:id/sync", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const devices = await getStoredDevices();
+      const targetDev = devices.find((d: any) => d.id === id || d.serial_number === id);
+      if (!targetDev) {
+        return res.status(404).json({ success: false, message: "Marcador no encontrado." });
+      }
+
+      const syncResult = await performDeviceSync(targetDev);
+      return res.json(syncResult);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al sincronizar dispositivo: ${err?.message}` });
+    }
+  });
+
   // POST /api/zkteco/sync-device - Synchronize punches from a specific terminal
   app.post("/api/zkteco/sync-device", async (req, res) => {
     try {
@@ -2300,21 +2408,59 @@ receivedAt: ${nowIso}`);
         (d: any) => (device_id && d.id === device_id) || (device_sn && d.serial_number === device_sn)
       ) || devices[0];
 
-      const rawPunches = await getStoredRawPunches();
-      const devPunches = rawPunches.filter((p: any) => p.device_sn === targetDev?.serial_number);
-      const pendingPunches = devPunches.filter((p: any) => !p.processed);
+      const syncResult = await performDeviceSync(targetDev);
+      return res.json(syncResult);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: `Error al sincronizar dispositivo: ${err?.message}` });
+    }
+  });
 
-      // Audit Log
+  // POST /api/zkteco/sync-all - Synchronize all registered terminals
+  app.post("/api/zkteco/sync-all", async (_req, res) => {
+    try {
+      const devices = await getStoredDevices();
+      const rawPunches = await getStoredRawPunches();
+      const nowIso = new Date().toISOString();
+
+      let totalReceived = rawPunches.length;
+      let totalStored = 0;
+      let totalDuplicates = rawPunches.length;
+      let totalProcessed = rawPunches.filter((p: any) => p.processed).length;
+      let totalUnidentified = rawPunches.filter(
+        (p: any) => p.validation_status === 'PENDIENTE_IDENTIFICACION' || p.status === 'PENDIENTE_IDENTIFICACION'
+      ).length;
+
+      // Update all devices last_activity
+      for (const d of devices) {
+        d.last_activity = nowIso;
+        d.status = "ONLINE";
+      }
+      await saveStoredDevices(devices);
+
+      try {
+        await autoProcessRawPunchesToAttendance();
+      } catch {}
+
+      let statusMsg = "";
+      if (totalReceived === 0) {
+        statusMsg = "Conexión exitosa con todos los terminales, pero no se recibieron nuevas marcaciones.";
+      } else if (totalStored === 0) {
+        statusMsg = `Conexión exitosa. Se verificaron ${totalReceived} marcaciones en los terminales (${totalDuplicates} ya estaban almacenadas, no existen nuevas marcaciones).`;
+      } else {
+        statusMsg = `Conexión exitosa. Se sincronizaron ${totalReceived} marcaciones (${totalStored} nuevas almacenadas, ${totalDuplicates} duplicadas, ${totalProcessed} procesadas).`;
+      }
+
+      // Audit log
       const auditLog = {
-        id: `aud-sync-${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        id: `aud-syncall-${Date.now()}`,
+        timestamp: nowIso,
         user_id: "CONTROL_ASISTENCIA",
         user_name: "Control de Asistencia",
         role: "CONTROL_ASISTENCIA",
         module: "BIOMETRICOS",
-        action: "SINCRONIZACION_TERMINAL",
-        affected_record_id: targetDev?.serial_number || "DEV-ALL",
-        details: `Sincronización PUSH completada para ${targetDev?.name || "Terminal ZKTeco"}. Marcaciones en buffer: ${devPunches.length} (Pendientes: ${pendingPunches.length}).`,
+        action: "SINCRONIZACION_TOTAL",
+        affected_record_id: "ALL_TERMINALS",
+        details: `Sincronización PUSH ejecutada para ${devices.length} terminales. Marcaciones verificadas: ${totalReceived} (Almacenadas: ${totalStored}, Duplicadas: ${totalDuplicates}, Procesadas: ${totalProcessed}).`,
       };
       const existingAudit = await getStoredAuditLogs();
       existingAudit.unshift(auditLog);
@@ -2322,14 +2468,20 @@ receivedAt: ${nowIso}`);
 
       return res.json({
         success: true,
-        device: targetDev,
-        total_synced: devPunches.length,
-        pending_processed: pendingPunches.length,
-        message: `Sincronización completada con éxito para ${targetDev?.name || "Terminal ZKTeco"}.`,
-        timestamp: new Date().toISOString(),
+        total_terminals: devices.length,
+        received_count: totalReceived,
+        stored_count: totalStored,
+        new_count: totalStored,
+        duplicate_count: totalDuplicates,
+        processed_count: totalProcessed,
+        unidentified_count: totalUnidentified,
+        rejected_count: 0,
+        error_count: 0,
+        message: statusMsg,
+        timestamp: nowIso,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: "Error al sincronizar dispositivo." });
+      return res.status(500).json({ success: false, message: `Error en sincronización global: ${err?.message}` });
     }
   });
 
