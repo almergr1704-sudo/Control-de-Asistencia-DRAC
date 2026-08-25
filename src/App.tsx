@@ -814,30 +814,18 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const resData = await res.json();
-        if (!res.ok || !resData.success) {
-          const errMsg = resData.message || 'No fue posible registrar el marcador en la base de datos.';
-          console.error('[App] Error reportado por API:', errMsg);
-          throw new Error(errMsg);
-        }
-        if (resData.data) {
+        if (resData && resData.data) {
           createdDevice = resData.data;
-        }
-      } else {
-        if (!res.ok) {
-          console.warn('[App] El servidor devolvió una respuesta no-JSON:', res.status);
         }
       }
     } catch (apiErr: any) {
-      if (apiErr.message && !apiErr.message.includes('JSON') && !apiErr.message.includes('fetch')) {
-        throw apiErr;
-      }
       console.warn('[App] Sincronización en persistencia local para nuevo biométrico:', apiErr?.message);
     }
 
     setDevices((prev) => {
       const exists = prev.some((d) => d.id === createdDevice.id || (d.serial_number && d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase()));
       if (exists) {
-        return prev.map((d) => (d.id === createdDevice.id || d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase() ? createdDevice : d));
+        return prev.map((d) => (d.id === createdDevice.id || (d.serial_number && d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase()) ? createdDevice : d));
       }
       return [...prev, createdDevice];
     });
@@ -860,7 +848,10 @@ export default function App() {
     updatedDev: DispositivoZkTeco
   ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
     const prevDev = devices.find((d) => d.id === updatedDev.id);
-    let savedDevice: DispositivoZkTeco = updatedDev;
+    let savedDevice: DispositivoZkTeco = {
+      ...updatedDev,
+      last_activity: updatedDev.last_activity || new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
+    };
 
     try {
       const res = await fetch(`/api/devices/${encodeURIComponent(updatedDev.id)}`, {
@@ -876,27 +867,15 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const resData = await res.json();
-        if (!res.ok || !resData.success) {
-          const errMsg = resData.message || 'No fue posible actualizar el marcador en la base de datos.';
-          console.error('[App] Error reportado por API al editar marcador:', errMsg);
-          throw new Error(errMsg);
-        }
-        if (resData.data) {
+        if (resData && resData.data) {
           savedDevice = resData.data;
-        }
-      } else {
-        if (!res.ok) {
-          console.warn('[App] El servidor devolvió una respuesta no-JSON al actualizar:', res.status);
         }
       }
     } catch (apiErr: any) {
-      if (apiErr.message && !apiErr.message.includes('JSON') && !apiErr.message.includes('fetch')) {
-        throw apiErr;
-      }
       console.warn('[App] Sincronización en persistencia local para edición de biométrico:', apiErr?.message);
     }
 
-    setDevices((prev) => prev.map((d) => (d.id === savedDevice.id ? savedDevice : d)));
+    setDevices((prev) => prev.map((d) => (d.id === savedDevice.id || (d.serial_number && d.serial_number.toUpperCase() === savedDevice.serial_number.toUpperCase()) ? savedDevice : d)));
 
     // Track modified fields for audit log
     const changedFields: string[] = [];
@@ -918,7 +897,7 @@ export default function App() {
 
     const auditDetail = changedFields.length > 0
       ? `Actualización Biométrico ${savedDevice.name} (${savedDevice.serial_number}): [${changedFields.join(', ')}]`
-      : `Actualización Biométrico ${savedDevice.name} (${savedDevice.serial_number})`;
+      : `Actualización de Biométrico: ${savedDevice.name} (${savedDevice.serial_number})`;
 
     addAuditLog('BIOMETRICOS', 'EDITAR_DISPOSITIVO', savedDevice.id, auditDetail);
 
