@@ -55,6 +55,7 @@ import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter, FilterField, FilterSelect } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 interface DevicesModuleProps {
   activeView?: string;
@@ -284,16 +285,10 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const filteredRawPunches = useMemo(() => {
     return rawPunches.filter((punch) => {
       if (punchSearchTerm.trim()) {
-        const term = punchSearchTerm.toLowerCase().trim();
         const emp = employees.find((e) => e.dni === punch.employee_dni);
-        const empName = emp ? `${emp.first_name} ${emp.last_name}`.toLowerCase() : (punch.employee_name || '').toLowerCase();
-        const matchDni = (punch.employee_dni || '').toLowerCase().includes(term);
-        const matchCode = (punch.employee_code || (punch as any).employeeCode || '').toLowerCase().includes(term);
-        const matchSn = (punch.device_sn || (punch as any).serialNumber || '').toLowerCase().includes(term);
-        const matchDevName = (punch.device_name || '').toLowerCase().includes(term);
-        const matchTime = (punch.timestamp || '').toLowerCase().includes(term);
-        const matchReason = (punch.rejection_reason || '').toLowerCase().includes(term);
-        if (!matchDni && !matchCode && !matchSn && !matchTime && !empName.includes(term) && !matchDevName.includes(term) && !matchReason.includes(term)) {
+        const empName = emp ? `${emp.first_name} ${emp.last_name}` : (punch.employee_name || '');
+        const fullSearch = `${empName} ${punch.employee_dni || ''} ${punch.employee_code || (punch as any).employeeCode || ''} ${punch.device_sn || (punch as any).serialNumber || ''} ${punch.device_name || ''} ${punch.timestamp || ''} ${punch.rejection_reason || ''}`;
+        if (!matchesSearch(fullSearch, punchSearchTerm)) {
           return false;
         }
       }
@@ -937,7 +932,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         await onAddPunchAuthorization({
           employee_id: emp.id,
           employee_dni: emp.dni,
-          employee_name: `${emp.first_name} ${emp.last_name}`,
+          employee_name: buildNormalizedFullName(emp.first_name, emp.last_name),
           employee_cargo: emp.cargo || 'Servidor DRAC',
           dependencia_origen_tipo: empDepTipo,
           dependencia_origen_name: empDepName,

@@ -16,6 +16,7 @@ import {
 import { VALID_JEFE_ORGANO_TYPES } from './encargaturaUtils';
 import { generateUniqueUsername } from './userAuthUtils';
 import { generateNextDracCode } from './dracCodeUtils';
+import { normalizePersonName, buildNormalizedFullName } from './nameUtils';
 
 // ==========================================
 // TIPOS Y DEFINICIONES DE CARGA MASIVA
@@ -921,9 +922,9 @@ export function validateTrabajadoresExcel(
     const rowNum = index + 2;
 
     const rawDni = String(row['DNI'] || row['dni'] || row['DOCUMENTO'] || '').trim();
-    const rawNombres = String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || '').trim();
-    const rawPaterno = String(row['Apellido Paterno'] || row['Paterno'] || row['APELLIDO_PATERNO'] || '').trim();
-    const rawMaterno = String(row['Apellido Materno'] || row['Materno'] || row['APELLIDO_MATERNO'] || '').trim();
+    const rawNombres = normalizePersonName(String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || ''));
+    const rawPaterno = normalizePersonName(String(row['Apellido Paterno'] || row['Paterno'] || row['APELLIDO_PATERNO'] || ''));
+    const rawMaterno = normalizePersonName(String(row['Apellido Materno'] || row['Materno'] || row['APELLIDO_MATERNO'] || ''));
     const rawDirInput = String(
       row['Dirección / Órgano'] ||
       row['Direccion / Organo'] ||
@@ -1423,13 +1424,13 @@ export function validateEncargaturasExcel(
       id: `enc-${Date.now()}-${index}`,
       titular_employee_id: titular!.id,
       titular_dni: titular!.dni,
-      titular_name: `${titular!.first_name} ${titular!.last_name}`,
+      titular_name: buildNormalizedFullName(titular!.first_name, titular!.last_name),
       titular_cargo: titular!.position,
       titular_area_name: titular!.area_name,
       titular_direccion_organo_name: titular!.direccion_organo_name,
       encargado_employee_id: encargado!.id,
       encargado_dni: encargado!.dni,
-      encargado_name: `${encargado!.first_name} ${encargado!.last_name}`,
+      encargado_name: buildNormalizedFullName(encargado!.first_name, encargado!.last_name),
       encargado_cargo: encargado!.position,
       encargado_area_procedencia_id: encargado!.area_id,
       encargado_area_procedencia_name: encargado!.area_name,

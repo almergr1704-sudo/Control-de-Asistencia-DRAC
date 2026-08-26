@@ -25,6 +25,7 @@ import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
+import { matchesSearch } from '../../utils/nameUtils';
 
 interface AttendanceModuleProps {
   activeView?: string;
@@ -134,11 +135,8 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         return false;
       }
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase().trim();
-        const matchName = rec.employee_name.toLowerCase().includes(term);
-        const matchDni = rec.employee_dni.includes(term);
-        const matchArea = rec.area_name.toLowerCase().includes(term);
-        if (!matchName && !matchDni && !matchArea) return false;
+        const fullSearch = `${rec.employee_name} ${rec.employee_dni} ${rec.area_name}`;
+        if (!matchesSearch(fullSearch, searchTerm)) return false;
       }
       if (statusFilter !== 'ALL' && rec.status !== statusFilter) return false;
       if (selectedDate && rec.fecha !== selectedDate) return false;

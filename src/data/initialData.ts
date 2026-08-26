@@ -665,7 +665,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     first_name: 'Administrador',
     last_name: 'General',
     apellido_paterno: 'General',
-    apellido_materno: 'DRAC',
+    apellido_materno: 'Drac',
     username: 'admin',
     email: 'admin@drac.gob.pe',
     phone: '976112233',

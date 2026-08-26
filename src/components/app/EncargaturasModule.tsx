@@ -51,6 +51,7 @@ import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 interface EncargaturasModuleProps {
   encargaturas: Encargatura[];
@@ -199,19 +200,8 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
     return processedEncargaturas.filter((enc) => {
       // Search
       if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase().trim();
-        const matchesSearch =
-          enc.titular_name.toLowerCase().includes(searchLower) ||
-          enc.encargado_name.toLowerCase().includes(searchLower) ||
-          enc.titular_dni?.includes(searchLower) ||
-          enc.encargado_dni?.includes(searchLower) ||
-          enc.cargo_encargado.toLowerCase().includes(searchLower) ||
-          enc.document_number.toLowerCase().includes(searchLower) ||
-          (enc.direccion_organo_name && enc.direccion_organo_name.toLowerCase().includes(searchLower)) ||
-          (enc.area_name && enc.area_name.toLowerCase().includes(searchLower)) ||
-          (enc.dependencia_name && enc.dependencia_name.toLowerCase().includes(searchLower));
-
-        if (!matchesSearch) return false;
+        const fullSearch = `${enc.titular_name} ${enc.encargado_name} ${enc.titular_dni || ''} ${enc.encargado_dni || ''} ${enc.cargo_encargado} ${enc.document_number} ${enc.direccion_organo_name || ''} ${enc.area_name || ''} ${enc.dependencia_name || ''}`;
+        if (!matchesSearch(fullSearch, searchTerm)) return false;
       }
 
       // Status
@@ -588,8 +578,8 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
     const dirObj = currentSelectedDir;
     const depObj = dependencias.find((d) => d.id === dirObj.dependencia_id) || dependencias[0];
 
-    const fullTitularName = `${titular.first_name} ${titular.last_name}`.trim();
-    const fullEncargadoName = `${encargado.first_name} ${encargado.last_name}`.trim();
+    const fullTitularName = buildNormalizedFullName(titular.first_name, titular.last_name);
+    const fullEncargadoName = buildNormalizedFullName(encargado.first_name, encargado.last_name);
 
     onAddEncargatura({
       titular_employee_id: titular.id,

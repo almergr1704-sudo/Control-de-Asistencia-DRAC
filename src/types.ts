@@ -443,7 +443,7 @@ export interface ZkSyncBatchResult {
   }[];
 }
 
-export type PunchValidationStatus = 'VALIDA' | 'RECHAZADA_DEPENDENCIA' | 'EXCEPCION_AUTORIZADA';
+export type PunchValidationStatus = 'VALIDA' | 'RECHAZADA_DEPENDENCIA' | 'EXCEPCION_AUTORIZADA' | 'PENDIENTE_IDENTIFICACION';
 
 export interface MarcacionRaw {
   id: string;
@@ -453,11 +453,13 @@ export interface MarcacionRaw {
   device_dependencia_tipo?: DependenciaType;
   device_dependencia_name?: string;
   employee_dni: string;
+  employee_code?: string;
   employee_name?: string;
   employee_dependencia_tipo?: DependenciaType;
   employee_dependencia_name?: string;
   timestamp: string; // "2026-08-12 08:03:12"
   punch_type: 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_OUT' | 'BREAK_IN' | 'AUTO';
+  punch_state?: number;
   verify_mode: 'FINGERPRINT' | 'FACE' | 'PALM' | 'CARD' | 'PASSWORD';
   processed: boolean;
   processed_at?: string;

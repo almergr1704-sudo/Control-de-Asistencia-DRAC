@@ -44,6 +44,60 @@ async function getStoredTurnos(): Promise<any[]> {
   }
 }
 
+// DRAC Institutional Person Name Normalization Helper
+function normalizePersonName(name: string | null | undefined): string {
+  if (!name || typeof name !== 'string') return '';
+  const cleaned = name.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  const words = cleaned.split(' ');
+  return words
+    .map((word) => {
+      if (!word) return '';
+      if (word.includes('-')) {
+        return word.split('-').map(capitalizeWord).join('-');
+      }
+      if (word.includes("'")) {
+        return word.split("'").map(capitalizeWord).join("'");
+      }
+      return capitalizeWord(word);
+    })
+    .join(' ');
+}
+
+function capitalizeWord(word: string): string {
+  if (!word) return '';
+  const lower = word.toLocaleLowerCase('es-PE');
+  const firstChar = lower.charAt(0).toLocaleUpperCase('es-PE');
+  const rest = lower.slice(1);
+  return firstChar + rest;
+}
+
+function normalizePersonFields<T extends Record<string, any>>(record: T): T {
+  if (!record || typeof record !== 'object') return record;
+  const copy: any = { ...record };
+  if (typeof copy.first_name === 'string') copy.first_name = normalizePersonName(copy.first_name);
+  if (typeof copy.last_name === 'string') copy.last_name = normalizePersonName(copy.last_name);
+  if (typeof copy.apellido_paterno === 'string') copy.apellido_paterno = normalizePersonName(copy.apellido_paterno);
+  if (typeof copy.apellido_materno === 'string') copy.apellido_materno = normalizePersonName(copy.apellido_materno);
+  if (typeof copy.employee_name === 'string' && copy.employee_name !== 'Trabajador no identificado') {
+    copy.employee_name = normalizePersonName(copy.employee_name);
+  }
+  if (typeof copy.titular_name === 'string') copy.titular_name = normalizePersonName(copy.titular_name);
+  if (typeof copy.encargado_name === 'string') copy.encargado_name = normalizePersonName(copy.encargado_name);
+  if (typeof copy.jefe_name === 'string') copy.jefe_name = normalizePersonName(copy.jefe_name);
+  if (typeof copy.boss_name === 'string') copy.boss_name = normalizePersonName(copy.boss_name);
+  if (typeof copy.director_name === 'string' && !copy.director_name.includes('Dirección') && !copy.director_name.includes('Jefatura') && !copy.director_name.includes('Oficina')) {
+    copy.director_name = normalizePersonName(copy.director_name);
+  }
+  if (typeof copy.solicitante_name === 'string') copy.solicitante_name = normalizePersonName(copy.solicitante_name);
+  if (typeof copy.aprobador_name === 'string') copy.aprobador_name = normalizePersonName(copy.aprobador_name);
+  if (typeof copy.creador_name === 'string') copy.creador_name = normalizePersonName(copy.creador_name);
+  if (typeof copy.supervisor_name === 'string') copy.supervisor_name = normalizePersonName(copy.supervisor_name);
+  if (typeof copy.vigilante_name === 'string') copy.vigilante_name = normalizePersonName(copy.vigilante_name);
+  if (typeof copy.rrhh_name === 'string') copy.rrhh_name = normalizePersonName(copy.rrhh_name);
+  return copy;
+}
+
 // Helper to save turnos
 async function saveStoredTurnos(turnos: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
@@ -74,16 +128,18 @@ async function getStoredEmployees(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(EMPLOYEES_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EMPLOYEES;
+    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EMPLOYEES;
+    return list.map(normalizePersonFields);
   } catch (err: any) {
-    return INITIAL_EMPLOYEES;
+    return INITIAL_EMPLOYEES.map(normalizePersonFields);
   }
 }
 
 // Helper to save employees
 async function saveStoredEmployees(emps: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(EMPLOYEES_FILE, JSON.stringify(emps, null, 2), "utf-8");
+  const normalized = (emps || []).map(normalizePersonFields);
+  await fs.writeFile(EMPLOYEES_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 // Helper to load encargaturas
@@ -92,16 +148,18 @@ async function getStoredEncargaturas(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(ENCARGATURAS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ENCARGATURAS;
+    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ENCARGATURAS;
+    return list.map(normalizePersonFields);
   } catch (err: any) {
-    return INITIAL_ENCARGATURAS;
+    return INITIAL_ENCARGATURAS.map(normalizePersonFields);
   }
 }
 
 // Helper to save encargaturas
 async function saveStoredEncargaturas(encs: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(ENCARGATURAS_FILE, JSON.stringify(encs, null, 2), "utf-8");
+  const normalized = (encs || []).map(normalizePersonFields);
+  await fs.writeFile(ENCARGATURAS_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 // Helper to load processed attendance
@@ -110,16 +168,18 @@ async function getStoredAttendance(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(ATTENDANCE_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ATTENDANCE;
+    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ATTENDANCE;
+    return list.map(normalizePersonFields);
   } catch (err: any) {
-    return INITIAL_ATTENDANCE;
+    return INITIAL_ATTENDANCE.map(normalizePersonFields);
   }
 }
 
 // Helper to save processed attendance
 async function saveStoredAttendance(att: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(ATTENDANCE_FILE, JSON.stringify(att, null, 2), "utf-8");
+  const normalized = (att || []).map(normalizePersonFields);
+  await fs.writeFile(ATTENDANCE_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 // Helper to load audit logs from persistent storage
@@ -188,22 +248,23 @@ async function getStoredRawPunches(): Promise<any[]> {
     const data = await fs.readFile(RAW_PUNCHES_FILE, "utf-8");
     const parsed = JSON.parse(data);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+      return parsed.map(normalizePersonFields);
     }
-    await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES, null, 2), "utf-8");
-    return INITIAL_RAW_PUNCHES;
+    await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES.map(normalizePersonFields), null, 2), "utf-8");
+    return INITIAL_RAW_PUNCHES.map(normalizePersonFields);
   } catch (err: any) {
     try {
-      await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES, null, 2), "utf-8");
+      await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES.map(normalizePersonFields), null, 2), "utf-8");
     } catch {}
-    return INITIAL_RAW_PUNCHES;
+    return INITIAL_RAW_PUNCHES.map(normalizePersonFields);
   }
 }
 
 // Helper to save raw punches to persistent storage
 async function saveStoredRawPunches(punches: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(punches, null, 2), "utf-8");
+  const normalized = (punches || []).map(normalizePersonFields);
+  await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 // Helper to load device users from persistent storage
@@ -245,7 +306,9 @@ async function getStoredVacaciones(): Promise<any[]> {
   try {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(VACACIONES_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    const list = Array.isArray(parsed) ? parsed : [];
+    return list.map(normalizePersonFields);
   } catch (err: any) {
     return [];
   }
@@ -254,7 +317,8 @@ async function getStoredVacaciones(): Promise<any[]> {
 // Helper to save vacations to persistent storage
 async function saveStoredVacaciones(vacs: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(VACACIONES_FILE, JSON.stringify(vacs, null, 2), "utf-8");
+  const normalized = (vacs || []).map(normalizePersonFields);
+  await fs.writeFile(VACACIONES_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 // Helper to load papeletas from persistent storage
@@ -262,7 +326,9 @@ async function getStoredPapeletas(): Promise<any[]> {
   try {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(PAPELETAS_FILE, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    const list = Array.isArray(parsed) ? parsed : [];
+    return list.map(normalizePersonFields);
   } catch (err: any) {
     return [];
   }
@@ -271,7 +337,8 @@ async function getStoredPapeletas(): Promise<any[]> {
 // Helper to save papeletas to persistent storage
 async function saveStoredPapeletas(paps: any[]): Promise<void> {
   await fs.mkdir(DB_DIR, { recursive: true });
-  await fs.writeFile(PAPELETAS_FILE, JSON.stringify(paps, null, 2), "utf-8");
+  const normalized = (paps || []).map(normalizePersonFields);
+  await fs.writeFile(PAPELETAS_FILE, JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 async function startServer() {

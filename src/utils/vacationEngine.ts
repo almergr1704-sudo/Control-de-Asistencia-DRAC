@@ -14,6 +14,7 @@ import {
   getEmployeeAssignedRoles,
   canApproveAsBoss,
 } from './encargaturaUtils';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from './nameUtils';
 
 /**
  * Calcula los días calendario computables entre dos fechas (ambas inclusive)
@@ -97,7 +98,7 @@ export function getImmediateBossForEmployee(params: {
     if (supervisorEmp) {
       return {
         bossEmployee: supervisorEmp,
-        bossName: `${supervisorEmp.first_name} ${supervisorEmp.last_name}`,
+        bossName: buildNormalizedFullName(supervisorEmp.first_name, supervisorEmp.last_name),
         bossDni: supervisorEmp.dni,
         bossId: supervisorEmp.id,
         isEncargado: false,
@@ -118,7 +119,7 @@ export function getImmediateBossForEmployee(params: {
     if (director) {
       return {
         bossEmployee: director,
-        bossName: `${director.first_name} ${director.last_name}`,
+        bossName: buildNormalizedFullName(director.first_name, director.last_name),
         bossDni: director.dni,
         bossId: director.id,
         isEncargado: false,
@@ -340,30 +341,20 @@ export function filterWorkersForVacation(
   return employees.filter((emp) => {
     // 1. Identificación: Búsqueda rápida general
     if (criteria.searchTerm && criteria.searchTerm.trim()) {
-      const term = criteria.searchTerm.toLowerCase().trim();
-      const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
-      const matchDni = emp.dni.includes(term);
-      const matchCode = (emp.codigo_trabajador || '').toLowerCase().includes(term);
-      const matchName = fullName.includes(term);
-      const matchPos = (emp.position || '').toLowerCase().includes(term);
-      const matchArea = (emp.area_name || '').toLowerCase().includes(term);
-      if (!matchDni && !matchCode && !matchName && !matchPos && !matchArea) return false;
+      const fullSearch = `${emp.first_name} ${emp.last_name} ${emp.dni} ${emp.codigo_trabajador || ''} ${emp.position || ''} ${emp.area_name || ''}`;
+      if (!matchesSearch(fullSearch, criteria.searchTerm)) return false;
     }
 
     if (criteria.dni && !emp.dni.includes(criteria.dni.trim())) return false;
-    if (criteria.nombres && !emp.first_name.toLowerCase().includes(criteria.nombres.toLowerCase().trim())) return false;
+    if (criteria.nombres && !matchesSearch(emp.first_name, criteria.nombres)) return false;
     if (
       criteria.apellidoPaterno &&
-      !(emp.apellido_paterno || emp.last_name)
-        .toLowerCase()
-        .includes(criteria.apellidoPaterno.toLowerCase().trim())
+      !matchesSearch(emp.apellido_paterno || emp.last_name, criteria.apellidoPaterno)
     )
       return false;
     if (
       criteria.apellidoMaterno &&
-      !(emp.apellido_materno || emp.last_name)
-        .toLowerCase()
-        .includes(criteria.apellidoMaterno.toLowerCase().trim())
+      !matchesSearch(emp.apellido_materno || emp.last_name, criteria.apellidoMaterno)
     )
       return false;
 

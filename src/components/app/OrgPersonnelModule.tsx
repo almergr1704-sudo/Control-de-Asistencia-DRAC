@@ -85,6 +85,7 @@ import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { EmptyState } from '../common/EmptyState';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 export interface SystemRoleDef {
   role: RoleType;
@@ -461,9 +462,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const filteredEmployeesList = React.useMemo(() => {
     return employees.filter((emp) => {
       if (empSearchTerm.trim()) {
-        const term = empSearchTerm.toLowerCase().trim();
-        const fullSearch = `${emp.first_name} ${emp.last_name} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''} ${emp.dni} ${emp.codigo_trabajador || ''} ${emp.position} ${emp.username || ''}`.toLowerCase();
-        if (!fullSearch.includes(term)) return false;
+        const fullSearch = `${emp.first_name} ${emp.last_name} ${emp.apellido_paterno || ''} ${emp.apellido_materno || ''} ${emp.dni} ${emp.codigo_trabajador || ''} ${emp.position} ${emp.username || ''}`;
+        if (!matchesSearch(fullSearch, empSearchTerm)) return false;
       }
       if (empFilterDni.trim() && !emp.dni.includes(empFilterDni.trim())) return false;
       if (empFilterRegimen !== 'ALL') {
@@ -907,9 +907,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     return allJefesAprobadoresList.filter((item) => {
       const { employee: emp, source, dirName, areaName } = item;
       if (jefeSearchTerm.trim()) {
-        const term = jefeSearchTerm.toLowerCase().trim();
-        const searchStr = `${emp.codigo_trabajador || ''} ${emp.first_name} ${emp.last_name} ${emp.dni} ${emp.position} ${dirName} ${areaName}`.toLowerCase();
-        if (!searchStr.includes(term)) return false;
+        const searchStr = `${emp.codigo_trabajador || ''} ${emp.first_name} ${emp.last_name} ${emp.dni} ${emp.position} ${dirName} ${areaName}`;
+        if (!matchesSearch(searchStr, jefeSearchTerm)) return false;
       }
       if (
         jefeFilterDir !== 'ALL' &&
@@ -1360,7 +1359,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       determinedSupervisorName = `${matchedResp.title}: ${matchedResp.employee_name}`;
     }
 
-    const fullLastName = `${empLastNamePaterno.trim()} ${empLastNameMaterno.trim()}`.trim();
+    const normalizedFirstName = normalizePersonName(empFirstName);
+    const normalizedPat = normalizePersonName(empLastNamePaterno);
+    const normalizedMat = normalizePersonName(empLastNameMaterno);
+    const fullLastName = [normalizedPat, normalizedMat].filter(Boolean).join(' ');
+
     const generatedCode = editingEmp
       ? (editingEmp.codigo_trabajador || empCode.trim() || generateNextDracCode(employees))
       : (empCode.trim() || generateNextDracCode(employees));
@@ -1405,11 +1408,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         ...editingEmp,
         codigo_trabajador: generatedCode,
         dni: cleanDni,
-        first_name: empFirstName.trim(),
+        first_name: normalizedFirstName,
         last_name: fullLastName,
-        apellido_paterno: empLastNamePaterno.trim(),
-        apellido_materno: empLastNameMaterno.trim(),
-        email: empEmail.trim() || `${empFirstName.toLowerCase().replace(/\s+/g, '.')}.${empLastNamePaterno.toLowerCase().replace(/\s+/g, '.')}@regioncajamarca.gob.pe`,
+        apellido_paterno: normalizedPat,
+        apellido_materno: normalizedMat,
+        email: empEmail.trim() || `${normalizedFirstName.toLowerCase().replace(/\s+/g, '.')}.${normalizedPat.toLowerCase().replace(/\s+/g, '.')}@regioncajamarca.gob.pe`,
         phone: empPhone.trim() || '+51 976000000',
         dependencia_id: empDepId,
         dependencia_name: selectedDep.name,
@@ -1471,11 +1474,11 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       onAddEmployee({
         codigo_trabajador: generatedCode,
         dni: cleanDni,
-        first_name: empFirstName.trim(),
+        first_name: normalizedFirstName,
         last_name: fullLastName,
-        apellido_paterno: empLastNamePaterno.trim(),
-        apellido_materno: empLastNameMaterno.trim(),
-        email: empEmail.trim() || `${empFirstName.toLowerCase().replace(/\s+/g, '.')}.${empLastNamePaterno.toLowerCase().replace(/\s+/g, '.')}@regioncajamarca.gob.pe`,
+        apellido_paterno: normalizedPat,
+        apellido_materno: normalizedMat,
+        email: empEmail.trim() || `${normalizedFirstName.toLowerCase().replace(/\s+/g, '.')}.${normalizedPat.toLowerCase().replace(/\s+/g, '.')}@regioncajamarca.gob.pe`,
         phone: empPhone.trim() || '+51 976000000',
         dependencia_id: empDepId,
         dependencia_name: selectedDep.name,

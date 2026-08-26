@@ -56,6 +56,7 @@ import {
   WorkerAdvancedFilterCriteria,
 } from '../../utils/vacationEngine';
 import { isWorkerInBossScope } from '../../utils/encargaturaUtils';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 interface VacationsModuleProps {
   activeView?: string;
@@ -370,14 +371,8 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     const currentDate = new Date().toISOString().split('T')[0];
     return vacaciones.map((v) => ({ ...v, computedStatus: getDynamicVacationStatus(v, currentDate) })).filter((v) => {
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase().trim();
-        const matchName = v.employee_name.toLowerCase().includes(term);
-        const matchDni = v.employee_dni.includes(term);
-        const matchCode = (v.code || '').toLowerCase().includes(term);
-        const matchObs = (v.comments || '').toLowerCase().includes(term);
-        const matchPos = (v.position || '').toLowerCase().includes(term);
-        const matchArea = (v.area_name || '').toLowerCase().includes(term);
-        if (!matchName && !matchDni && !matchCode && !matchObs && !matchPos && !matchArea) return false;
+        const fullSearch = `${v.employee_name} ${v.employee_dni} ${v.code || ''} ${v.comments || ''} ${v.position || ''} ${v.area_name || ''}`;
+        if (!matchesSearch(fullSearch, searchTerm)) return false;
       }
       if (filterTipo !== 'ALL' && v.tipo !== filterTipo) return false;
       if (filterStatus !== 'ALL' && v.computedStatus !== filterStatus) return false;
@@ -489,7 +484,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       code: `VAC-2026-${String(vacaciones.length + 1).padStart(3, '0')}`,
       employee_id: activeEmp.id,
       employee_dni: activeEmp.dni,
-      employee_name: `${activeEmp.first_name} ${activeEmp.last_name}`,
+      employee_name: buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name),
       dependencia_id: activeEmp.dependencia_id,
       dependencia_name: activeEmp.dependencia_name || 'SEDE CENTRAL',
       direccion_organo_name: activeEmp.direccion_organo_name,
@@ -508,7 +503,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       supervisor_id: bossInfo.bossId,
       supervisor_name: bossInfo.bossName,
       comments: profComments,
-      created_by: `${activeEmp.first_name} ${activeEmp.last_name}`,
+      created_by: buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name),
       created_by_role: 'TRABAJADOR',
       audits: [
         {
@@ -516,7 +511,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
           vacacion_id: '',
           new_status: 'SOLICITADA',
           action_by_user_id: activeEmp.id,
-          action_by_user_name: `${activeEmp.first_name} ${activeEmp.last_name}`,
+          action_by_user_name: buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name),
           action_by_role: 'TRABAJADOR',
           action_type: 'SOLICITAR',
           origin: 'PROFILE_VACATION_REQUEST',
@@ -560,7 +555,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       code: `VAC-2026-${String(vacaciones.length + 1).padStart(3, '0')}`,
       employee_id: progSelectedEmp.id,
       employee_dni: progSelectedEmp.dni,
-      employee_name: `${progSelectedEmp.first_name} ${progSelectedEmp.last_name}`,
+      employee_name: buildNormalizedFullName(progSelectedEmp.first_name, progSelectedEmp.last_name),
       dependencia_id: progSelectedEmp.dependencia_id,
       dependencia_name: progSelectedEmp.dependencia_name || 'SEDE CENTRAL',
       direccion_organo_name: progSelectedEmp.direccion_organo_name,
@@ -576,11 +571,11 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       period_year: 2026,
       status: 'PROGRAMADA',
       origin: 'ATTENDANCE_VACATION_PROGRAMMING',
-      approved_by_hr: activeEmp ? `${activeEmp.first_name} ${activeEmp.last_name} (RRHH DRAC)` : 'Recursos Humanos DRAC',
+      approved_by_hr: activeEmp ? `${buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name)} (RRHH DRAC)` : 'Recursos Humanos DRAC',
       hr_approved_at: new Date().toLocaleString('es-PE'),
-      hr_approver_name: activeEmp ? `${activeEmp.first_name} ${activeEmp.last_name}` : 'Especialista de Asistencia',
+      hr_approver_name: activeEmp ? buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name) : 'Especialista de Asistencia',
       comments: progComments,
-      created_by: activeEmp ? `${activeEmp.first_name} ${activeEmp.last_name}` : 'Control de Asistencia DRAC',
+      created_by: activeEmp ? buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name) : 'Control de Asistencia DRAC',
       created_by_role: activeRole,
       audits: [
         {
@@ -588,7 +583,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
           vacacion_id: '',
           new_status: 'PROGRAMADA',
           action_by_user_id: activeEmp?.id || 'usr-hr',
-          action_by_user_name: activeEmp ? `${activeEmp.first_name} ${activeEmp.last_name}` : 'Control Asistencia',
+          action_by_user_name: activeEmp ? buildNormalizedFullName(activeEmp.first_name, activeEmp.last_name) : 'Control Asistencia',
           action_by_role: activeRole,
           action_type: 'PROGRAMAR',
           origin: 'ATTENDANCE_VACATION_PROGRAMMING',

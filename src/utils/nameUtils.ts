@@ -126,8 +126,10 @@ export function normalizePersonFields<T extends Record<string, any>>(record: T):
   if (typeof copy.jefe_name === 'string') {
     copy.jefe_name = normalizePersonName(copy.jefe_name);
   }
+  if (typeof copy.boss_name === 'string') {
+    copy.boss_name = normalizePersonName(copy.boss_name);
+  }
   if (typeof copy.director_name === 'string') {
-    // Only normalize if it's an actual person name, not a role title like "Dirección Regional DRAC"
     if (!copy.director_name.includes('Dirección') && !copy.director_name.includes('Jefatura') && !copy.director_name.includes('Oficina')) {
       copy.director_name = normalizePersonName(copy.director_name);
     }
@@ -138,6 +140,48 @@ export function normalizePersonFields<T extends Record<string, any>>(record: T):
   if (typeof copy.aprobador_name === 'string') {
     copy.aprobador_name = normalizePersonName(copy.aprobador_name);
   }
+  if (typeof copy.creador_name === 'string') {
+    copy.creador_name = normalizePersonName(copy.creador_name);
+  }
+  if (typeof copy.supervisor_name === 'string') {
+    copy.supervisor_name = normalizePersonName(copy.supervisor_name);
+  }
+  if (typeof copy.vigilante_name === 'string') {
+    copy.vigilante_name = normalizePersonName(copy.vigilante_name);
+  }
+  if (typeof copy.rrhh_name === 'string') {
+    copy.rrhh_name = normalizePersonName(copy.rrhh_name);
+  }
+  if (typeof copy.user_name === 'string') {
+    // Only normalize user_name if it is a real person display name (not technical IDs or system codes)
+    if (!copy.user_name.startsWith('ADMIN') && !copy.user_name.startsWith('SIS_') && !copy.user_name.includes('@')) {
+      copy.user_name = normalizePersonName(copy.user_name);
+    }
+  }
 
   return copy;
+}
+
+/**
+ * Strips accents for search comparison (case and accent insensitive).
+ * e.g., "Pérez" -> "perez"
+ */
+export function normalizeSearchTerm(str: string | null | undefined): string {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+/**
+ * Checks if search query matches a target name or string (case and accent insensitive).
+ */
+export function matchesSearch(target: string | null | undefined, query: string | null | undefined): boolean {
+  if (!query) return true;
+  if (!target) return false;
+  const normTarget = normalizeSearchTerm(target);
+  const normQuery = normalizeSearchTerm(query);
+  return normTarget.includes(normQuery);
 }

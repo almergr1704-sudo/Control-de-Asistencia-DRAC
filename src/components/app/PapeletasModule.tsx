@@ -51,6 +51,7 @@ import { AdvancedSearchFilter } from '../common/AdvancedSearchFilter';
 import { EmptyState } from '../common/EmptyState';
 import { getImmediateBossForPapeleta } from '../../utils/vacationEngine';
 import { canUserApproveForRequester, isWorkerInBossScope } from '../../utils/encargaturaUtils';
+import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 interface PapeletasModuleProps {
   activeView?: string;
@@ -365,14 +366,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
 
       // 3. TEXT SEARCH
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase().trim();
-        const matchCode = p.code.toLowerCase().includes(term);
-        const matchDni = p.employee_dni.includes(term);
-        const matchName = p.employee_name.toLowerCase().includes(term);
-        const matchDestino = p.destino.toLowerCase().includes(term);
-        const matchDesc = p.descripcion.toLowerCase().includes(term);
-        const matchArea = p.area_name.toLowerCase().includes(term);
-        if (!matchCode && !matchDni && !matchName && !matchDestino && !matchDesc && !matchArea) {
+        const fullSearch = `${p.code} ${p.employee_dni} ${p.employee_name} ${p.destino} ${p.descripcion} ${p.area_name}`;
+        if (!matchesSearch(fullSearch, searchTerm)) {
           return false;
         }
       }
@@ -507,7 +502,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
       code: `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`,
       employee_id: activeUserEmployee.id,
       employee_dni: activeUserEmployee.dni,
-      employee_name: `${activeUserEmployee.first_name} ${activeUserEmployee.last_name}`,
+      employee_name: buildNormalizedFullName(activeUserEmployee.first_name, activeUserEmployee.last_name),
       dependencia_name: activeUserEmployee.dependencia_name || 'SEDE CENTRAL',
       direccion_organo_name: activeUserEmployee.direccion_organo_name,
       area_name: activeUserEmployee.area_name || 'OFICINA DRAC',
