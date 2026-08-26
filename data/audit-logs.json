@@ -1,0 +1,24 @@
+[
+  {
+    "id": "aud-syncall-1787748459750",
+    "timestamp": "2026-08-26T12:47:39.744Z",
+    "user_id": "CONTROL_ASISTENCIA",
+    "user_name": "Control de Asistencia",
+    "role": "CONTROL_ASISTENCIA",
+    "module": "BIOMETRICOS",
+    "action": "SINCRONIZACION_TOTAL",
+    "affected_record_id": "ALL_TERMINALS",
+    "details": "Sincronización PUSH ejecutada para 4 terminales. Marcaciones verificadas: 132 (Almacenadas: 0, Duplicadas: 132, Procesadas: 129)."
+  },
+  {
+    "id": "aud-syncall-1787748325116",
+    "timestamp": "2026-08-26T12:45:25.111Z",
+    "user_id": "CONTROL_ASISTENCIA",
+    "user_name": "Control de Asistencia",
+    "role": "CONTROL_ASISTENCIA",
+    "module": "BIOMETRICOS",
+    "action": "SINCRONIZACION_TOTAL",
+    "affected_record_id": "ALL_TERMINALS",
+    "details": "Sincronización PUSH ejecutada para 4 terminales. Marcaciones verificadas: 132 (Almacenadas: 0, Duplicadas: 132, Procesadas: 129)."
+  }
+]

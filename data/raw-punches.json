@@ -259,8 +259,8 @@
     "processed": false,
     "processed_at": null,
     "raw_payload": "PIN=1099\tTIME=2026-08-25 08:22:04\tVERIFY=1\tSTATUS=0",
-    "validation_status": "PENDIENTE_IDENTIFICACION",
-    "rejection_reason": "Código PIN 1099 no asociado a ningún trabajador activo.",
+    "validation_status": "ERROR_DNI",
+    "rejection_reason": "DNI 1099 no está registrado en el directorio institucional de personal.",
     "authorization_id": null
   },
   {
@@ -281,8 +281,8 @@
     "processed": false,
     "processed_at": null,
     "raw_payload": "PIN=9992\tTIME=2026-08-25 08:14:10\tVERIFY=1\tSTATUS=0",
-    "validation_status": "PENDIENTE_IDENTIFICACION",
-    "rejection_reason": "Código PIN 9992 no asociado a ningún trabajador activo.",
+    "validation_status": "ERROR_DNI",
+    "rejection_reason": "DNI 9992 no está registrado en el directorio institucional de personal.",
     "authorization_id": null
   },
   {
@@ -303,8 +303,8 @@
     "processed": false,
     "processed_at": null,
     "raw_payload": "PIN=9991\tTIME=2026-08-25 08:12:35\tVERIFY=1\tSTATUS=0",
-    "validation_status": "PENDIENTE_IDENTIFICACION",
-    "rejection_reason": "Código PIN 9991 no asociado a ningún trabajador activo.",
+    "validation_status": "ERROR_DNI",
+    "rejection_reason": "DNI 9991 no está registrado en el directorio institucional de personal.",
     "authorization_id": null
   },
   {

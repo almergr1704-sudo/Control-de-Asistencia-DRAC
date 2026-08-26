@@ -335,25 +335,30 @@ export default function App() {
   // Sync RAW punches and calculated attendance from server
   const syncPunchesFromServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance/punches');
-      if (res.ok) {
-        const data = await res.json();
+      const res = await fetch('/api/attendance/punches', {
+        headers: { 'Accept': 'application/json' },
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json().catch(() => null);
         if (data && data.success && Array.isArray(data.data)) {
-          console.log(`API returned: ${data.data.length} punches`);
           setRawPunches(data.data);
           return data.data;
         }
       }
     } catch (err) {
-      console.log('Información: no se pudieron sincronizar marcaciones RAW de inmediato:', err);
+      console.log('Información: sincronización de marcaciones RAW en segundo plano.');
     }
   }, []);
 
   const syncAttendanceFromServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance');
-      if (res.ok) {
-        const data = await res.json();
+      const res = await fetch('/api/attendance', {
+        headers: { 'Accept': 'application/json' },
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json().catch(() => null);
         if (data && data.success && Array.isArray(data.data)) {
           setAttendance(data.data);
         }
