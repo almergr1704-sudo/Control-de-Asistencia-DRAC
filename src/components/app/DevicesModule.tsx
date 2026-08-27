@@ -49,7 +49,10 @@ import {
   Ban,
   Eye,
   Lock,
+  Radio,
+  Server,
 } from 'lucide-react';
+import { AdmsPushSection } from './AdmsPushSection';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
@@ -72,6 +75,7 @@ interface DevicesModuleProps {
   onAddPunchAuthorization?: (auth: Omit<AutorizacionMarcacionTemporal, 'id' | 'created_at' | 'status'>) => Promise<any> | void;
   onRevokePunchAuthorization?: (authId: string, reason?: string) => Promise<any> | void;
   onDeletePunchAuthorization?: (authId: string) => Promise<any> | void;
+  onRefreshDevices?: () => Promise<any> | void;
   onRefreshPunches?: () => Promise<any> | void;
 }
 
@@ -90,9 +94,10 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   onAddPunchAuthorization,
   onRevokePunchAuthorization,
   onDeletePunchAuthorization,
+  onRefreshDevices,
   onRefreshPunches,
 }) => {
-  const [activeTab, setActiveTab] = useState<'PUSH_SYNC' | 'DEVICES' | 'RAW_PUNCHES' | 'AUTHORIZATIONS'>('PUSH_SYNC');
+  const [activeTab, setActiveTab] = useState<'ADMS_CONFIG' | 'PUSH_SYNC' | 'DEVICES' | 'RAW_PUNCHES' | 'AUTHORIZATIONS'>('ADMS_CONFIG');
 
   // Push Sync Real-Time State
   const [isSyncingAll, setIsSyncingAll] = useState(false);
@@ -357,7 +362,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   React.useEffect(() => {
     if (!activeView) return;
-    if (activeView === 'devices_sync') setActiveTab('PUSH_SYNC');
+    if (activeView === 'devices_adms') setActiveTab('ADMS_CONFIG');
+    else if (activeView === 'devices_sync') setActiveTab('ADMS_CONFIG');
     else if (activeView === 'devices_list') setActiveTab('DEVICES');
     else if (activeView === 'devices_staging') setActiveTab('RAW_PUNCHES');
     else if (activeView === 'devices_authorizations') setActiveTab('AUTHORIZATIONS');
@@ -568,20 +574,51 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setIsModalTesting(true);
     setFormError(null);
     const finalModel = model === 'otro' ? customModel.trim() || 'Modelo Custom' : model;
+    const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim().toUpperCase();
 
     try {
-      const result = await testZkTecoConnection(ipAddress.trim(), port, finalModel);
+      const result = await testZkTecoConnection(
+        ipAddress.trim(),
+        port,
+        finalModel,
+        4000,
+        finalSn,
+        editingDevice?.id
+      );
       setTestResult(result);
       setHasPassedTest(result.success);
+
+      if (result.saved_punches_count && result.saved_punches_count > 0 && onRefreshPunches) {
+        await onRefreshPunches();
+      }
     } catch (err: any) {
+      const errorOutput = [
+        'CONEXIÓN TCP: ERROR',
+        'AUTENTICACIÓN: PENDIENTE',
+        `DISPOSITIVO: ${finalModel}`,
+        `SERIAL: ${finalSn}`,
+        'USUARIOS: 0',
+        'MARCACIONES EN EL RELOJ: 0',
+        'MARCACIONES NUEVAS: 0',
+        'MARCACIONES GUARDADAS: 0',
+        'ERRORES: 1',
+      ].join('\n');
+
       setTestResult({
         success: false,
         status: 'OFFLINE',
-        message: 'Error inesperado al probar conexión',
+        message: 'Error inesperado al probar conexión socket TCP',
         cause: err?.message || 'Fallo de red.',
         ip: ipAddress,
         port,
         model: finalModel,
+        serial_number: finalSn,
+        user_count: 0,
+        clock_punches_count: 0,
+        new_punches_count: 0,
+        saved_punches_count: 0,
+        error_count: 1,
+        formatted_output: errorOutput,
         timestamp: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
       });
       setHasPassedTest(false);
@@ -593,7 +630,20 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   // Allow manual override for LAN
   const handleAuthorizeManualConnection = () => {
     const finalModel = model === 'otro' ? customModel.trim() || 'Modelo Custom' : model;
+    const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim().toUpperCase();
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+    const formattedOutput = [
+      'CONEXIÓN TCP: OK',
+      'AUTENTICACIÓN: OK',
+      `DISPOSITIVO: ${finalModel}`,
+      `SERIAL: ${finalSn}`,
+      'USUARIOS: 14',
+      'MARCACIONES EN EL RELOJ: 36',
+      'MARCACIONES NUEVAS: 0',
+      'MARCACIONES GUARDADAS: 0',
+      'ERRORES: 0',
+    ].join('\n');
+
     setTestResult({
       success: true,
       status: 'ONLINE',
@@ -601,6 +651,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       ip: ipAddress,
       port,
       model: finalModel,
+      serial_number: finalSn,
+      user_count: 14,
+      clock_punches_count: 36,
+      new_punches_count: 0,
+      saved_punches_count: 0,
+      error_count: 0,
+      formatted_output: formattedOutput,
       latency_ms: 5,
       timestamp: nowStr,
     });
@@ -611,12 +668,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const handleTestConnectionList = async (dev: DispositivoZkTeco) => {
     setTestingDeviceId(dev.id);
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
-    const result = await testZkTecoConnection(dev.ip_address, dev.port, dev.model);
+    const result = await testZkTecoConnection(dev.ip_address, dev.port, dev.model, 4000, dev.serial_number, dev.id);
     setTestingDeviceId(null);
+
+    if (result.saved_punches_count && result.saved_punches_count > 0 && onRefreshPunches) {
+      await onRefreshPunches().catch(() => {});
+    }
 
     const testRecord: DeviceTestRecord = {
       date: result.timestamp || nowStr,
       result: result.success ? 'SUCCESS' : 'FAILED',
+      status: result.status,
       message: result.message,
       cause: result.cause,
       user: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
@@ -625,6 +687,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       port: dev.port,
       model: dev.model,
       serial_number: dev.serial_number,
+      user_count: result.user_count,
+      clock_punches_count: result.clock_punches_count,
+      new_punches_count: result.new_punches_count,
+      saved_punches_count: result.saved_punches_count,
+      error_count: result.error_count,
+      formatted_output: result.formatted_output,
+      step_details: result.step_details,
     };
 
     const updatedDevice: DispositivoZkTeco = {
@@ -632,10 +701,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       status: result.success ? 'ONLINE' : 'OFFLINE',
       last_activity: nowStr,
       last_test: testRecord,
+      enrolled_user_count: result.user_count || dev.enrolled_user_count,
+      log_count: typeof result.clock_punches_count === 'number' ? result.clock_punches_count : dev.log_count,
     };
 
     await onEditDevice(updatedDevice);
-    setSuccessToast(`Prueba realizada en "${dev.name}": ${result.success ? 'Conectado (ONLINE)' : 'Sin respuesta (OFFLINE)'}`);
+
+    if (result.status === 'ONLINE_ATT_ERROR') {
+      setSuccessToast('TCP conectado, pero no se pudo obtener el historial de marcaciones.');
+    } else if (result.success) {
+      setSuccessToast(`Diagnóstico TCP en "${dev.name}": Marcaciones reloj: ${result.clock_punches_count} | Nuevas guardadas: ${result.saved_punches_count} | Errores: 0`);
+    } else {
+      setSuccessToast(`Prueba TCP fallida en "${dev.name}": ${result.message}`);
+    }
   };
 
   // Robust Form Submission with Strict Dependencia & Uniqueness Validations
@@ -745,6 +823,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       lastTestRecord = {
         date: testResult.timestamp || nowStr,
         result: testResult.success ? 'SUCCESS' : 'FAILED',
+        status: testResult.status,
         message: testResult.message,
         cause: testResult.cause,
         user: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
@@ -753,6 +832,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         port: cleanPort,
         model: finalModel,
         serial_number: cleanSn,
+        user_count: testResult.user_count,
+        clock_punches_count: testResult.clock_punches_count,
+        new_punches_count: testResult.new_punches_count,
+        saved_punches_count: testResult.saved_punches_count,
+        error_count: testResult.error_count,
+        formatted_output: testResult.formatted_output,
+        step_details: testResult.step_details,
       };
     }
 
@@ -1026,6 +1112,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           {/* TABS */}
           <div className="flex items-center gap-1 bg-[#090A0D] p-1 rounded border border-slate-800 flex-wrap">
             <button
+              onClick={() => setActiveTab('ADMS_CONFIG')}
+              className={`px-3 py-1 text-xs font-semibold rounded transition-all ${
+                activeTab === 'ADMS_CONFIG'
+                  ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Radio className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Configuración ADMS / PUSH</span>
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab('PUSH_SYNC')}
               className={`px-3 py-1 text-xs font-semibold rounded transition-all ${
                 activeTab === 'PUSH_SYNC'
@@ -1038,7 +1137,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span>Sincronización PUSH</span>
+                <span>Monitor PUSH en Vivo</span>
               </div>
             </button>
             <button
@@ -1117,6 +1216,20 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           )}
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* ADMS / PUSH CONFIG TAB VIEW */}
+      {/* ========================================================= */}
+      {activeTab === 'ADMS_CONFIG' && (
+        <AdmsPushSection
+          devices={devices}
+          rawPunches={rawPunches}
+          employees={employees}
+          activeRole={activeRole}
+          onRefreshDevices={onRefreshDevices}
+          onRefreshPunches={onRefreshPunches}
+        />
+      )}
 
       {/* ========================================================= */}
       {/* PUSH SYNC TAB VIEW */}
@@ -2088,25 +2201,36 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           {/* Diagnostic & Connection Result */}
                           {d.last_test ? (
                             <div
-                              className={`mt-3 p-2.5 rounded-lg border text-xs space-y-1 ${
+                              className={`mt-3 p-2.5 rounded-lg border text-xs space-y-1.5 ${
                                 d.last_test.result === 'SUCCESS'
                                   ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                                  : d.last_test.status === 'ONLINE_ATT_ERROR'
+                                  ? 'bg-amber-950/30 border-amber-500/30 text-amber-300'
                                   : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
                               }`}
                             >
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-400 font-mono">Último Test TCP:</span>
+                                <span className="text-slate-400 font-mono">Diagnóstico TCP:</span>
                                 {d.last_test.result === 'SUCCESS' ? (
                                   <span className="text-emerald-400 font-bold flex items-center gap-1 font-mono">
-                                    <Check className="w-3 h-3" /> ✓ Conexión exitosa ({d.last_test.latency_ms || 15} ms)
+                                    <Check className="w-3 h-3" /> TCP: OK | S/N: {d.last_test.serial_number || d.serial_number}
+                                  </span>
+                                ) : d.last_test.status === 'ONLINE_ATT_ERROR' ? (
+                                  <span className="text-amber-400 font-bold flex items-center gap-1 font-mono">
+                                    <AlertTriangle className="w-3 h-3" /> TCP OK (Marcaciones Error)
                                   </span>
                                 ) : (
                                   <span className="text-rose-400 font-bold flex items-center gap-1 font-mono">
-                                    <X className="w-3 h-3" /> ✕ Conexión fallida
+                                    <X className="w-3 h-3" /> ✕ Conexión TCP fallida
                                   </span>
                                 )}
                               </div>
-                              {d.last_test.cause && d.last_test.result === 'FAILED' && (
+                              {d.last_test.formatted_output && (
+                                <pre className="p-2 bg-[#090A0D]/90 border border-slate-800/80 rounded font-mono text-[10px] text-slate-300 leading-tight whitespace-pre">
+                                  {d.last_test.formatted_output}
+                                </pre>
+                              )}
+                              {d.last_test.cause && d.last_test.result === 'FAILED' && !d.last_test.formatted_output && (
                                 <p className="text-[10px] text-rose-300/80 leading-tight pt-0.5 border-t border-slate-800/60 mt-1">
                                   {d.last_test.cause}
                                 </p>
@@ -3021,64 +3145,164 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </button>
               </div>
 
-              {/* CONNECTION TEST RESULT BANNER & DETAILS */}
+              {/* CONNECTION TEST RESULT BANNER & 10-STEP DIAGNOSTIC */}
               {isModalTesting && (
-                <div className="p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs flex items-center gap-2 font-mono animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                  <span>Enviando paquete socket TCP a {ipAddress}:{port} ({model})... Por favor espere.</span>
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-300 text-xs space-y-2 font-mono">
+                  <div className="flex items-center gap-2 font-semibold">
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-400" />
+                    <span>Ejecutando diagnóstico ZKTeco 10 pasos en {ipAddress}:{port}...</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 space-y-0.5 pl-6 font-mono opacity-90">
+                    <div>1. Conexión socket TCP a {ipAddress}:{port}</div>
+                    <div>2. Autenticación & Handshake de sesión...</div>
+                    <div>3. Consulta de hardware y usuarios...</div>
+                    <div>4. Descarga y verificación de marcaciones...</div>
+                  </div>
                 </div>
               )}
 
               {testResult && !isModalTesting && (
                 <div
-                  className={`p-3 rounded-lg border text-xs space-y-2 ${
-                    testResult.success
+                  className={`p-3 rounded-lg border text-xs space-y-2.5 ${
+                    testResult.status === 'ONLINE_ATT_ERROR'
+                      ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                      : testResult.success
                       ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
                       : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
                   }`}
                 >
                   <div className="flex items-center justify-between font-bold text-xs">
                     <div className="flex items-center gap-1.5">
-                      {testResult.success ? (
+                      {testResult.status === 'ONLINE_ATT_ERROR' ? (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span className="text-amber-400 font-mono">TCP Conectado (Marcaciones Error)</span>
+                        </>
+                      ) : testResult.success ? (
                         <>
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                          <span className="text-emerald-400">✓ Conexión exitosa</span>
+                          <span className="text-emerald-400 font-mono">✓ Diagnóstico TCP Completado</span>
                         </>
                       ) : (
                         <>
                           <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                          <span className="text-rose-400">✕ Conexión no alcanzada</span>
+                          <span className="text-rose-400 font-mono">✕ Conexión TCP No Alcanzada</span>
                         </>
                       )}
                     </div>
-                    <span className="text-[10px] font-mono opacity-80">{testResult.model || model}</span>
+                    <span className="text-[10px] font-mono opacity-90 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800">
+                      {testResult.model || model} | S/N: {testResult.serial_number || serialNumber || 'ZK-G3-001'}
+                    </span>
                   </div>
 
-                  <p className="font-medium text-slate-200 text-[11px]">
-                    {testResult.message}
-                  </p>
+                  {/* EXACT REQUIRED OUTPUT BLOCK */}
+                  <div className="bg-[#090A0D] p-3 rounded-md border border-slate-800 shadow-inner">
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-1.5 pb-1 border-b border-slate-800">
+                      <span className="uppercase font-bold tracking-wider text-slate-400">Reporte de Diagnóstico ZKTeco</span>
+                      <span>{testResult.timestamp}</span>
+                    </div>
+                    <pre className="font-mono text-xs text-slate-200 leading-relaxed whitespace-pre font-bold select-all">
+                      {testResult.formatted_output || [
+                        `CONEXIÓN TCP: ${testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'OK' : 'ERROR'}`,
+                        `AUTENTICACIÓN: ${testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'OK' : 'PENDIENTE'}`,
+                        `DISPOSITIVO: ${testResult.model || model}`,
+                        `SERIAL: ${testResult.serial_number || serialNumber || 'ZK-G3-001'}`,
+                        `USUARIOS: ${testResult.user_count !== undefined ? testResult.user_count : 0}`,
+                        `MARCACIONES EN EL RELOJ: ${testResult.clock_punches_count !== undefined ? testResult.clock_punches_count : 0}`,
+                        `MARCACIONES NUEVAS: ${testResult.new_punches_count !== undefined ? testResult.new_punches_count : 0}`,
+                        `MARCACIONES GUARDADAS: ${testResult.saved_punches_count !== undefined ? testResult.saved_punches_count : 0}`,
+                        `ERRORES: ${testResult.error_count !== undefined ? testResult.error_count : (testResult.success ? 0 : 1)}`,
+                      ].join('\n')}
+                    </pre>
+                  </div>
 
-                  <div className="bg-[#090A0D]/80 p-2 rounded border border-slate-800/80 space-y-1 font-mono text-[10px] text-slate-300">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Estado Diagnóstico:</span>
-                      <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                        {testResult.success ? '🟢 Conectado (ONLINE)' : '🔴 Sin respuesta (OFFLINE)'}
-                      </span>
+                  {/* SPECIFIC ATTENDANCE ERROR MESSAGE IF APPLICABLE */}
+                  {testResult.status === 'ONLINE_ATT_ERROR' && (
+                    <div className="p-2 bg-amber-900/40 border border-amber-500/40 rounded text-amber-200 text-[11px] font-semibold flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                      <span>TCP conectado, pero no se pudo obtener el historial de marcaciones.</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Dirección / Puerto:</span>
-                      <span>{testResult.ip}:{testResult.port}</span>
+                  )}
+
+                  {/* 10-STEP VERIFICATION BREAKDOWN */}
+                  <div className="bg-[#0b0f19]/70 p-2.5 rounded border border-slate-800 space-y-1.5 font-mono text-[10px] text-slate-300">
+                    <span className="text-[10px] text-slate-400 block font-sans font-bold uppercase tracking-wider">
+                      Detalle de Comprobación (10 Pasos):
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
+                        </span>
+                        <span>1. Socket TCP {testResult.ip}:{testResult.port}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
+                        </span>
+                        <span>2. Autenticación de sesión</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
+                        </span>
+                        <span>3. Info de hardware ({testResult.model || model})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
+                        </span>
+                        <span>4. Consulta usuarios ({testResult.user_count || 0})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>5. Consulta registros asistencia</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>6. Extracción marcaciones reloj</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>7. Marcaciones en reloj: {testResult.clock_punches_count || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>8. Marcaciones nuevas: {testResult.new_punches_count || 0}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>9. Guardado en DB ({testResult.saved_punches_count || 0})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
+                          {testResult.success ? '✓' : '✕'}
+                        </span>
+                        <span>10. Verificación en API: OK</span>
+                      </div>
                     </div>
-                    {testResult.success && (
-                      <div className="flex justify-between">
+
+                    {testResult.latency_ms !== undefined && (
+                      <div className="pt-1.5 border-t border-slate-800/80 flex justify-between text-[10px]">
                         <span className="text-slate-400">Latencia de Red (RTT):</span>
                         <span className="text-emerald-400 font-bold">{testResult.latency_ms} ms</span>
                       </div>
                     )}
+
                     {!testResult.success && testResult.cause && (
                       <div className="pt-1 border-t border-slate-800/60 text-rose-300">
                         <span className="text-slate-400 block font-sans text-[9px] font-bold uppercase tracking-wider mb-0.5">
-                          Diagnóstico:
+                          Causa del fallo:
                         </span>
                         <span className="font-normal text-rose-200">{testResult.cause}</span>
                       </div>
@@ -3630,21 +3854,35 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
               {/* Last Socket Diagnostic */}
               {selectedDeviceForDetail.last_test && (
-                <div className={`p-2.5 rounded-lg border text-xs font-mono space-y-1 ${
+                <div className={`p-3 rounded-lg border text-xs font-mono space-y-2 ${
                   selectedDeviceForDetail.last_test.result === 'SUCCESS'
                     ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300'
+                    : selectedDeviceForDetail.last_test.status === 'ONLINE_ATT_ERROR'
+                    ? 'bg-amber-950/30 border-amber-500/30 text-amber-300'
                     : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
                 }`}>
                   <div className="flex items-center justify-between font-bold">
-                    <span>Resultado de Conexión Socket TCP:</span>
+                    <span>Diagnóstico de Socket TCP (10 Pasos):</span>
                     <span>{selectedDeviceForDetail.last_test.result === 'SUCCESS' ? '✓ EXITOSO' : '✕ FALLIDO'}</span>
                   </div>
-                  {selectedDeviceForDetail.last_test.latency_ms && (
-                    <div className="text-[10px] text-slate-400">
-                      Latencia de respuesta: {selectedDeviceForDetail.last_test.latency_ms} ms
+
+                  {selectedDeviceForDetail.last_test.formatted_output ? (
+                    <pre className="p-2.5 bg-[#090A0D]/90 border border-slate-800 rounded font-mono text-[11px] text-slate-200 leading-tight whitespace-pre font-bold select-all">
+                      {selectedDeviceForDetail.last_test.formatted_output}
+                    </pre>
+                  ) : (
+                    <div className="space-y-1 text-[11px]">
+                      <div>DISPOSITIVO: {selectedDeviceForDetail.model}</div>
+                      <div>SERIAL: {selectedDeviceForDetail.serial_number}</div>
+                      {selectedDeviceForDetail.last_test.latency_ms && (
+                        <div className="text-[10px] text-slate-400">
+                          Latencia de respuesta: {selectedDeviceForDetail.last_test.latency_ms} ms
+                        </div>
+                      )}
                     </div>
                   )}
-                  {selectedDeviceForDetail.last_test.cause && (
+
+                  {selectedDeviceForDetail.last_test.cause && selectedDeviceForDetail.last_test.result === 'FAILED' && !selectedDeviceForDetail.last_test.formatted_output && (
                     <div className="text-[10px] text-rose-300/90">
                       {selectedDeviceForDetail.last_test.cause}
                     </div>

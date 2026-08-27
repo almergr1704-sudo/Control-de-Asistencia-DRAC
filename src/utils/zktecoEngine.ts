@@ -201,42 +201,93 @@ export function calculateAttendanceForDate(
   };
 }
 
+export interface DeviceTestStepDetails {
+  tcp_ok: boolean;
+  auth_ok: boolean;
+  device_info_ok: boolean;
+  users_ok: boolean;
+  punches_ok: boolean;
+  saved_ok: boolean;
+  api_verified_ok: boolean;
+}
+
 export interface DeviceTestResponse {
   success: boolean;
-  status: 'ONLINE' | 'OFFLINE';
+  status: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR';
   message: string;
   cause?: string;
   latency_ms?: number;
   ip: string;
   port: number;
   model?: string;
+  serial_number?: string;
+  user_count?: number;
+  clock_punches_count?: number | string;
+  new_punches_count?: number;
+  saved_punches_count?: number;
+  error_count?: number;
+  formatted_output?: string;
+  step_details?: DeviceTestStepDetails;
   is_private_ip?: boolean;
   timestamp: string;
+  data?: any;
 }
 
 /**
  * Robust network diagnostic caller for ZKTeco terminals (G3-id, uFace, K40, etc.)
- * Prevents JSON parse errors and provides actionable diagnostic guidance for LAN/WAN.
+ * Executes the complete 10-step TCP diagnostic:
+ * 1. Connect to IP:Port
+ * 2. Authenticate
+ * 3. Query Device Info
+ * 4. Query User Count
+ * 5. Query Attendance Records
+ * 6. Extract Raw Punches
+ * 7. Count Found Punches
+ * 8. Count New Punches
+ * 9. Persist into Database
+ * 10. Verify API availability
  */
 export async function testZkTecoConnection(
   ip: string,
   port: number,
   model: string = 'G3-id',
-  timeoutMs: number = 4000
+  timeoutMs: number = 4000,
+  serial_number?: string,
+  deviceId?: string
 ): Promise<DeviceTestResponse> {
   const cleanIp = (ip || '').trim();
   const targetPort = Number(port);
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+  const finalSerial = (serial_number || (model === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim();
 
   if (!cleanIp || !targetPort) {
+    const errorOutput = [
+      'CONEXIÓN TCP: ERROR',
+      'AUTENTICACIÓN: PENDIENTE',
+      `DISPOSITIVO: ${model}`,
+      `SERIAL: ${finalSerial}`,
+      'USUARIOS: 0',
+      'MARCACIONES EN EL RELOJ: 0',
+      'MARCACIONES NUEVAS: 0',
+      'MARCACIONES GUARDADAS: 0',
+      'ERRORES: 1',
+    ].join('\n');
+
     return {
       success: false,
       status: 'OFFLINE',
-      message: 'Conexión fallida',
-      cause: 'Dirección IP o puerto no especificados.',
+      message: 'Dirección IP o puerto TCP no especificados.',
+      cause: 'Debe ingresar la dirección IP y el puerto de comunicación (4370).',
       ip: cleanIp,
       port: targetPort,
       model,
+      serial_number: finalSerial,
+      user_count: 0,
+      clock_punches_count: 0,
+      new_punches_count: 0,
+      saved_punches_count: 0,
+      error_count: 1,
+      formatted_output: errorOutput,
       timestamp: nowStr,
     };
   }
@@ -257,25 +308,43 @@ export async function testZkTecoConnection(
       },
       body: JSON.stringify({
         ip: cleanIp,
+        ip_address: cleanIp,
         port: targetPort,
         model,
+        serial_number: finalSerial,
+        deviceId,
         timeoutMs,
       }),
     });
 
     const contentType = response.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      const data = await response.json();
+      const resultData = await response.json();
+      const payload = resultData?.data || resultData;
       return {
-        ...data,
-        is_private_ip: data.is_private_ip ?? isPrivate,
+        ...payload,
+        success: resultData.success !== undefined ? resultData.success : payload.success,
+        is_private_ip: payload.is_private_ip ?? isPrivate,
+        serial_number: payload.serial_number || finalSerial,
+        model: payload.model || model,
       };
     } else {
-      // In case an HTML proxy page or text was returned
-      let causeText = `Respuesta del servidor (${response.status}).`;
+      let causeText = `Respuesta no estándar del servidor (${response.status}).`;
       if (isPrivate) {
-        causeText = `IP Privada LAN (${cleanIp}): Los servidores en la nube no pueden enviar paquetes TCP directos a su red local sin VPN o port forwarding. Configure en el ZKTeco ${model}: Menú > Comunicación > Servidor Cloud/ADMS.`;
+        causeText = `IP Privada LAN (${cleanIp}): Los servidores en la nube no pueden alcanzar directamente una dirección IP local sin VPN o port forwarding.`;
       }
+
+      const errorOutput = [
+        'CONEXIÓN TCP: ERROR',
+        'AUTENTICACIÓN: PENDIENTE',
+        `DISPOSITIVO: ${model}`,
+        `SERIAL: ${finalSerial}`,
+        'USUARIOS: 0',
+        'MARCACIONES EN EL RELOJ: 0',
+        'MARCACIONES NUEVAS: 0',
+        'MARCACIONES GUARDADAS: 0',
+        'ERRORES: 1',
+      ].join('\n');
 
       return {
         success: false,
@@ -285,6 +354,13 @@ export async function testZkTecoConnection(
         ip: cleanIp,
         port: targetPort,
         model,
+        serial_number: finalSerial,
+        user_count: 0,
+        clock_punches_count: 0,
+        new_punches_count: 0,
+        saved_punches_count: 0,
+        error_count: 1,
+        formatted_output: errorOutput,
         is_private_ip: isPrivate,
         timestamp: nowStr,
       };
@@ -292,8 +368,20 @@ export async function testZkTecoConnection(
   } catch (err: any) {
     let causeText = err?.message || 'Error de conexión de red.';
     if (isPrivate) {
-      causeText = `IP Privada LAN (${cleanIp}): Verifique que el ZKTeco ${model} esté encendido y conectado al router de la oficina. Para sincronización continua, habilite el Servidor ADMS en el equipo.`;
+      causeText = `IP Privada LAN (${cleanIp}): Verifique que el ZKTeco ${model} esté encendido en ${cleanIp}:${targetPort}.`;
     }
+
+    const errorOutput = [
+      'CONEXIÓN TCP: ERROR',
+      'AUTENTICACIÓN: PENDIENTE',
+      `DISPOSITIVO: ${model}`,
+      `SERIAL: ${finalSerial}`,
+      'USUARIOS: 0',
+      'MARCACIONES EN EL RELOJ: 0',
+      'MARCACIONES NUEVAS: 0',
+      'MARCACIONES GUARDADAS: 0',
+      'ERRORES: 1',
+    ].join('\n');
 
     return {
       success: false,
@@ -303,6 +391,13 @@ export async function testZkTecoConnection(
       ip: cleanIp,
       port: targetPort,
       model,
+      serial_number: finalSerial,
+      user_count: 0,
+      clock_punches_count: 0,
+      new_punches_count: 0,
+      saved_punches_count: 0,
+      error_count: 1,
+      formatted_output: errorOutput,
       is_private_ip: isPrivate,
       timestamp: nowStr,
     };

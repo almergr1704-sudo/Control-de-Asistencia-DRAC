@@ -347,6 +347,7 @@ export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'CONFIGURED' | 'ERROR' | 'INAC
 export interface DeviceTestRecord {
   date: string;
   result: 'SUCCESS' | 'FAILED';
+  status?: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR';
   message: string;
   cause?: string;
   user: string;
@@ -355,6 +356,21 @@ export interface DeviceTestRecord {
   port: number;
   model?: string;
   serial_number?: string;
+  user_count?: number;
+  clock_punches_count?: number | string;
+  new_punches_count?: number;
+  saved_punches_count?: number;
+  error_count?: number;
+  formatted_output?: string;
+  step_details?: {
+    tcp_ok: boolean;
+    auth_ok: boolean;
+    device_info_ok: boolean;
+    users_ok: boolean;
+    punches_ok: boolean;
+    saved_ok: boolean;
+    api_verified_ok: boolean;
+  };
 }
 
 export interface DeviceCapabilities {
@@ -368,6 +384,60 @@ export interface DeviceCapabilities {
   user_management: boolean;
   punch_query: boolean;
   realtime_push: boolean;
+}
+
+export interface DevicePushConfig {
+  push_enabled: boolean;
+  server_address: string; // Dirección IP o Dominio del Servidor Express DRAC
+  server_port: number; // Puerto HTTP/HTTPS (ej. 3000)
+  protocol: 'HTTP' | 'HTTPS';
+  endpoint: string; // Ej. "/api/zkteco/push" o "/iclock/cdata"
+  push_interval_sec?: number;
+  status: 'PUSH_ONLINE' | 'PUSH_OFFLINE' | 'WAITING_PUNCHES' | 'ERROR';
+  last_connection?: string | null;
+  last_punch_received?: string | null;
+  last_heartbeat?: string | null;
+}
+
+export interface PushReceptionLog {
+  id: string;
+  dispositivo: string;
+  serial: string;
+  employeeCode: string;
+  employee_name?: string;
+  employee_dni?: string;
+  punch_time: string; // fecha/hora de marcación
+  reception_time: string; // fecha/hora de recepción
+  payload_original: string;
+  estado: 'VALIDA' | 'PROCESADA' | 'PENDIENTE_IDENTIFICACION' | 'IGNORADA' | 'ERROR';
+  error?: string | null;
+  stage_diagnostics?: {
+    clock_network: boolean;
+    tcp_socket: boolean;
+    adms_config: boolean;
+    push_endpoint: boolean;
+    auth: boolean;
+    payload_received: boolean;
+    storage_saved: boolean;
+    processed_attendance: boolean;
+    api_available: boolean;
+    frontend_rendered: boolean;
+  };
+}
+
+export interface PushDashboardSummary {
+  push_online: boolean;
+  status_message: string;
+  last_connection: string | null;
+  last_punch: string | null;
+  punches_today: number;
+  punches_new: number;
+  punches_processed: number;
+  error_count: number;
+  server_address: string;
+  server_port: number;
+  protocol: 'HTTP' | 'HTTPS';
+  listener_endpoints: string[];
 }
 
 export interface DispositivoZkTeco {
@@ -395,6 +465,7 @@ export interface DispositivoZkTeco {
   enrolled_face_count?: number;
   log_count?: number;
   adms_url?: string;
+  push_config?: DevicePushConfig;
 }
 
 export type BiometricSyncStatus = 'SINCRONIZADO' | 'PENDIENTE' | 'ERROR' | 'NO_REGISTRADO' | 'DESACTIVADO';

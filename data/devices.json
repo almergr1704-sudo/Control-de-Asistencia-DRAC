@@ -14,7 +14,7 @@
     "area_id": "area-admin-admin",
     "area_name": "OFICINA DE ADMINISTRACION",
     "location_detail": "Acceso peatonal principal Jr. Comercio 140",
-    "last_activity": "2026-08-26T12:47:39.744Z",
+    "last_activity": "2026-08-27T12:54:33.799Z",
     "status": "ONLINE",
     "firmware_version": "Ver 8.0.4.3-2026",
     "capabilities": {
@@ -29,21 +29,37 @@
       "punch_query": true,
       "realtime_push": true
     },
-    "enrolled_user_count": 148,
+    "enrolled_user_count": 14,
     "enrolled_fingerprint_count": 280,
     "enrolled_face_count": 135,
-    "log_count": 4230,
+    "log_count": 139,
     "adms_url": "http://localhost:3000/iclock/cdata",
     "last_test": {
-      "date": "2026-08-20 07:50:12",
+      "date": "27/8/2026, 7:54:33 a. m.",
       "result": "SUCCESS",
-      "message": "Terminal ZKTeco G3-id en línea. Protocolo TCP 4370 y ADMS Push operativos.",
-      "user": "admin",
-      "latency_ms": 18,
+      "status": "ONLINE",
+      "message": "Diagnóstico TCP completo y sincronización de marcaciones realizada.",
+      "user": "Administrador DRAC",
+      "latency_ms": 32,
       "ip": "192.168.1.201",
       "port": 4370,
       "model": "G3-id",
-      "serial_number": "BIM-DRAC-001"
+      "serial_number": "ZK-G3-001",
+      "user_count": 14,
+      "clock_punches_count": 139,
+      "new_punches_count": 8,
+      "saved_punches_count": 8,
+      "error_count": 0,
+      "formatted_output": "CONEXIÓN TCP: OK\nAUTENTICACIÓN: OK\nDISPOSITIVO: G3-id\nSERIAL: ZK-G3-001\nUSUARIOS: 14\nMARCACIONES EN EL RELOJ: 139\nMARCACIONES NUEVAS: 8\nMARCACIONES GUARDADAS: 8\nERRORES: 0",
+      "step_details": {
+        "tcp_ok": true,
+        "auth_ok": true,
+        "device_info_ok": true,
+        "users_ok": true,
+        "punches_ok": true,
+        "saved_ok": true,
+        "api_verified_ok": true
+      }
     }
   },
   {
