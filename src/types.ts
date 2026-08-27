@@ -403,13 +403,15 @@ export interface PushReceptionLog {
   id: string;
   dispositivo: string;
   serial: string;
+  ip_origen?: string;
   employeeCode: string;
   employee_name?: string;
   employee_dni?: string;
-  punch_time: string; // fecha/hora de marcación
-  reception_time: string; // fecha/hora de recepción
+  punch_time: string; // fecha/hora de marcación en reloj
+  reception_time: string; // fecha/hora de recepción en servidor DRAC
+  event_type?: string; // CHECK_IN, CHECK_OUT, VERIFY_FACE, VERIFY_FP, HEARTBEAT
   payload_original: string;
-  estado: 'VALIDA' | 'PROCESADA' | 'PENDIENTE_IDENTIFICACION' | 'IGNORADA' | 'ERROR';
+  estado: 'VALIDA' | 'PROCESADA' | 'YA_EXISTENTE_IGNORADA' | 'PENDIENTE_IDENTIFICACION' | 'IGNORADA' | 'ERROR';
   error?: string | null;
   stage_diagnostics?: {
     clock_network: boolean;
@@ -428,6 +430,10 @@ export interface PushReceptionLog {
 export interface PushDashboardSummary {
   push_online: boolean;
   status_message: string;
+  tcp_status: 'OK' | 'ERROR' | 'UNAVAILABLE_CLOUD';
+  tcp_message?: string;
+  adms_status: 'OK' | 'WAITING_PUNCHES' | 'ERROR';
+  adms_message?: string;
   last_connection: string | null;
   last_punch: string | null;
   punches_today: number;
@@ -435,9 +441,16 @@ export interface PushDashboardSummary {
   punches_processed: number;
   error_count: number;
   server_address: string;
+  server_domain?: string;
   server_port: number;
   protocol: 'HTTP' | 'HTTPS';
+  endpoint?: string;
   listener_endpoints: string[];
+  total_raw_punches?: number;
+  registered_devices_count?: number;
+  online_devices_count?: number;
+  devices?: any[];
+  server_time?: string;
 }
 
 export interface DispositivoZkTeco {
@@ -466,6 +479,46 @@ export interface DispositivoZkTeco {
   log_count?: number;
   adms_url?: string;
   push_config?: DevicePushConfig;
+  assigned_agent_id?: string;
+  assigned_agent_name?: string;
+  agent_status?: 'ONLINE' | 'OFFLINE' | 'SYNCING' | 'ERROR';
+  tcp_status?: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
+}
+
+export interface DracZkAgent {
+  id: string;
+  name: string;
+  hostname: string;
+  ip_lan: string;
+  version: string;
+  status: 'ONLINE' | 'SYNCING' | 'OFFLINE' | 'ERROR';
+  assigned_device_ids: string[];
+  assigned_device_sns: string[];
+  last_ping: string;
+  last_sync: string;
+  pending_queue_count: number;
+  sync_interval_seconds: number;
+  auto_sync: boolean;
+  auth_token: string;
+  os_info?: string;
+  last_error?: string | null;
+  total_punches_bridged?: number;
+  total_users_pushed?: number;
+}
+
+export interface AgentCommand {
+  id: string;
+  agent_id: string;
+  device_id?: string;
+  device_ip?: string;
+  device_port?: number;
+  command: 'TEST_CONNECTION' | 'GET_INFO' | 'DOWNLOAD_PUNCHES' | 'SYNC_USER' | 'SYNC_BATCH_USERS' | 'CLEAR_LOGS';
+  params?: any;
+  status: 'PENDING' | 'EXECUTING' | 'COMPLETED' | 'FAILED';
+  created_at: string;
+  completed_at?: string;
+  result?: any;
+  error?: string;
 }
 
 export type BiometricSyncStatus = 'SINCRONIZADO' | 'PENDIENTE' | 'ERROR' | 'NO_REGISTRADO' | 'DESACTIVADO';

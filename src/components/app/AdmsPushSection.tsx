@@ -921,6 +921,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
               <option value="ALL">Todos los Estados</option>
               <option value="PROCESADA">PROCESADA</option>
               <option value="VALIDA">VALIDA</option>
+              <option value="YA_EXISTENTE_IGNORADA">YA EXISTENTE (IGNORADA)</option>
               <option value="PENDIENTE_IDENTIFICACION">PENDIENTE DE IDENTIFICACIÓN</option>
               <option value="ERROR">ERROR</option>
             </select>
@@ -938,11 +939,12 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
               <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="py-2.5 px-3">Dispositivo / Serial</th>
+                  <th className="py-2.5 px-3">IP Origen</th>
                   <th className="py-2.5 px-3">DNI / PIN</th>
-                  <th className="py-2.5 px-3">Trabajador Identificado</th>
+                  <th className="py-2.5 px-3">Trabajador</th>
+                  <th className="py-2.5 px-3">Tipo Evento</th>
                   <th className="py-2.5 px-3">Marcación (Reloj)</th>
                   <th className="py-2.5 px-3">Recepción (DRAC)</th>
-                  <th className="py-2.5 px-3">Payload Original</th>
                   <th className="py-2.5 px-3 text-center">Estado</th>
                   <th className="py-2.5 px-3 text-right">Acción</th>
                 </tr>
@@ -950,7 +952,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
               <tbody className="divide-y divide-slate-800/60 font-mono">
                 {paginatedLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500 font-sans text-xs">
+                    <td colSpan={9} className="py-8 text-center text-slate-500 font-sans text-xs">
                       No se encontraron registros de recepción PUSH en el rango especificado.
                     </td>
                   </tr>
@@ -960,10 +962,20 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
                     return (
                       <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
                         <td className="py-2.5 px-3">
-                          <div className="font-sans font-semibold text-slate-200 truncate max-w-[180px]" title={log.dispositivo}>
+                          <div className="font-sans font-semibold text-slate-200 truncate max-w-[170px]" title={log.dispositivo}>
                             {log.dispositivo}
                           </div>
                           <span className="text-[10px] text-slate-500 font-mono">{log.serial}</span>
+                        </td>
+
+                        <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                          {log.ip_origen ? (
+                            <span className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 rounded text-slate-300">
+                              {log.ip_origen}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )}
                         </td>
 
                         <td className="py-2.5 px-3 font-bold text-slate-100">
@@ -971,7 +983,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
                         </td>
 
                         <td className="py-2.5 px-3 font-sans">
-                          <div className={`truncate max-w-[200px] ${isIdentified ? 'text-slate-200 font-medium' : 'text-amber-400 italic'}`}>
+                          <div className={`truncate max-w-[180px] ${isIdentified ? 'text-slate-200 font-medium' : 'text-amber-400 italic'}`}>
                             {log.employee_name || 'Trabajador no identificado'}
                           </div>
                           {log.employee_dni && log.employee_dni !== log.employeeCode && (
@@ -979,31 +991,38 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
                           )}
                         </td>
 
+                        <td className="py-2.5 px-3">
+                          <span className="px-1.5 py-0.5 bg-indigo-950/60 border border-indigo-800/50 rounded text-[10px] font-bold text-indigo-300 font-sans">
+                            {log.event_type || 'MARCACION'}
+                          </span>
+                        </td>
+
                         <td className="py-2.5 px-3 text-indigo-300">
                           {log.punch_time}
                         </td>
 
-                        <td className="py-2.5 px-3 text-slate-400">
+                        <td className="py-2.5 px-3 text-slate-400 text-[11px]">
                           {log.reception_time ? log.reception_time.replace('T', ' ').substring(0, 19) : '-'}
                         </td>
 
-                        <td className="py-2.5 px-3">
-                          <code className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800/80 text-[10px] text-slate-300 truncate max-w-[220px] block" title={log.payload_original}>
-                            {log.payload_original}
-                          </code>
-                        </td>
-
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center font-sans">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold font-sans inline-block ${
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold inline-block ${
                               log.estado === 'PROCESADA' || log.estado === 'VALIDA'
                                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                                : log.estado === 'YA_EXISTENTE_IGNORADA'
+                                ? 'bg-slate-800 text-slate-300 border border-slate-700'
                                 : log.estado === 'PENDIENTE_IDENTIFICACION'
                                 ? 'bg-amber-950 text-amber-300 border border-amber-800/60'
                                 : 'bg-rose-950 text-rose-300 border border-rose-800/60'
                             }`}
+                            title={
+                              log.estado === 'YA_EXISTENTE_IGNORADA'
+                                ? 'Marcación ya existía en la base de datos (idempotente). No se generó duplicado.'
+                                : log.estado
+                            }
                           >
-                            {log.estado}
+                            {log.estado === 'YA_EXISTENTE_IGNORADA' ? 'YA REGISTRADA' : log.estado}
                           </span>
                         </td>
 
@@ -1183,6 +1202,14 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
                   <span className="text-emerald-400">{selectedLogForDetail.employee_name || 'Trabajador no identificado'}</span>
                 </div>
                 <div className="text-slate-400 flex justify-between">
+                  <span>IP Origen:</span>
+                  <span className="text-amber-300">{selectedLogForDetail.ip_origen || 'No registrada'}</span>
+                </div>
+                <div className="text-slate-400 flex justify-between">
+                  <span>Tipo Evento:</span>
+                  <span className="text-indigo-300 font-bold">{selectedLogForDetail.event_type || 'MARCACION'}</span>
+                </div>
+                <div className="text-slate-400 flex justify-between">
                   <span>Marcación Reloj:</span>
                   <span className="text-slate-300">{selectedLogForDetail.punch_time}</span>
                 </div>
@@ -1190,7 +1217,25 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
                   <span>Recepción Servidor:</span>
                   <span className="text-slate-300">{selectedLogForDetail.reception_time}</span>
                 </div>
+                <div className="text-slate-400 flex justify-between">
+                  <span>Estado:</span>
+                  <span className={`font-bold ${
+                    selectedLogForDetail.estado === 'PROCESADA' || selectedLogForDetail.estado === 'VALIDA'
+                      ? 'text-emerald-400'
+                      : selectedLogForDetail.estado === 'YA_EXISTENTE_IGNORADA'
+                      ? 'text-indigo-300'
+                      : 'text-amber-400'
+                  }`}>
+                    {selectedLogForDetail.estado === 'YA_EXISTENTE_IGNORADA' ? 'YA EXISTENTE (IDEMPOTENTE)' : selectedLogForDetail.estado}
+                  </span>
+                </div>
               </div>
+
+              {selectedLogForDetail.estado === 'YA_EXISTENTE_IGNORADA' && (
+                <div className="p-2.5 bg-indigo-950/40 border border-indigo-500/30 rounded text-indigo-200 text-xs font-sans">
+                  <strong>Control de Idempotencia:</strong> Esta marcación ya se encontraba almacenada en la base de datos (mismo serial, DNI y timestamp). El servidor la validó correctamente y previno la creación de duplicados.
+                </div>
+              )}
 
               <div>
                 <label className="block text-slate-400 mb-1 font-sans font-medium">Payload Crudo Recibido:</label>

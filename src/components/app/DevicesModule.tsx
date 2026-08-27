@@ -51,8 +51,10 @@ import {
   Lock,
   Radio,
   Server,
+  Laptop,
 } from 'lucide-react';
 import { AdmsPushSection } from './AdmsPushSection';
+import { DracZkAgentSection } from './DracZkAgentSection';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
@@ -97,7 +99,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   onRefreshDevices,
   onRefreshPunches,
 }) => {
-  const [activeTab, setActiveTab] = useState<'ADMS_CONFIG' | 'PUSH_SYNC' | 'DEVICES' | 'RAW_PUNCHES' | 'AUTHORIZATIONS'>('ADMS_CONFIG');
+  const [activeTab, setActiveTab] = useState<'ADMS_CONFIG' | 'ZK_AGENT' | 'PUSH_SYNC' | 'DEVICES' | 'RAW_PUNCHES' | 'AUTHORIZATIONS'>('ADMS_CONFIG');
 
   // Push Sync Real-Time State
   const [isSyncingAll, setIsSyncingAll] = useState(false);
@@ -1112,6 +1114,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           {/* TABS */}
           <div className="flex items-center gap-1 bg-[#090A0D] p-1 rounded border border-slate-800 flex-wrap">
             <button
+              onClick={() => setActiveTab('ZK_AGENT')}
+              className={`px-3 py-1 text-xs font-semibold rounded transition-all ${
+                activeTab === 'ZK_AGENT'
+                  ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/40 font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Laptop className="w-3.5 h-3.5 text-indigo-400" />
+                <span>DRAC ZK Agent (Windows)</span>
+              </div>
+            </button>
+            <button
               onClick={() => setActiveTab('ADMS_CONFIG')}
               className={`px-3 py-1 text-xs font-semibold rounded transition-all ${
                 activeTab === 'ADMS_CONFIG'
@@ -1216,6 +1231,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           )}
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* DRAC ZK AGENT (WINDOWS) TAB VIEW */}
+      {/* ========================================================= */}
+      {activeTab === 'ZK_AGENT' && (
+        <DracZkAgentSection
+          devices={devices}
+          employees={employees}
+          activeRole={activeRole}
+          onRefreshDevices={onRefreshDevices}
+          onRefreshPunches={onRefreshPunches}
+        />
+      )}
 
       {/* ========================================================= */}
       {/* ADMS / PUSH CONFIG TAB VIEW */}
