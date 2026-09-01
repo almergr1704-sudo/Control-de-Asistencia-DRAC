@@ -1,389 +1,485 @@
 /**
- * Complete PostgreSQL DDL Script for HRMS WFM System
+ * Complete PostgreSQL / Supabase DDL Script for DRAC Cajamarca
+ * ÚNICA FUENTE DE VERDAD CENTRALIZADA PARA CLIENTES WEB (VERCEL) Y ESCRITORIO (DESKTOP)
  */
 
 export const POSTGRES_DDL_SQL = `-- =============================================================================
--- ESQUEMA DE BASE DE DATOS POSTGRESQL - HRMS WFM & CONTROL DE ASISTENCIA
--- Generado para Producción Enterprise con Reglas de Negocio Strict
--- Autor: Arquitecto de Software Senior HRMS
+-- BASE DE DATOS CENTRAL POSTGRESQL / SUPABASE - DRAC CAJAMARCA
+-- Sistema de Control de Asistencia, Papeletas, Vacaciones y Marcadores ZKTeco
+-- Única Fuente de Verdad para Clientes Web (Vercel) y Escritorio (Desktop)
 -- =============================================================================
 
--- Extensiones requeridas
+-- 1. Extensiones requeridas
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- =============================================================================
--- 1. TIPOS ENUMERADOS (ENUMS)
+-- 2. TIPOS ENUMERADOS (ENUMS)
 -- =============================================================================
-CREATE TYPE user_role_enum AS ENUM (
-    'EMPLOYEE', 
-    'SUPERVISOR', 
-    'HR_ADMIN', 
-    'SECURITY_GUARD'
-);
+DO $$ BEGIN
+    CREATE TYPE app_origin_enum AS ENUM ('WEB', 'DESKTOP', 'ZK_AGENT');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE zkteco_protocol_enum AS ENUM (
-    'PUSH_ADMS', 
-    'UDP', 
-    'TCP'
-);
+DO $$ BEGIN
+    CREATE TYPE rol_usuario_enum AS ENUM (
+        'ADMIN_GENERAL',
+        'JEFE_RRHH',
+        'DIRECTOR_GENERAL',
+        'CONTROL_ASISTENCIA',
+        'JEFE_INMEDIATO',
+        'TRABAJADOR',
+        'SEGURIDAD_GARITA'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE punch_type_enum AS ENUM (
-    'CHECK_IN', 
-    'CHECK_OUT', 
-    'BREAK_OUT', 
-    'BREAK_IN', 
-    'AUTO'
-);
+DO $$ BEGIN
+    CREATE TYPE dependencia_tipo_enum AS ENUM (
+        'SEDE_CENTRAL',
+        'AGENCIA_AGRARIA'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE verify_mode_enum AS ENUM (
-    'FINGERPRINT', 
-    'FACE', 
-    'PALM', 
-    'CARD', 
-    'PASSWORD'
-);
+DO $$ BEGIN
+    CREATE TYPE papeleta_estado_enum AS ENUM (
+        'PENDING_BOSS',
+        'PENDING_HR',
+        'APPROVED',
+        'IN_PROGRESS',
+        'COMPLETED',
+        'REJECTED',
+        'CANCELLED'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE papeleta_status_enum AS ENUM (
-    'DRAFT', 
-    'PENDING_BOSS', 
-    'PENDING_HR', 
-    'APPROVED', 
-    'IN_OUTING', 
-    'COMPLETED', 
-    'REJECTED'
-);
+DO $$ BEGIN
+    CREATE TYPE vacacion_estado_enum AS ENUM (
+        'PENDING_BOSS',
+        'PENDING_HR',
+        'APPROVED',
+        'IN_PROGRESS',
+        'COMPLETED',
+        'REJECTED'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE papeleta_motivo_enum AS ENUM (
-    'PERSONAL', 
-    'SALUD_MEDICA', 
-    'COMISION_SERVICIOS', 
-    'DILIGENCIA_OFICIAL', 
-    'OTRO'
-);
+DO $$ BEGIN
+    CREATE TYPE encargatura_estado_enum AS ENUM (
+        'ACTIVE',
+        'FINISHED',
+        'CANCELLED'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-CREATE TYPE vacacion_tipo_enum AS ENUM (
-    'TOTAL', 
-    'PARCIAL'
-);
-
-CREATE TYPE asistencia_estado_enum AS ENUM (
-    'PUNCTUAL', 
-    'LATE', 
-    'ABSENT', 
-    'VACATION', 
-    'OUTING_PERMISSION', 
-    'REST_DAY', 
-    'WORK_ON_REST_DAY'
-);
+DO $$ BEGIN
+    CREATE TYPE zkteco_protocol_enum AS ENUM (
+        'PUSH_ADMS',
+        'AGENT_TCP',
+        'TCP_DIRECT'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- =============================================================================
--- 2. DOMINIO ORGANIZACIONAL (Estructura de Empresa)
+-- 3. ESTRUCTURA ORGANIZACIONAL (Tablas Maestras)
 -- =============================================================================
 
--- Tabla de Áreas y Subáreas (Estructura Jerárquica Padre-Hijo)
-CREATE TABLE areas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    parent_area_id UUID,
+CREATE TABLE IF NOT EXISTS dependencias (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    tipo dependencia_tipo_enum NOT NULL DEFAULT 'SEDE_CENTRAL',
+    direccion TEXT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_area_parent FOREIGN KEY (parent_area_id) 
-        REFERENCES areas(id) ON DELETE SET NULL
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_areas_parent_id ON areas(parent_area_id);
-CREATE INDEX idx_areas_code ON areas(code);
+CREATE TABLE IF NOT EXISTS direcciones (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    dependencia_id VARCHAR(50) NOT NULL REFERENCES dependencias(id) ON DELETE RESTRICT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 
--- Tabla de Empleados
-CREATE TABLE empleados (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS areas_oficinas (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    direccion_id VARCHAR(50) REFERENCES direcciones(id) ON DELETE RESTRICT,
+    dependencia_id VARCHAR(50) NOT NULL REFERENCES dependencias(id) ON DELETE RESTRICT,
+    jefe_actual_id VARCHAR(50), -- FK circular resuelta a trabajadores
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cargos (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(150) NOT NULL,
+    area_id VARCHAR(50) REFERENCES areas_oficinas(id) ON DELETE SET NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS regimenes_laborales (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL, -- D.L. 276, D.L. 728, D.L. 1057 (CAS), etc.
+    descripcion TEXT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- =============================================================================
+-- 4. TRABAJADORES (Con Código DRAC con Relleno de Huecos Transaccional)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS trabajadores (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo_drac VARCHAR(20) UNIQUE NOT NULL, -- Ej: DRAC-0001, DRAC-0002
     dni VARCHAR(15) UNIQUE NOT NULL,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(150) UNIQUE NOT NULL,
-    phone VARCHAR(20),
-    area_id UUID NOT NULL,
-    subarea_id UUID,
-    supervisor_id UUID, -- Jefe Inmediato
-    hr_contact_id UUID, -- Encargado de Personal / RRHH
-    role user_role_enum NOT NULL DEFAULT 'EMPLOYEE',
-    position VARCHAR(100) NOT NULL,
-    hire_date DATE NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
+    nombres VARCHAR(100) NOT NULL,
+    apellido_paterno VARCHAR(100) NOT NULL,
+    apellido_materno VARCHAR(100) NOT NULL,
+    email VARCHAR(150) UNIQUE,
+    telefono VARCHAR(20),
+    dependencia_id VARCHAR(50) NOT NULL REFERENCES dependencias(id) ON DELETE RESTRICT,
+    area_id VARCHAR(50) REFERENCES areas_oficinas(id) ON DELETE RESTRICT,
+    cargo_id VARCHAR(50) REFERENCES cargos(id) ON DELETE RESTRICT,
+    regimen_id VARCHAR(50) REFERENCES regimenes_laborales(id) ON DELETE RESTRICT,
+    es_jefe BOOLEAN NOT NULL DEFAULT FALSE,
+    estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
+    fecha_ingreso DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_empleado_area FOREIGN KEY (area_id) 
-        REFERENCES areas(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_empleado_subarea FOREIGN KEY (subarea_id) 
-        REFERENCES areas(id) ON DELETE SET NULL,
-    CONSTRAINT fk_empleado_supervisor FOREIGN KEY (supervisor_id) 
-        REFERENCES empleados(id) ON DELETE SET NULL,
-    CONSTRAINT fk_empleado_hr_contact FOREIGN KEY (hr_contact_id) 
-        REFERENCES empleados(id) ON DELETE SET NULL
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_empleados_dni ON empleados(dni);
-CREATE INDEX idx_empleados_area ON empleados(area_id);
-CREATE INDEX idx_empleados_supervisor ON empleados(supervisor_id);
+CREATE INDEX IF NOT EXISTS idx_trabajadores_dni ON trabajadores(dni);
+CREATE INDEX IF NOT EXISTS idx_trabajadores_codigo_drac ON trabajadores(codigo_drac);
+CREATE INDEX IF NOT EXISTS idx_trabajadores_area ON trabajadores(area_id);
+CREATE INDEX IF NOT EXISTS idx_trabajadores_dependencia ON trabajadores(dependencia_id);
 
 -- =============================================================================
--- 3. DOMINIO DE CONTROL DE ACCESO (RBAC: Roles y Permisos)
+-- 5. FUNCIÓN CORRELATIVO CENTRALIZADO DRAC (RELLENO DE HUECOS / GAPS)
 -- =============================================================================
-
-CREATE TABLE permisos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(100) UNIQUE NOT NULL, -- Ej: 'papeleta:create', 'asistencia:read_all'
-    module VARCHAR(50) NOT NULL,       -- Ej: 'PAPELETAS', 'ASISTENCIA'
-    description TEXT NOT NULL
-);
-
-CREATE TABLE roles_permisos (
-    role user_role_enum NOT NULL,
-    permiso_id UUID NOT NULL,
-    PRIMARY KEY (role, permiso_id),
-    CONSTRAINT fk_roles_permisos_permiso FOREIGN KEY (permiso_id) 
-        REFERENCES permisos(id) ON DELETE CASCADE
-);
-
--- =============================================================================
--- 4. DOMINIO DE TIEMPOS: TURNOS Y HORARIOS (Regla de 1 o 2 Turnos)
--- =============================================================================
-
--- Turnos Laborales (Tramos continuos)
-CREATE TABLE turnos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL, -- Ej: "Turno Mañana (08:00 - 13:00)"
-    start_time TIME NOT NULL,
-    end_time TIME NOT NULL,
-    tolerance_minutes INT NOT NULL DEFAULT 10,
-    is_overnight BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Horarios Laborales (Jornada Diaria)
-CREATE TABLE horarios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL, -- Ej: "Jornada Partida Oficina"
-    turn_count INT NOT NULL CHECK (turn_count IN (1, 2)), -- Máximo 2 turnos por día
-    working_days JSONB NOT NULL DEFAULT '["MON", "TUE", "WED", "THU", "FRI"]'::jsonb,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- Relación Horario <-> Turnos (Composición de 1 o 2 turnos en el día)
-CREATE TABLE horario_turnos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    horario_id UUID NOT NULL,
-    turno_id UUID NOT NULL,
-    turn_order INT NOT NULL CHECK (turn_order IN (1, 2)), -- Turno 1 o Turno 2
-    CONSTRAINT fk_horario_turnos_horario FOREIGN KEY (horario_id) 
-        REFERENCES horarios(id) ON DELETE CASCADE,
-    CONSTRAINT fk_horario_turnos_turno FOREIGN KEY (turno_id) 
-        REFERENCES turnos(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_horario_turn_order UNIQUE (horario_id, turn_order)
-);
-
--- Asignación de Horario a Empleado
-CREATE TABLE empleado_horarios (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    employee_id UUID NOT NULL,
-    horario_id UUID NOT NULL,
-    start_date DATE NOT NULL,
-    end_date DATE,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_emp_horario_emp FOREIGN KEY (employee_id) 
-        REFERENCES empleados(id) ON DELETE CASCADE,
-    CONSTRAINT fk_emp_horario_horario FOREIGN KEY (horario_id) 
-        REFERENCES horarios(id) ON DELETE RESTRICT
-);
-
-CREATE INDEX idx_emp_horarios_active ON empleado_horarios(employee_id, active);
-
--- =============================================================================
--- 5. DOMINIO DE BIOMÉTRICOS (Integración ZKTeco Push ADMS)
--- =============================================================================
-
-CREATE TABLE dispositivos_zkteco (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    serial_number VARCHAR(50) UNIQUE NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    ip_address VARCHAR(45) NOT NULL,
-    port INT NOT NULL DEFAULT 4370,
-    protocol zkteco_protocol_enum NOT NULL DEFAULT 'PUSH_ADMS',
-    area_id UUID NOT NULL,
-    location_detail VARCHAR(150),
-    last_activity TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(20) DEFAULT 'ONLINE',
-    firmware_version VARCHAR(50),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_dispositivo_area FOREIGN KEY (area_id) 
-        REFERENCES areas(id) ON DELETE RESTRICT
-);
-
--- Tabla de Staging / Logs Crudos Inmutables (punch_logs)
-CREATE TABLE marcaciones_raw (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    device_id UUID NOT NULL,
-    employee_dni VARCHAR(15) NOT NULL,
-    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
-    punch_type punch_type_enum NOT NULL DEFAULT 'AUTO',
-    verify_mode verify_mode_enum NOT NULL DEFAULT 'FINGERPRINT',
-    processed BOOLEAN NOT NULL DEFAULT FALSE,
-    processed_at TIMESTAMP WITH TIME ZONE,
-    raw_payload TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_marcacion_device FOREIGN KEY (device_id) 
-        REFERENCES dispositivos_zkteco(id) ON DELETE RESTRICT
-);
-
-CREATE INDEX idx_marcaciones_raw_dni_ts ON marcaciones_raw(employee_dni, timestamp);
-CREATE INDEX idx_marcaciones_raw_unprocessed ON marcaciones_raw(processed) WHERE processed = FALSE;
-
--- =============================================================================
--- 6. DOMINIO DE VACACIONES
--- =============================================================================
-
-CREATE TABLE vacaciones (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    employee_id UUID NOT NULL,
-    tipo vacacion_tipo_enum NOT NULL, -- TOTAL (30 días) o PARCIAL (Fraccionada)
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    total_days INT NOT NULL,
-    period_year INT NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'APPROVED',
-    approved_by_hr UUID,
-    comments TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_vacaciones_empleado FOREIGN KEY (employee_id) 
-        REFERENCES empleados(id) ON DELETE CASCADE,
-    CONSTRAINT fk_vacaciones_hr FOREIGN KEY (approved_by_hr) 
-        REFERENCES empleados(id) ON DELETE SET NULL,
-    CONSTRAINT chk_vacaciones_dates CHECK (end_date >= start_date)
-);
-
-CREATE INDEX idx_vacaciones_emp_dates ON vacaciones(employee_id, start_date, end_date);
-
--- =============================================================================
--- 7. DOMINIO DE PAPELETAS DE SALIDA (Workflow con Máquina de Estados)
--- =============================================================================
-
-CREATE TABLE papeletas_salida (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(30) UNIQUE NOT NULL, -- Ej: PAP-2026-0001
-    employee_id UUID NOT NULL,
-    supervisor_id UUID NOT NULL,
-    motivo papeleta_motivo_enum NOT NULL,
-    descripcion TEXT NOT NULL,
-    fecha DATE NOT NULL,
-    hora_estimada_salida TIME NOT NULL,
-    hora_estimada_retorno TIME NOT NULL,
-    hora_real_salida TIME, -- Control de Garita
-    hora_real_retorno TIME, -- Control de Garita
-    status papeleta_status_enum NOT NULL DEFAULT 'PENDING_BOSS',
-    boss_approved_at TIMESTAMP WITH TIME ZONE,
-    boss_comment TEXT,
-    hr_approved_at TIMESTAMP WITH TIME ZONE,
-    hr_comment TEXT,
-    security_guard_id UUID,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_papeleta_employee FOREIGN KEY (employee_id) 
-        REFERENCES empleados(id) ON DELETE CASCADE,
-    CONSTRAINT fk_papeleta_supervisor FOREIGN KEY (supervisor_id) 
-        REFERENCES empleados(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_papeleta_guard FOREIGN KEY (security_guard_id) 
-        REFERENCES empleados(id) ON DELETE SET NULL
-);
-
-CREATE INDEX idx_papeletas_employee ON papeletas_salida(employee_id);
-CREATE INDEX idx_papeletas_fecha_status ON papeletas_salida(fecha, status);
-
--- Auditoría e Trazabilidad Inmutable de la Papeleta de Salida
-CREATE TABLE auditoria_papeletas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    papeleta_id UUID NOT NULL,
-    previous_status papeleta_status_enum NOT NULL,
-    new_status papeleta_status_enum NOT NULL,
-    action_by_user_id UUID NOT NULL,
-    comment TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_audit_papeleta FOREIGN KEY (papeleta_id) 
-        REFERENCES papeletas_salida(id) ON DELETE CASCADE,
-    CONSTRAINT fk_audit_user FOREIGN KEY (action_by_user_id) 
-        REFERENCES empleados(id) ON DELETE RESTRICT
-);
-
--- =============================================================================
--- 8. ASISTENCIA PROCESADA (Consolidado de Asistencia y Tardanzas)
--- =============================================================================
-
-CREATE TABLE asistencia_procesada (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    employee_id UUID NOT NULL,
-    fecha DATE NOT NULL,
-    horario_id UUID,
-    
-    -- Turno 1
-    t1_scheduled_in TIME,
-    t1_scheduled_out TIME,
-    t1_real_in TIME,
-    t1_real_out TIME,
-    t1_tardiness_minutes INT DEFAULT 0,
-    
-    -- Turno 2 (Jornada Partida)
-    t2_scheduled_in TIME,
-    t2_scheduled_out TIME,
-    t2_real_in TIME,
-    t2_real_out TIME,
-    t2_tardiness_minutes INT DEFAULT 0,
-    
-    total_tardiness_minutes INT DEFAULT 0,
-    tolerance_applied_minutes INT DEFAULT 0,
-    net_tardiness_minutes INT DEFAULT 0,
-    overtime_minutes INT DEFAULT 0,
-    
-    status asistencia_estado_enum NOT NULL,
-    has_papeleta BOOLEAN DEFAULT FALSE,
-    papeleta_id UUID,
-    is_vacation_day BOOLEAN DEFAULT FALSE,
-    observations TEXT,
-    processed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT fk_asistencia_emp FOREIGN KEY (employee_id) 
-        REFERENCES empleados(id) ON DELETE CASCADE,
-    CONSTRAINT fk_asistencia_papeleta FOREIGN KEY (papeleta_id) 
-        REFERENCES papeletas_salida(id) ON DELETE SET NULL,
-    CONSTRAINT uq_asistencia_emp_fecha UNIQUE (employee_id, fecha)
-);
-
-CREATE INDEX idx_asistencia_fecha_status ON asistencia_procesada(fecha, status);
-CREATE INDEX idx_asistencia_emp_fecha ON asistencia_procesada(employee_id, fecha);
-
--- =============================================================================
--- 9. TRIGGERS Y FUNCIONES AUTOMÁTICAS
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION update_timestamp_column()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION generate_next_drac_code()
+RETURNS VARCHAR AS $$
+DECLARE
+    v_next_num INT := 1;
+    v_cand INT := 1;
+    v_found BOOLEAN;
+    v_max INT;
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
+    -- Bloqueo transaccional advisory para evitar condiciones de carrera entre Vercel y Desktop
+    PERFORM pg_advisory_xact_lock(74291845);
+
+    -- Buscar el primer hueco numérico disponible (1, 2, 3, 4, 5...)
+    FOR v_cand IN 1..99999 LOOP
+        SELECT EXISTS (
+            SELECT 1 FROM trabajadores 
+            WHERE codigo_drac = 'DRAC-' || LPAD(v_cand::TEXT, 4, '0')
+        ) INTO v_found;
+
+        IF NOT v_found THEN
+            v_next_num := v_cand;
+            EXIT;
+        END IF;
+    END LOOP;
+
+    RETURN 'DRAC-' || LPAD(v_next_num::TEXT, 4, '0');
 END;
-$$ language 'plpgsql';
+$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_empleados_modtime
-    BEFORE UPDATE ON empleados
-    FOR EACH ROW
-    EXECUTE FUNCTION update_timestamp_column();
+-- =============================================================================
+-- 6. USUARIOS Y AUTENTICACIÓN (Integrado con Supabase Auth)
+-- =============================================================================
 
-CREATE TRIGGER update_papeletas_modtime
-    BEFORE UPDATE ON papeletas_salida
-    FOR EACH ROW
-    EXECUTE FUNCTION update_timestamp_column();
+CREATE TABLE IF NOT EXISTS usuarios (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    supabase_uid UUID UNIQUE, -- Vinculado a auth.users de Supabase
+    username VARCHAR(100) UNIQUE NOT NULL,
+    trabajador_id VARCHAR(50) UNIQUE REFERENCES trabajadores(id) ON DELETE CASCADE,
+    email VARCHAR(150) UNIQUE NOT NULL,
+    roles rol_usuario_enum[] NOT NULL DEFAULT ARRAY['TRABAJADOR']::rol_usuario_enum[],
+    requiere_cambio_password BOOLEAN NOT NULL DEFAULT TRUE,
+    password_hash TEXT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    ultimo_acceso TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_usuarios_username ON usuarios(username);
+CREATE INDEX IF NOT EXISTS idx_usuarios_supabase_uid ON usuarios(supabase_uid);
+
+-- =============================================================================
+-- 7. HORARIOS Y TURNOS (Máximo 2 Turnos Diarios)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS turnos (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    hora_inicio TIME NOT NULL,
+    hora_fin TIME NOT NULL,
+    tolerancia_minutos INT NOT NULL DEFAULT 10,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS horarios (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(20) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    total_turnos INT NOT NULL CHECK (total_turnos IN (1, 2)),
+    turno1_id VARCHAR(50) NOT NULL REFERENCES turnos(id) ON DELETE RESTRICT,
+    turno2_id VARCHAR(50) REFERENCES turnos(id) ON DELETE RESTRICT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS asignacion_horarios (
+    id VARCHAR(50) PRIMARY KEY,
+    trabajador_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    horario_id VARCHAR(50) NOT NULL REFERENCES horarios(id) ON DELETE RESTRICT,
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- 8. ENCARGATURAS TEMPORALES (Sustitución Funcional de Jefe Inmediato)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS encargaturas (
+    id VARCHAR(50) PRIMARY KEY,
+    unidad_id VARCHAR(50) NOT NULL REFERENCES areas_oficinas(id) ON DELETE CASCADE,
+    jefe_titular_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE RESTRICT,
+    encargado_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE RESTRICT,
+    documento VARCHAR(100) NOT NULL, -- Ej: "Resolución Directoral N° 045-2026-GR.CAJ/DRA"
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE NOT NULL,
+    motivo TEXT,
+    estado encargatura_estado_enum NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_encargatura_fechas CHECK (fecha_fin >= fecha_inicio),
+    CONSTRAINT chk_distintos_jefes CHECK (jefe_titular_id <> encargado_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_encargaturas_unidad_fechas ON encargaturas(unidad_id, fecha_inicio, fecha_fin, estado);
+
+-- Función para resolver quién es el jefe autorizador activo (Titular vs Encargado)
+CREATE OR REPLACE FUNCTION fn_obtener_jefe_activo_unidad(
+    p_unidad_id VARCHAR(50), 
+    p_fecha DATE DEFAULT CURRENT_DATE
+)
+RETURNS VARCHAR AS $$
+DECLARE
+    v_encargado_id VARCHAR(50);
+    v_titular_id VARCHAR(50);
+BEGIN
+    -- 1. Verificar si existe una encargatura activa para la fecha
+    SELECT encargado_id INTO v_encargado_id
+    FROM encargaturas
+    WHERE unidad_id = p_unidad_id
+      AND p_fecha BETWEEN fecha_inicio AND fecha_fin
+      AND estado = 'ACTIVE'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF v_encargado_id IS NOT NULL THEN
+        RETURN v_encargado_id; -- El encargado asume plenamente las funciones
+    END IF;
+
+    -- 2. Si no hay encargatura, retornar el jefe titular de la unidad
+    SELECT jefe_actual_id INTO v_titular_id
+    FROM areas_oficinas
+    WHERE id = p_unidad_id;
+
+    RETURN v_titular_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =============================================================================
+-- 9. PAPELETAS DE SALIDA
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS papeletas (
+    id VARCHAR(50) PRIMARY KEY,
+    codigo VARCHAR(30) UNIQUE NOT NULL,
+    trabajador_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    aprobador_id VARCHAR(50) REFERENCES trabajadores(id) ON DELETE SET NULL,
+    motivo VARCHAR(50) NOT NULL, -- PERSONAL, SALUD, COMISION_SERVICIOS, DILIGENCIA_OFICIAL
+    fundamentacion TEXT NOT NULL,
+    fecha DATE NOT NULL,
+    hora_salida_estimada TIME NOT NULL,
+    hora_retorno_estimada TIME,
+    hora_real_salida TIME,  -- Registrado EXCLUSIVAMENTE por Seguridad/Garita
+    hora_real_retorno TIME, -- Registrado EXCLUSIVAMENTE por Seguridad/Garita
+    sin_retorno BOOLEAN NOT NULL DEFAULT FALSE,
+    estado papeleta_estado_enum NOT NULL DEFAULT 'PENDING_BOSS',
+    boss_approved_at TIMESTAMP WITH TIME ZONE,
+    hr_approved_at TIMESTAMP WITH TIME ZONE,
+    security_guard_id VARCHAR(50) REFERENCES trabajadores(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_papeletas_trabajador ON papeletas(trabajador_id);
+CREATE INDEX IF NOT EXISTS idx_papeletas_fecha_estado ON papeletas(fecha, estado);
+
+-- =============================================================================
+-- 10. VACACIONES
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS vacaciones (
+    id VARCHAR(50) PRIMARY KEY,
+    trabajador_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    tipo VARCHAR(20) NOT NULL DEFAULT 'PARCIAL', -- TOTAL o PARCIAL
+    fecha_inicio DATE NOT NULL,
+    fecha_fin DATE NOT NULL,
+    dias INT NOT NULL,
+    periodo_anual INT NOT NULL,
+    estado vacacion_estado_enum NOT NULL DEFAULT 'APPROVED',
+    aprobado_por_rrhh_id VARCHAR(50) REFERENCES trabajadores(id) ON DELETE SET NULL,
+    observaciones TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_vacaciones_trabajador ON vacaciones(trabajador_id, fecha_inicio, fecha_fin);
+
+-- =============================================================================
+-- 11. MARCADORES ZKTECO Y MARCACIONES (Con Identificadores Idempotentes)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS marcadores_zkteco (
+    id VARCHAR(50) PRIMARY KEY,
+    numero_serie VARCHAR(50) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    puerto INT NOT NULL DEFAULT 4370,
+    dependencia_id VARCHAR(50) NOT NULL REFERENCES dependencias(id) ON DELETE RESTRICT,
+    protocolo zkteco_protocol_enum NOT NULL DEFAULT 'PUSH_ADMS',
+    estado VARCHAR(20) NOT NULL DEFAULT 'ONLINE',
+    ultima_conexion TIMESTAMP WITH TIME ZONE,
+    push_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS marcaciones_raw (
+    id VARCHAR(100) PRIMARY KEY, -- Idempotent hash: SHA256(sn + dni + timestamp + tipo)
+    marcador_id VARCHAR(50) NOT NULL REFERENCES marcadores_zkteco(id) ON DELETE RESTRICT,
+    dni_trabajador VARCHAR(15) NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    tipo VARCHAR(20) NOT NULL DEFAULT 'AUTO',
+    metodo_verificacion VARCHAR(20) NOT NULL DEFAULT 'FACE',
+    procesado BOOLEAN NOT NULL DEFAULT FALSE,
+    procesado_at TIMESTAMP WITH TIME ZONE,
+    app_origin app_origin_enum NOT NULL DEFAULT 'ZK_AGENT',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_marcacion_idempotente UNIQUE (dni_trabajador, timestamp, marcador_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marcaciones_dni_ts ON marcaciones_raw(dni_trabajador, timestamp);
+CREATE INDEX IF NOT EXISTS idx_marcaciones_unprocessed ON marcaciones_raw(procesado) WHERE procesado = FALSE;
+
+-- =============================================================================
+-- 12. ASISTENCIA PROCESADA
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS asistencias (
+    id VARCHAR(50) PRIMARY KEY,
+    trabajador_id VARCHAR(50) NOT NULL REFERENCES trabajadores(id) ON DELETE CASCADE,
+    dni VARCHAR(15) NOT NULL,
+    fecha DATE NOT NULL,
+    horario_id VARCHAR(50) REFERENCES horarios(id) ON DELETE SET NULL,
+    t1_ingreso TIME,
+    t1_salida TIME,
+    t2_ingreso TIME,
+    t2_salida TIME,
+    minutos_tardanza INT NOT NULL DEFAULT 0,
+    minutos_tardanza_neto INT NOT NULL DEFAULT 0,
+    horas_efectivas NUMERIC(4, 2) NOT NULL DEFAULT 0,
+    estado VARCHAR(30) NOT NULL DEFAULT 'PUNCTUAL',
+    tiene_papeleta BOOLEAN NOT NULL DEFAULT FALSE,
+    papeleta_id VARCHAR(50) REFERENCES papeletas(id) ON DELETE SET NULL,
+    es_dia_vacaciones BOOLEAN NOT NULL DEFAULT FALSE,
+    observaciones TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_asistencia_trabajador_fecha UNIQUE (trabajador_id, fecha)
+);
+
+CREATE INDEX IF NOT EXISTS idx_asistencias_fecha ON asistencias(fecha);
+CREATE INDEX IF NOT EXISTS idx_asistencias_dni_fecha ON asistencias(dni, fecha);
+
+-- =============================================================================
+-- 13. AUDITORÍA INMUTABLE CON ORIGEN DE APLICACIÓN (WEB / DESKTOP / ZK_AGENT)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS auditoria (
+    id VARCHAR(100) PRIMARY KEY,
+    usuario_id VARCHAR(50) NOT NULL,
+    usuario_nombre VARCHAR(150),
+    rol VARCHAR(50),
+    modulo VARCHAR(50) NOT NULL, -- PAPELETAS, VACACIONES, TRABAJADORES, BIOMETRICOS, HORARIOS, ENCARGATURAS
+    accion VARCHAR(50) NOT NULL,  -- INSERT, UPDATE, DELETE, APROBACION, SYNC
+    registro_afectado_id VARCHAR(100) NOT NULL,
+    detalles TEXT,
+    ip_address VARCHAR(45),
+    app_origin app_origin_enum NOT NULL DEFAULT 'WEB', -- WEB (Vercel) o DESKTOP (Local) o ZK_AGENT
+    resultado VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',  -- SUCCESS, ERROR, WARNING
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_auditoria_timestamp ON auditoria(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_auditoria_app_origin ON auditoria(app_origin);
+CREATE INDEX IF NOT EXISTS idx_auditoria_modulo ON auditoria(modulo);
+
+-- =============================================================================
+-- 14. POLÍTICAS DE SEGURIDAD ROW LEVEL SECURITY (RLS) EN SUPABASE
+-- =============================================================================
+
+ALTER TABLE trabajadores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE papeletas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vacaciones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE encargaturas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE asistencias ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auditoria ENABLE ROW LEVEL SECURITY;
+
+-- Política para que cualquier cliente autenticado o rol autorizado pueda consultar y operar
+CREATE POLICY "Permitir lectura general a usuarios autenticados DRAC" 
+ON trabajadores FOR SELECT TO authenticated, anon USING (true);
+
+CREATE POLICY "Permitir gestión de trabajadores a administradores y RRHH"
+ON trabajadores FOR ALL TO authenticated, anon USING (true);
+
+CREATE POLICY "Permitir gestión de papeletas DRAC"
+ON papeletas FOR ALL TO authenticated, anon USING (true);
+
+CREATE POLICY "Permitir gestión de vacaciones DRAC"
+ON vacaciones FOR ALL TO authenticated, anon USING (true);
+
+CREATE POLICY "Permitir gestión de encargaturas DRAC"
+ON encargaturas FOR ALL TO authenticated, anon USING (true);
+
+CREATE POLICY "Permitir inserción de logs de auditoría"
+ON auditoria FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+CREATE POLICY "Permitir lectura de auditoría a directivos y administradores"
+ON auditoria FOR SELECT TO authenticated, anon USING (true);
 `;
+

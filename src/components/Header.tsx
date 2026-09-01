@@ -11,11 +11,14 @@ import {
   ChevronDown,
   KeyRound,
   Sparkles,
+  Database,
 } from 'lucide-react';
 import { Employee, RoleType } from '../types';
 import { getEmployeeAssignedRoles } from '../utils/userAuthUtils';
+import { getAppOrigin } from '../lib/supabaseClient';
 
 interface HeaderProps {
+
   activeRole: RoleType;
   setActiveRole: (role: RoleType) => void;
   currentUser?: Employee | null;
@@ -67,8 +70,13 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <div>
-            <h1 className="font-bold text-white text-xs sm:text-sm tracking-tight uppercase flex items-center gap-2">
+            <h1 className="font-bold text-white text-xs sm:text-sm tracking-tight uppercase flex items-center gap-2 flex-wrap">
               <span>DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA</span>
+              <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono normal-case">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <Database className="w-3 h-3 text-emerald-400" />
+                <span>Supabase PostgreSQL [{getAppOrigin()}]</span>
+              </span>
             </h1>
             <p className="text-[11px] text-slate-400 hidden sm:block">
               Sistema Institucional de Control de Asistencia y Gestión de Personal

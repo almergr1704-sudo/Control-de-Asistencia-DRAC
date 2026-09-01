@@ -39,6 +39,54 @@ import {
 } from './data/initialData';
 
 import {
+  fetchDependenciasFromSupabase,
+  saveDependenciaToSupabase,
+  fetchDireccionesFromSupabase,
+  saveDireccionToSupabase,
+  fetchAreasFromSupabase,
+  saveAreaToSupabase,
+  fetchCargosFromSupabase,
+} from './services/organizationService';
+
+import {
+  fetchEmployeesFromSupabase,
+  saveEmployeeToSupabase,
+  getNextDracCodeFromPostgres,
+} from './services/employeeService';
+
+import {
+  fetchTurnosFromSupabase,
+  saveTurnoToSupabase,
+  fetchHorariosFromSupabase,
+  saveHorarioToSupabase,
+  assignHorarioToEmployeeInSupabase,
+} from './services/scheduleService';
+
+import {
+  fetchEncargaturasFromSupabase,
+  saveEncargaturaToSupabase,
+  deleteEncargaturaInSupabase,
+  fetchVacacionesFromSupabase,
+  saveVacacionToSupabase,
+  deleteVacacionInSupabase,
+  fetchPapeletasFromSupabase,
+  savePapeletaToSupabase,
+} from './services/permitsService';
+
+import {
+  fetchDevicesFromSupabase,
+  saveDeviceToSupabase,
+  deleteDeviceInSupabase,
+  fetchRawPunchesFromSupabase,
+  saveRawPunchToSupabase,
+  bulkSaveRawPunchesToSupabase,
+  fetchAttendanceFromSupabase,
+  saveAttendanceToSupabase,
+  fetchAuditLogsFromSupabase,
+  logAuditEventToSupabase,
+} from './services/attendanceService';
+
+import {
   RoleType,
   Dependencia,
   DireccionOrgano,
@@ -309,42 +357,62 @@ export default function App() {
     loadStored('devices', INITIAL_DEVICES)
   );
 
-  // Sync devices from server database on mount
+  // Sync All Phases (1-5) directly from Supabase PostgreSQL (Single Source of Truth)
   useEffect(() => {
-    fetch('/api/devices')
-      .then((res) => {
-        const contentType = res.headers.get('content-type');
-        if (res.ok && contentType && contentType.includes('application/json')) {
-          return res.json();
+    let isMounted = true;
+    async function loadCentralData() {
+      try {
+        const [deps, dirs, ars, crgs, emps, turns, hors, encs, vacs, paps, devs, rawPs, atts, logs] = await Promise.all([
+          fetchDependenciasFromSupabase(),
+          fetchDireccionesFromSupabase(),
+          fetchAreasFromSupabase(),
+          fetchCargosFromSupabase(),
+          fetchEmployeesFromSupabase(),
+          fetchTurnosFromSupabase(),
+          fetchHorariosFromSupabase(),
+          fetchEncargaturasFromSupabase(),
+          fetchVacacionesFromSupabase(),
+          fetchPapeletasFromSupabase(),
+          fetchDevicesFromSupabase(),
+          fetchRawPunchesFromSupabase(),
+          fetchAttendanceFromSupabase(),
+          fetchAuditLogsFromSupabase(),
+        ]);
+        if (isMounted) {
+          if (deps && deps.length > 0) setDependencias(deps);
+          if (dirs && dirs.length > 0) setDireccionesOrganos(dirs);
+          if (ars && ars.length > 0) setAreas(ars);
+          if (crgs && crgs.length > 0) setCargos(crgs);
+          if (emps && emps.length > 0) setEmployees(emps);
+          if (turns && turns.length > 0) setTurnos(turns);
+          if (hors && hors.length > 0) setHorarios(hors);
+          if (encs && encs.length > 0) setEncargaturas(encs);
+          if (vacs && vacs.length > 0) setVacaciones(vacs);
+          if (paps && paps.length > 0) setPapeletas(paps);
+          if (devs && devs.length > 0) setDevices(devs);
+          if (rawPs && rawPs.length > 0) setRawPunches(rawPs);
+          if (atts && atts.length > 0) setAttendance(atts);
+          if (logs && logs.length > 0) setAuditLogs(logs);
         }
-        return null;
-      })
-      .then((data) => {
-        if (data && data.success && Array.isArray(data.data) && data.data.length > 0) {
-          setDevices(data.data);
-        }
-      })
-      .catch((err) => {
-        console.log('Información: no se pudo sincronizar dispositivos desde el backend de inmediato:', err);
-      });
+      } catch (e) {
+        console.warn('Conexión inicial de DRAC Cajamarca desde Supabase:', e);
+      }
+    }
+    loadCentralData();
+    return () => { isMounted = false; };
   }, []);
+
   const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() =>
     loadStored('rawPunches', INITIAL_RAW_PUNCHES)
   );
 
-  // Sync RAW punches and calculated attendance from server
+  // Sync RAW punches and calculated attendance from Supabase / server
   const syncPunchesFromServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance/punches', {
-        headers: { 'Accept': 'application/json' },
-      });
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json().catch(() => null);
-        if (data && data.success && Array.isArray(data.data)) {
-          setRawPunches(data.data);
-          return data.data;
-        }
+      const data = await fetchRawPunchesFromSupabase();
+      if (Array.isArray(data) && data.length > 0) {
+        setRawPunches(data);
+        return data;
       }
     } catch (err) {
       console.log('Información: sincronización de marcaciones RAW en segundo plano.');
@@ -353,15 +421,9 @@ export default function App() {
 
   const syncAttendanceFromServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/attendance', {
-        headers: { 'Accept': 'application/json' },
-      });
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json().catch(() => null);
-        if (data && data.success && Array.isArray(data.data)) {
-          setAttendance(data.data);
-        }
+      const data = await fetchAttendanceFromSupabase();
+      if (Array.isArray(data) && data.length > 0) {
+        setAttendance(data);
       }
     } catch (err) {}
   }, []);
@@ -522,20 +584,12 @@ export default function App() {
     };
     setAuditLogs((prev) => [newLog, ...prev]);
 
-    // Send to backend persistence
-    try {
-      fetch('/api/audit-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLog),
-      }).catch(() => {});
-    } catch {
-      // Ignore network errors in local mode
-    }
+    // Send to Supabase and backend persistence
+    logAuditEventToSupabase(newLog).catch(() => {});
   };
 
   // DEPENDENCIA HANDLERS
-  const handleAddDependencia = (newDep: Omit<Dependencia, 'id' | 'created_at'>) => {
+  const handleAddDependencia = async (newDep: Omit<Dependencia, 'id' | 'created_at'>) => {
     const created: Dependencia = {
       ...newDep,
       id: `dep-${Date.now()}`,
@@ -544,20 +598,32 @@ export default function App() {
     };
     setDependencias((prev) => [...prev, created]);
     addAuditLog('ESTRUCTURA_DRAC', 'CREAR_DEPENDENCIA', created.id, `Nueva Dependencia DRAC: ${created.name}`);
+    await saveDependenciaToSupabase(created);
   };
 
-  const handleEditDependencia = (updatedDep: Dependencia) => {
+  const handleEditDependencia = async (updatedDep: Dependencia) => {
     setDependencias((prev) => prev.map((d) => (d.id === updatedDep.id ? updatedDep : d)));
     addAuditLog('ESTRUCTURA_DRAC', 'EDITAR_DEPENDENCIA', updatedDep.id, `Actualización de Dependencia: ${updatedDep.name}`);
+    await saveDependenciaToSupabase(updatedDep);
   };
 
-  const handleDeleteDependencia = (depId: string) => {
-    setDependencias((prev) => prev.map((d) => (d.id === depId ? { ...d, active: !d.active } : d)));
+  const handleDeleteDependencia = async (depId: string) => {
+    let updated: Dependencia | undefined;
+    setDependencias((prev) => prev.map((d) => {
+      if (d.id === depId) {
+        updated = { ...d, active: !d.active };
+        return updated;
+      }
+      return d;
+    }));
     addAuditLog('ESTRUCTURA_DRAC', 'DESACTIVAR_DEPENDENCIA', depId, `Cambio de estado activo de Dependencia ID ${depId}`);
+    if (updated) {
+      await saveDependenciaToSupabase(updated);
+    }
   };
 
   // DIRECCION / ORGANO HANDLERS
-  const handleAddDireccionOrgano = (newDir: Omit<DireccionOrgano, 'id' | 'created_at'>) => {
+  const handleAddDireccionOrgano = async (newDir: Omit<DireccionOrgano, 'id' | 'created_at'>) => {
     const created: DireccionOrgano = {
       ...newDir,
       id: `dir-${Date.now()}`,
@@ -566,20 +632,32 @@ export default function App() {
     };
     setDireccionesOrganos((prev) => [...prev, created]);
     addAuditLog('ESTRUCTURA_DRAC', 'CREAR_DIRECCION_ORGANO', created.id, `Nueva Dirección/Órgano DRAC: ${created.name}`);
+    await saveDireccionToSupabase(created);
   };
 
-  const handleEditDireccionOrgano = (updatedDir: DireccionOrgano) => {
+  const handleEditDireccionOrgano = async (updatedDir: DireccionOrgano) => {
     setDireccionesOrganos((prev) => prev.map((d) => (d.id === updatedDir.id ? updatedDir : d)));
     addAuditLog('ESTRUCTURA_DRAC', 'EDITAR_DIRECCION_ORGANO', updatedDir.id, `Actualización Dirección/Órgano: ${updatedDir.name}`);
+    await saveDireccionToSupabase(updatedDir);
   };
 
-  const handleDeleteDireccionOrgano = (dirId: string) => {
-    setDireccionesOrganos((prev) => prev.map((d) => (d.id === dirId ? { ...d, active: !d.active } : d)));
+  const handleDeleteDireccionOrgano = async (dirId: string) => {
+    let updated: DireccionOrgano | undefined;
+    setDireccionesOrganos((prev) => prev.map((d) => {
+      if (d.id === dirId) {
+        updated = { ...d, active: !d.active };
+        return updated;
+      }
+      return d;
+    }));
     addAuditLog('ESTRUCTURA_DRAC', 'DESACTIVAR_DIRECCION_ORGANO', dirId, `Cambio de estado activo Dirección/Órgano ID ${dirId}`);
+    if (updated) {
+      await saveDireccionToSupabase(updated);
+    }
   };
 
   // AREA HANDLERS
-  const handleAddArea = (newArea: Omit<Area, 'id' | 'created_at'>) => {
+  const handleAddArea = async (newArea: Omit<Area, 'id' | 'created_at'>) => {
     const created: Area = {
       ...newArea,
       id: `area-${Date.now()}`,
@@ -588,16 +666,28 @@ export default function App() {
     };
     setAreas((prev) => [...prev, created]);
     addAuditLog('ESTRUCTURA_DRAC', 'CREAR_AREA', created.id, `Nueva Área DRAC: ${created.name}`);
+    await saveAreaToSupabase(created);
   };
 
-  const handleEditArea = (updatedArea: Area) => {
+  const handleEditArea = async (updatedArea: Area) => {
     setAreas((prev) => prev.map((a) => (a.id === updatedArea.id ? updatedArea : a)));
     addAuditLog('ESTRUCTURA_DRAC', 'EDITAR_AREA', updatedArea.id, `Actualización de Área: ${updatedArea.name}`);
+    await saveAreaToSupabase(updatedArea);
   };
 
-  const handleDeleteArea = (areaId: string) => {
-    setAreas((prev) => prev.map((a) => (a.id === areaId ? { ...a, active: !a.active } : a)));
+  const handleDeleteArea = async (areaId: string) => {
+    let updated: Area | undefined;
+    setAreas((prev) => prev.map((a) => {
+      if (a.id === areaId) {
+        updated = { ...a, active: !a.active };
+        return updated;
+      }
+      return a;
+    }));
     addAuditLog('ESTRUCTURA_DRAC', 'DESACTIVAR_AREA', areaId, `Cambio de estado activo Área ID ${areaId}`);
+    if (updated) {
+      await saveAreaToSupabase(updated);
+    }
   };
 
   // CARGO HANDLERS
@@ -642,36 +732,50 @@ export default function App() {
     addAuditLog('ESTRUCTURA_DRAC', 'DESACTIVAR_RESPONSABLE', respId, `Cambio de estado activo Responsable ID ${respId}`);
   };
 
-  // EMPLOYEE HANDLERS
-  const handleAddEmployee = (newEmpData: Omit<Employee, 'id'>) => {
+  // EMPLOYEE HANDLERS (Fase 2: Persistencia Centralizada en Supabase)
+  const handleAddEmployee = async (newEmpData: Omit<Employee, 'id'>) => {
+    // Si no tiene código DRAC, obtener el siguiente correlativo centralizado desde PostgreSQL
+    let codigoDrac = newEmpData.codigo_trabajador;
+    if (!codigoDrac || codigoDrac.trim() === '') {
+      codigoDrac = await getNextDracCodeFromPostgres();
+    }
+
     const newEmp: Employee = {
       ...newEmpData,
+      codigo_trabajador: codigoDrac,
       id: `emp-${Date.now()}`,
     };
     setEmployees((prev) => [...prev, newEmp]);
-    addAuditLog('PERSONAL', 'CREAR_EMPLEADO', newEmp.id, `Registro de personal DRAC: ${newEmp.first_name} ${newEmp.last_name}`);
+    addAuditLog('PERSONAL', 'CREAR_EMPLEADO', newEmp.id, `Registro de personal DRAC (${codigoDrac}): ${newEmp.first_name} ${newEmp.last_name}`);
+    await saveEmployeeToSupabase(newEmp);
   };
 
-  const handleEditEmployee = (updatedEmp: Employee) => {
+  const handleEditEmployee = async (updatedEmp: Employee) => {
     setEmployees((prev) => prev.map((e) => (e.id === updatedEmp.id ? updatedEmp : e)));
     addAuditLog('PERSONAL', 'EDITAR_EMPLEADO', updatedEmp.id, `Actualización datos de personal: ${updatedEmp.first_name} ${updatedEmp.last_name}`);
+    await saveEmployeeToSupabase(updatedEmp);
   };
 
-  const handleDeleteEmployee = (empId: string) => {
+  const handleDeleteEmployee = async (empId: string) => {
+    let updated: Employee | undefined;
     setEmployees((prev) =>
       prev.map((e) => {
         if (e.id === empId) {
           const nextActive = !e.active;
-          return {
+          updated = {
             ...e,
             active: nextActive,
             account_status: nextActive ? (e.has_system_access ? 'ACTIVE' : 'INACTIVE') : 'INACTIVE',
           };
+          return updated;
         }
         return e;
       })
     );
     addAuditLog('PERSONAL', 'ESTADO_EMPLEADO', empId, `Cambio de estado activo/cuenta de personal ID ${empId}`);
+    if (updated) {
+      await saveEmployeeToSupabase(updated);
+    }
   };
 
   // BULK IMPORT BATCH HANDLERS
@@ -735,7 +839,7 @@ export default function App() {
     );
   };
 
-  const handleBulkImportEncargaturas = (validEncs: Encargatura[]) => {
+  const handleBulkImportEncargaturas = async (validEncs: Encargatura[]) => {
     if (validEncs.length > 0) {
       setEncargaturas((prev) => [...prev, ...validEncs]);
       addAuditLog(
@@ -744,11 +848,14 @@ export default function App() {
         `bulk-encs-${Date.now()}`,
         `Carga masiva Excel: ${validEncs.length} encargaturas registradas.`
       );
+      for (const enc of validEncs) {
+        await saveEncargaturaToSupabase(enc);
+      }
     }
   };
 
-  // ENCARGATURAS HANDLERS
-  const handleAddEncargatura = (newEnc: Omit<Encargatura, 'id' | 'created_at'>) => {
+  // ENCARGATURAS HANDLERS (Fase 4: Supabase PostgreSQL)
+  const handleAddEncargatura = async (newEnc: Omit<Encargatura, 'id' | 'created_at'>) => {
     const created: Encargatura = {
       ...newEnc,
       id: `enc-${Date.now()}`,
@@ -761,9 +868,10 @@ export default function App() {
       created.id,
       `Nueva encargatura: ${created.encargado_name} asume funciones de ${created.titular_name} (${created.cargo_encargado})`
     );
+    await saveEncargaturaToSupabase(created);
   };
 
-  const handleEditEncargatura = (updatedEnc: Encargatura) => {
+  const handleEditEncargatura = async (updatedEnc: Encargatura) => {
     setEncargaturas((prev) => prev.map((e) => (e.id === updatedEnc.id ? updatedEnc : e)));
     addAuditLog(
       'ENCARGATURAS',
@@ -771,32 +879,40 @@ export default function App() {
       updatedEnc.id,
       `Actualización de encargatura ID ${updatedEnc.id}: ${updatedEnc.encargado_name}`
     );
+    await saveEncargaturaToSupabase(updatedEnc);
   };
 
-  const handleDeleteEncargatura = (encId: string) => {
+  const handleDeleteEncargatura = async (encId: string) => {
     setEncargaturas((prev) => prev.filter((e) => e.id !== encId));
     addAuditLog('ENCARGATURAS', 'ELIMINAR_ENCARGATURA', encId, `Eliminación de encargatura ID ${encId}`);
+    await deleteEncargaturaInSupabase(encId);
   };
 
-  const handleAnularEncargatura = (encId: string, motivo: string) => {
+  const handleAnularEncargatura = async (encId: string, motivo: string) => {
+    let targetEnc: Encargatura | undefined;
     setEncargaturas((prev) =>
-      prev.map((e) =>
-        e.id === encId
-          ? {
-              ...e,
-              status: 'ANULADA',
-              anulado_at: new Date().toISOString(),
-              anulado_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
-              anulacion_motivo: motivo,
-            }
-          : e
-      )
+      prev.map((e) => {
+        if (e.id === encId) {
+          targetEnc = {
+            ...e,
+            status: 'ANULADA',
+            anulado_at: new Date().toISOString(),
+            anulado_by: activeRole === 'HR_ADMIN' ? 'Jefe de Recursos Humanos' : 'Administrador DRAC',
+            anulacion_motivo: motivo,
+          };
+          return targetEnc;
+        }
+        return e;
+      })
     );
     addAuditLog('ENCARGATURAS', 'ANULAR_ENCARGATURA', encId, `Anulación de encargatura ID ${encId}: ${motivo}`);
+    if (targetEnc) {
+      await saveEncargaturaToSupabase(targetEnc);
+    }
   };
 
-  // SHIFTS / HORARIOS HANDLERS
-  const handleAddTurno = (newTurno: Omit<Turno, 'id' | 'created_at'>) => {
+  // SHIFTS / HORARIOS HANDLERS (Fase 3: Persistencia Centralizada en Supabase)
+  const handleAddTurno = async (newTurno: Omit<Turno, 'id' | 'created_at'>) => {
     const created: Turno = {
       ...newTurno,
       id: `tur-${Date.now()}`,
@@ -804,38 +920,62 @@ export default function App() {
     };
     setTurnos((prev) => [...prev, created]);
     addAuditLog('HORARIOS', 'CREAR_TURNO', created.id, `Nuevo Turno: ${created.name}`);
+    await saveTurnoToSupabase(created);
   };
 
-  const handleEditTurno = (updatedTurno: Turno) => {
+  const handleEditTurno = async (updatedTurno: Turno) => {
     setTurnos((prev) => prev.map((t) => (t.id === updatedTurno.id ? updatedTurno : t)));
     addAuditLog('HORARIOS', 'EDITAR_TURNO', updatedTurno.id, `Actualización Turno: ${updatedTurno.name}`);
+    await saveTurnoToSupabase(updatedTurno);
   };
 
-  const handleDeleteTurno = (turnoId: string) => {
-    setTurnos((prev) => prev.map((t) => (t.id === turnoId ? { ...t, active: !t.active } : t)));
+  const handleDeleteTurno = async (turnoId: string) => {
+    let updated: Turno | undefined;
+    setTurnos((prev) => prev.map((t) => {
+      if (t.id === turnoId) {
+        updated = { ...t, active: !t.active };
+        return updated;
+      }
+      return t;
+    }));
     addAuditLog('HORARIOS', 'DESACTIVAR_TURNO', turnoId, `Cambio de estado activo Turno ID ${turnoId}`);
+    if (updated) {
+      await saveTurnoToSupabase(updated);
+    }
   };
 
-  const handleAddHorario = (newHorario: Omit<Horario, 'id'>) => {
+  const handleAddHorario = async (newHorario: Omit<Horario, 'id'>) => {
     const created: Horario = {
       ...newHorario,
       id: `hor-${Date.now()}`,
     };
     setHorarios((prev) => [...prev, created]);
     addAuditLog('HORARIOS', 'CREAR_HORARIO', created.id, `Nuevo Horario: ${created.name}`);
+    await saveHorarioToSupabase(created);
   };
 
-  const handleEditHorario = (updatedHorario: Horario) => {
+  const handleEditHorario = async (updatedHorario: Horario) => {
     setHorarios((prev) => prev.map((h) => (h.id === updatedHorario.id ? updatedHorario : h)));
     addAuditLog('HORARIOS', 'EDITAR_HORARIO', updatedHorario.id, `Actualización Horario: ${updatedHorario.name}`);
+    await saveHorarioToSupabase(updatedHorario);
   };
 
-  const handleDeleteHorario = (horarioId: string) => {
-    setHorarios((prev) => prev.map((h) => (h.id === horarioId ? { ...h, active: !h.active } : h)));
+  const handleDeleteHorario = async (horarioId: string) => {
+    let updated: Horario | undefined;
+    setHorarios((prev) => prev.map((h) => {
+      if (h.id === horarioId) {
+        updated = { ...h, active: !h.active };
+        return updated;
+      }
+      return h;
+    }));
     addAuditLog('HORARIOS', 'DESACTIVAR_HORARIO', horarioId, `Cambio de estado activo Horario ID ${horarioId}`);
+    if (updated) {
+      await saveHorarioToSupabase(updated);
+    }
   };
 
-  // DEVICE HANDLERS
+  // DEVICE HANDLERS (Fase 5: Supabase PostgreSQL)
   const handleAddDevice = async (
     newDev: Omit<DispositivoZkTeco, 'id' | 'last_activity'>
   ): Promise<{ success: boolean; message: string; device?: DispositivoZkTeco }> => {
@@ -848,27 +988,8 @@ export default function App() {
       firmware_version: newDev.firmware_version || 'Ver 8.0.4.3-2026',
     };
 
-    try {
-      const res = await fetch('/api/devices', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'x-user-role': activeRole,
-        },
-        body: JSON.stringify(newDev),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const resData = await res.json();
-        if (resData && resData.data) {
-          createdDevice = resData.data;
-        }
-      }
-    } catch (apiErr: any) {
-      console.warn('[App] Sincronización en persistencia local para nuevo biométrico:', apiErr?.message);
-    }
+    // Guardar en Supabase PostgreSQL
+    await saveDeviceToSupabase(createdDevice);
 
     setDevices((prev) => {
       const exists = prev.some((d) => d.id === createdDevice.id || (d.serial_number && d.serial_number.toUpperCase() === createdDevice.serial_number.toUpperCase()));
@@ -901,27 +1022,8 @@ export default function App() {
       last_activity: updatedDev.last_activity || new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
     };
 
-    try {
-      const res = await fetch(`/api/devices/${encodeURIComponent(updatedDev.id)}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'x-user-role': activeRole,
-        },
-        body: JSON.stringify(updatedDev),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const resData = await res.json();
-        if (resData && resData.data) {
-          savedDevice = resData.data;
-        }
-      }
-    } catch (apiErr: any) {
-      console.warn('[App] Sincronización en persistencia local para edición de biométrico:', apiErr?.message);
-    }
+    // Actualizar en Supabase PostgreSQL
+    await saveDeviceToSupabase(savedDevice);
 
     setDevices((prev) => prev.map((d) => (d.id === savedDevice.id || (d.serial_number && d.serial_number.toUpperCase() === savedDevice.serial_number.toUpperCase()) ? savedDevice : d)));
 
@@ -957,25 +1059,7 @@ export default function App() {
   };
 
   const handleDeleteDevice = async (deviceId: string) => {
-    try {
-      const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'x-user-role': activeRole,
-        },
-      });
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const resData = await res.json();
-        if (!res.ok || !resData.success) {
-          throw new Error(resData.message || 'Error al eliminar marcador.');
-        }
-      }
-    } catch (e) {
-      console.warn('[App] Error al eliminar marcador en servidor:', e);
-    }
+    await deleteDeviceInSupabase(deviceId);
     setDevices((prev) => prev.filter((d) => d.id !== deviceId));
     addAuditLog('BIOMETRICOS', 'ELIMINAR_DISPOSITIVO', deviceId, `Eliminación de Biométrico ID ${deviceId}`);
   };
@@ -1120,6 +1204,11 @@ export default function App() {
 
     setRawPunches((prev) => [createdPunch, ...prev]);
 
+    // Ingesta idempotente en Supabase PostgreSQL
+    saveRawPunchToSupabase(createdPunch).catch((err) =>
+      console.warn('Error al guardar marcacion en Supabase:', err)
+    );
+
     if (validationStatus === 'RECHAZADA_DEPENDENCIA') {
       addAuditLog(
         'BIOMETRICOS',
@@ -1146,8 +1235,8 @@ export default function App() {
     return createdPunch;
   };
 
-  // PAPELETAS HANDLERS
-  const handleUpdatePapeletaStatus = (
+  // PAPELETAS HANDLERS (Fase 4: Supabase PostgreSQL)
+  const handleUpdatePapeletaStatus = async (
     papeletaId: string,
     action: PapeletaStatus | 'APPROVE_BOSS' | 'APPROVE_HR' | 'REJECT' | 'MARK_OUTING_REAL' | 'MARK_COMPLETED_REAL',
     comment?: string,
@@ -1187,6 +1276,8 @@ export default function App() {
       hour12: true,
     });
 
+    let updatedPapeletaRecord: PapeletaSalida | undefined;
+
     setPapeletas((prev) =>
       prev.map((p) => {
         if (p.id !== papeletaId) return p;
@@ -1207,7 +1298,7 @@ export default function App() {
           metadata: approverMetadata?.delegation_info,
         };
 
-        return {
+        updatedPapeletaRecord = {
           ...p,
           status: targetStatus,
           boss_approved_at: action === 'APPROVE_BOSS' ? nowFormatted : p.boss_approved_at,
@@ -1228,8 +1319,14 @@ export default function App() {
           updated_at: nowIso,
           audits: [...prevAudits, newAuditEntry],
         };
+
+        return updatedPapeletaRecord;
       })
     );
+
+    if (updatedPapeletaRecord) {
+      await savePapeletaToSupabase(updatedPapeletaRecord);
+    }
 
     // Call backend endpoint asynchronously
     let apiEndpoint = '';
@@ -1276,7 +1373,7 @@ export default function App() {
     );
   };
 
-  const handleCreatePapeleta = (newPapeletaData: Omit<PapeletaSalida, 'id' | 'code' | 'created_at' | 'updated_at'>) => {
+  const handleCreatePapeleta = async (newPapeletaData: Omit<PapeletaSalida, 'id' | 'code' | 'created_at' | 'updated_at'>) => {
     const newCode = `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`;
     const newId = `pap-${Date.now()}`;
     const nowFormatted = new Date().toLocaleString('es-PE', {
@@ -1313,6 +1410,7 @@ export default function App() {
     };
 
     setPapeletas((prev) => [newPapeleta, ...prev]);
+    await savePapeletaToSupabase(newPapeleta);
 
     // Backend persistent call with strict worker identity headers
     fetch('/api/papeletas', {
@@ -1337,8 +1435,8 @@ export default function App() {
     addAuditLog('PAPELETAS', 'CREAR_PAPELETA', newId, `Nueva Papeleta registrada para DNI ${newPapeleta.employee_dni}`);
   };
 
-  // VACATION HANDLERS (DRAC Workflow Engine)
-  const handleAddVacation = (newVacationData: Omit<Vacacion, 'id' | 'created_at'>) => {
+  // VACATION HANDLERS (Fase 4: Supabase PostgreSQL)
+  const handleAddVacation = async (newVacationData: Omit<Vacacion, 'id' | 'created_at'>) => {
     const newId = `vac-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newVac: Vacacion = {
       ...newVacationData,
@@ -1347,6 +1445,7 @@ export default function App() {
       created_at: new Date().toISOString(),
     };
     setVacaciones((prev) => [newVac, ...prev]);
+    await saveVacacionToSupabase(newVac);
 
     // Backend persistent sync attempt with headers
     fetch('/api/vacaciones', {
@@ -1378,7 +1477,7 @@ export default function App() {
     );
   };
 
-  const handleEditVacation = (updatedVacation: Vacacion) => {
+  const handleEditVacation = async (updatedVacation: Vacacion) => {
     setVacaciones((prev) => prev.map((v) => (v.id === updatedVacation.id ? updatedVacation : v)));
     addAuditLog(
       'VACACIONES',
@@ -1386,11 +1485,14 @@ export default function App() {
       updatedVacation.id,
       `Actualización de estado vacacional DNI ${updatedVacation.employee_dni} a ${updatedVacation.status}`
     );
+    await saveVacacionToSupabase(updatedVacation);
   };
 
-  const handleDeleteVacation = (vacationId: string) => {
+  const handleDeleteVacation = async (vacationId: string) => {
     const vac = vacaciones.find((v) => v.id === vacationId);
     setVacaciones((prev) => prev.filter((v) => v.id !== vacationId));
+
+    await deleteVacacionInSupabase(vacationId);
 
     fetch(`/api/vacaciones/${vacationId}`, {
       method: 'DELETE',
@@ -1406,10 +1508,11 @@ export default function App() {
     }
   };
 
-  // ATTENDANCE RECORD EDIT HANDLER
-  const handleEditAttendanceRecord = (updatedRec: AsistenciaProcesada) => {
+  // ATTENDANCE RECORD EDIT HANDLER (Fase 5: Supabase PostgreSQL)
+  const handleEditAttendanceRecord = async (updatedRec: AsistenciaProcesada) => {
     setAttendance((prev) => prev.map((a) => (a.id === updatedRec.id ? updatedRec : a)));
     addAuditLog('ASISTENCIA', 'AJUSTE_REGULARIZACION', updatedRec.id, `Ajuste manual de asistencia DNI ${updatedRec.employee_dni}`);
+    await saveAttendanceToSupabase(updatedRec);
   };
 
   // RESET DATA HANDLER

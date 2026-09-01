@@ -11,9 +11,11 @@ import {
   Info,
   Sliders,
   Check,
+  Database,
 } from 'lucide-react';
 import { PasswordPolicy, SecurityConfig } from '../../types';
 import { DEFAULT_SECURITY_CONFIG } from '../../utils/userAuthUtils';
+import { SupabaseSyncSection } from './SupabaseSyncSection';
 
 interface ConfigModuleProps {
   securityConfig?: SecurityConfig;
@@ -24,7 +26,8 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
   securityConfig = DEFAULT_SECURITY_CONFIG,
   onSaveSecurityConfig,
 }) => {
-  const [activeTab, setActiveTab] = useState<'INSTITUTIONAL' | 'SECURITY'>('SECURITY');
+  const [activeTab, setActiveTab] = useState<'INSTITUTIONAL' | 'SECURITY' | 'SUPABASE_DATABASE'>('SUPABASE_DATABASE');
+
 
   // Institutional states
   const [institutionName, setInstitutionName] = useState('Dirección Regional de Agricultura Cajamarca (DRAC)');
@@ -90,7 +93,18 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Navigation tabs */}
-      <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-1.5 flex space-x-1">
+      <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-1.5 flex flex-wrap gap-1">
+        <button
+          onClick={() => setActiveTab('SUPABASE_DATABASE')}
+          className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
+            activeTab === 'SUPABASE_DATABASE'
+              ? 'bg-indigo-600/20 text-indigo-300 border-l-2 border-indigo-600'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Base de Datos Central Supabase (Web + Desktop)</span>
+        </button>
         <button
           onClick={() => setActiveTab('SECURITY')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
@@ -123,6 +137,10 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
           </div>
         </div>
       )}
+
+      {/* TAB 0: SUPABASE UNIFIED POSTGRESQL DATABASE */}
+      {activeTab === 'SUPABASE_DATABASE' && <SupabaseSyncSection />}
+
 
       {/* TAB 1: SECURITY & PASSWORD POLICIES */}
       {activeTab === 'SECURITY' && (

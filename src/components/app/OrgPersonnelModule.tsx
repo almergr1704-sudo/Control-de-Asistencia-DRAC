@@ -73,6 +73,7 @@ import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyMod
 import { VALID_JEFE_ORGANO_TYPES, getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
 import { generateUniqueUsername, hashPassword } from '../../utils/userAuthUtils';
 import { generateNextDracCode } from '../../utils/dracCodeUtils';
+import { getNextDracCodeFromPostgres } from '../../services/employeeService';
 import { BulkUploadModal } from './BulkUploadModal';
 import {
   BulkUploadEntityType,
@@ -1365,8 +1366,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     const fullLastName = [normalizedPat, normalizedMat].filter(Boolean).join(' ');
 
     const generatedCode = editingEmp
-      ? (editingEmp.codigo_trabajador || empCode.trim() || generateNextDracCode(employees))
-      : (empCode.trim() || generateNextDracCode(employees));
+      ? (editingEmp.codigo_trabajador || empCode.trim() || await getNextDracCodeFromPostgres())
+      : (empCode.trim() || await getNextDracCodeFromPostgres());
     const finalAccountStatus = !empActive ? 'INACTIVE' : (empHasAccess ? empAccountStatus : 'INACTIVE');
 
     // Ensure base profile TRABAJADOR is always present
@@ -1714,14 +1715,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
                 {canManageOrg && (
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (dependencias.length === 0) {
                         alert('⚠️ Secuencia Obligatoria:\n\n1. Primero debe registrar al menos una Dependencia (ej. Sede Central, Agencia Agraria).\n2. Luego Direcciones u Oficinas.\n3. Posteriormente podrá registrar al Personal.');
                         setActiveTab('DEPENDENCIAS');
                         return;
                       }
                       setEditingEmp(null);
-                      const nextDracCode = generateNextDracCode(employees);
+                      const nextDracCode = await getNextDracCodeFromPostgres();
                       setEmpCode(nextDracCode);
                       setEmpDni('');
                       setEmpFirstName('');

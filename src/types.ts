@@ -889,6 +889,8 @@ export interface RbacPermission {
   security_guard: boolean;
 }
 
+export type AppOrigin = 'WEB' | 'DESKTOP' | 'ZK_AGENT';
+
 export interface AuditLog {
   id: string;
   timestamp: string;
@@ -899,6 +901,38 @@ export interface AuditLog {
   action: string;
   affected_record_id: string;
   details: string;
+  ip_address?: string;
+  app_origin?: AppOrigin;
+  result?: 'SUCCESS' | 'ERROR' | 'WARNING';
+}
+
+export interface SupabaseConfigStatus {
+  connected: boolean;
+  sourceOfTruth: 'SUPABASE_POSTGRESQL' | 'LOCAL_HYBRID';
+  supabaseUrl: string;
+  configuredClients: {
+    webVercel: boolean;
+    desktopApp: boolean;
+    zkAgent: boolean;
+  };
+  tablesCount: {
+    trabajadores: number;
+    dependencias: number;
+    direcciones: number;
+    areas_oficinas: number;
+    horarios: number;
+    turnos: number;
+    papeletas: number;
+    vacaciones: number;
+    encargaturas: number;
+    dispositivos_zkteco: number;
+    marcaciones_raw: number;
+    asistencias: number;
+    auditoria: number;
+  };
+  rlsPoliciesActive: boolean;
+  centralDracSequenceActive: boolean;
+  lastSyncTimestamp?: string;
 }
 
 export interface PasswordPolicy {
@@ -917,4 +951,9 @@ export interface SecurityConfig {
   require_garita_return: boolean;
   password_policy: PasswordPolicy;
 }
+
+// Aliases for unified Supabase PostgreSQL schema
+export type Papeleta = PapeletaSalida;
+export type RawPunch = MarcacionRaw;
+
 
