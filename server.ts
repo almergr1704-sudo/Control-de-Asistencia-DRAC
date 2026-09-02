@@ -5,6 +5,10 @@ import net from "node:net";
 import { createServer as createViteServer } from "vite";
 
 const DB_DIR = path.join(process.cwd(), "data");
+const DEPENDENCIAS_FILE = path.join(DB_DIR, "dependencias.json");
+const DIRECCIONES_FILE = path.join(DB_DIR, "direcciones.json");
+const AREAS_FILE = path.join(DB_DIR, "areas.json");
+const CARGOS_FILE = path.join(DB_DIR, "cargos.json");
 const DEVICES_FILE = path.join(DB_DIR, "devices.json");
 const AUTH_FILE = path.join(DB_DIR, "punch-authorizations.json");
 const AUDIT_FILE = path.join(DB_DIR, "audit-logs.json");
@@ -40,6 +44,73 @@ import {
 } from "./src/data/initialData";
 import { POSTGRES_DDL_SQL } from "./src/data/ddlSql";
 
+// Helpers for Dependencias
+async function getStoredDependencias(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(DEPENDENCIAS_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: any) {
+    return [];
+  }
+}
+
+async function saveStoredDependencias(deps: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(DEPENDENCIAS_FILE, JSON.stringify(deps || [], null, 2), "utf-8");
+}
+
+// Helpers for Direcciones/Organos
+async function getStoredDirecciones(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(DIRECCIONES_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: any) {
+    return [];
+  }
+}
+
+async function saveStoredDirecciones(dirs: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(DIRECCIONES_FILE, JSON.stringify(dirs || [], null, 2), "utf-8");
+}
+
+// Helpers for Areas/Oficinas
+async function getStoredAreas(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(AREAS_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: any) {
+    return [];
+  }
+}
+
+async function saveStoredAreas(areas: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(AREAS_FILE, JSON.stringify(areas || [], null, 2), "utf-8");
+}
+
+// Helpers for Cargos
+async function getStoredCargos(): Promise<any[]> {
+  try {
+    await fs.mkdir(DB_DIR, { recursive: true });
+    const data = await fs.readFile(CARGOS_FILE, "utf-8");
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err: any) {
+    return [];
+  }
+}
+
+async function saveStoredCargos(cargos: any[]): Promise<void> {
+  await fs.mkdir(DB_DIR, { recursive: true });
+  await fs.writeFile(CARGOS_FILE, JSON.stringify(cargos || [], null, 2), "utf-8");
+}
 
 // Helper to load turnos
 async function getStoredTurnos(): Promise<any[]> {
@@ -47,9 +118,9 @@ async function getStoredTurnos(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(TURNOS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_TURNOS;
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err: any) {
-    return INITIAL_TURNOS;
+    return [];
   }
 }
 
@@ -119,9 +190,9 @@ async function getStoredHorarios(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(HORARIOS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_HORARIOS;
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err: any) {
-    return INITIAL_HORARIOS;
+    return [];
   }
 }
 
@@ -137,9 +208,15 @@ async function getStoredEmployees(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(EMPLOYEES_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EMPLOYEES;
-    return list.map(normalizePersonFields);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map(normalizePersonFields);
+    }
+    await fs.writeFile(EMPLOYEES_FILE, JSON.stringify(INITIAL_EMPLOYEES, null, 2), "utf-8");
+    return INITIAL_EMPLOYEES.map(normalizePersonFields);
   } catch (err: any) {
+    try {
+      await fs.writeFile(EMPLOYEES_FILE, JSON.stringify(INITIAL_EMPLOYEES, null, 2), "utf-8");
+    } catch {}
     return INITIAL_EMPLOYEES.map(normalizePersonFields);
   }
 }
@@ -157,10 +234,10 @@ async function getStoredEncargaturas(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(ENCARGATURAS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ENCARGATURAS;
+    const list = Array.isArray(parsed) ? parsed : [];
     return list.map(normalizePersonFields);
   } catch (err: any) {
-    return INITIAL_ENCARGATURAS.map(normalizePersonFields);
+    return [];
   }
 }
 
@@ -177,10 +254,10 @@ async function getStoredAttendance(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(ATTENDANCE_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    const list = Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ATTENDANCE;
+    const list = Array.isArray(parsed) ? parsed : [];
     return list.map(normalizePersonFields);
   } catch (err: any) {
-    return INITIAL_ATTENDANCE.map(normalizePersonFields);
+    return [];
   }
 }
 
@@ -214,16 +291,9 @@ async function getStoredDevices(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(DEVICES_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-    await fs.writeFile(DEVICES_FILE, JSON.stringify(INITIAL_DEVICES, null, 2), "utf-8");
-    return INITIAL_DEVICES;
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err: any) {
-    try {
-      await fs.writeFile(DEVICES_FILE, JSON.stringify(INITIAL_DEVICES, null, 2), "utf-8");
-    } catch {}
-    return INITIAL_DEVICES;
+    return [];
   }
 }
 
@@ -256,16 +326,9 @@ async function getStoredRawPunches(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(RAW_PUNCHES_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.map(normalizePersonFields);
-    }
-    await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES.map(normalizePersonFields), null, 2), "utf-8");
-    return INITIAL_RAW_PUNCHES.map(normalizePersonFields);
+    return Array.isArray(parsed) ? parsed.map(normalizePersonFields) : [];
   } catch (err: any) {
-    try {
-      await fs.writeFile(RAW_PUNCHES_FILE, JSON.stringify(INITIAL_RAW_PUNCHES.map(normalizePersonFields), null, 2), "utf-8");
-    } catch {}
-    return INITIAL_RAW_PUNCHES.map(normalizePersonFields);
+    return [];
   }
 }
 
@@ -311,48 +374,7 @@ async function saveStoredSyncLogs(logs: any[]): Promise<void> {
 }
 
 // Initial Agent Catalog
-const INITIAL_AGENTS = [
-  {
-    id: "agent-drac-sede-central",
-    name: "DRAC Sede Central - Windows Agent",
-    hostname: "SRV-BIOMETRIC-01",
-    ip_lan: "192.168.1.100",
-    version: "2.4.0",
-    status: "ONLINE",
-    assigned_device_ids: ["dev-zk-01", "dev-zk-02"],
-    assigned_device_sns: ["BIM-DRAC-001", "BIM-DRAC-002"],
-    last_ping: new Date().toISOString(),
-    last_sync: new Date().toISOString(),
-    pending_queue_count: 0,
-    sync_interval_seconds: 15,
-    auto_sync: true,
-    auth_token: "drac-zk-sec-token-2026",
-    os_info: "Windows 11 Pro (x64) - Servicio Local DRAC ZK Agent",
-    last_error: null,
-    total_punches_bridged: 45,
-    total_users_pushed: 12,
-  },
-  {
-    id: "agent-drac-agencias",
-    name: "Agencias Agrarias - Windows Agent",
-    hostname: "SRV-AGENCIAS-02",
-    ip_lan: "192.168.10.50",
-    version: "2.4.0",
-    status: "ONLINE",
-    assigned_device_ids: ["dev-zk-03"],
-    assigned_device_sns: ["BIM-DRAC-003"],
-    last_ping: new Date().toISOString(),
-    last_sync: new Date().toISOString(),
-    pending_queue_count: 0,
-    sync_interval_seconds: 30,
-    auto_sync: true,
-    auth_token: "drac-zk-agencias-token-2026",
-    os_info: "Windows 10 Pro (x64) - Servicio Local DRAC ZK Agent",
-    last_error: null,
-    total_punches_bridged: 20,
-    total_users_pushed: 6,
-  },
-];
+const INITIAL_AGENTS: any[] = [];
 
 // Helper to load registered agents
 async function getStoredAgents(): Promise<any[]> {
@@ -360,16 +382,9 @@ async function getStoredAgents(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(AGENTS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
-    }
-    await fs.writeFile(AGENTS_FILE, JSON.stringify(INITIAL_AGENTS, null, 2), "utf-8");
-    return INITIAL_AGENTS;
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err: any) {
-    try {
-      await fs.writeFile(AGENTS_FILE, JSON.stringify(INITIAL_AGENTS, null, 2), "utf-8");
-    } catch {}
-    return INITIAL_AGENTS;
+    return [];
   }
 }
 
@@ -437,83 +452,7 @@ async function saveStoredPapeletas(paps: any[]): Promise<void> {
 }
 
 // Initial Push Reception Logs for Realistic Audit Trace
-const INITIAL_PUSH_LOGS: any[] = [
-  {
-    id: "plog-init-001",
-    dispositivo: "ZKTeco Sede Central - Puerta Principal",
-    serial: "BIM-DRAC-001",
-    employeeCode: "45892134",
-    employee_name: "Marco Antonio Quispe Mendoza",
-    employee_dni: "45892134",
-    punch_time: "2026-08-27 07:54:18",
-    reception_time: "2026-08-27 07:54:19",
-    payload_original: "PIN=45892134\tCHECKTIME=2026-08-27 07:54:18\tVERIFY=15\tSTATUS=0\tSN=BIM-DRAC-001",
-    estado: "PROCESADA",
-    error: null,
-    stage_diagnostics: {
-      clock_network: true,
-      tcp_socket: true,
-      adms_config: true,
-      push_endpoint: true,
-      auth: true,
-      payload_received: true,
-      storage_saved: true,
-      processed_attendance: true,
-      api_available: true,
-      frontend_rendered: true,
-    },
-  },
-  {
-    id: "plog-init-002",
-    dispositivo: "ZKTeco Sede Central - Puerta Principal",
-    serial: "BIM-DRAC-001",
-    employeeCode: "70123456",
-    employee_name: "Rosa Elena Silva Vargas",
-    employee_dni: "70123456",
-    punch_time: "2026-08-27 07:58:32",
-    reception_time: "2026-08-27 07:58:33",
-    payload_original: "PIN=70123456\tCHECKTIME=2026-08-27 07:58:32\tVERIFY=1\tSTATUS=0\tSN=BIM-DRAC-001",
-    estado: "PROCESADA",
-    error: null,
-    stage_diagnostics: {
-      clock_network: true,
-      tcp_socket: true,
-      adms_config: true,
-      push_endpoint: true,
-      auth: true,
-      payload_received: true,
-      storage_saved: true,
-      processed_attendance: true,
-      api_available: true,
-      frontend_rendered: true,
-    },
-  },
-  {
-    id: "plog-init-003",
-    dispositivo: "ZKTeco Sede Central - Garita Vehicular",
-    serial: "BIM-DRAC-002",
-    employeeCode: "09456781",
-    employee_name: "Carlos Alberto Chavez Rojas",
-    employee_dni: "09456781",
-    punch_time: "2026-08-27 08:02:10",
-    reception_time: "2026-08-27 08:02:11",
-    payload_original: "PIN=09456781\tCHECKTIME=2026-08-27 08:02:10\tVERIFY=3\tSTATUS=0\tSN=BIM-DRAC-002",
-    estado: "PROCESADA",
-    error: null,
-    stage_diagnostics: {
-      clock_network: true,
-      tcp_socket: true,
-      adms_config: true,
-      push_endpoint: true,
-      auth: true,
-      payload_received: true,
-      storage_saved: true,
-      processed_attendance: true,
-      api_available: true,
-      frontend_rendered: true,
-    },
-  },
-];
+const INITIAL_PUSH_LOGS: any[] = [];
 
 // Helper to load push reception logs from persistent storage
 async function getStoredPushLogs(): Promise<any[]> {
@@ -521,13 +460,9 @@ async function getStoredPushLogs(): Promise<any[]> {
     await fs.mkdir(DB_DIR, { recursive: true });
     const data = await fs.readFile(PUSH_LOGS_FILE, "utf-8");
     const parsed = JSON.parse(data);
-    const list = Array.isArray(parsed) ? parsed : [];
-    return list.length > 0 ? list : INITIAL_PUSH_LOGS;
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err: any) {
-    try {
-      await fs.writeFile(PUSH_LOGS_FILE, JSON.stringify(INITIAL_PUSH_LOGS, null, 2), "utf-8");
-    } catch {}
-    return INITIAL_PUSH_LOGS;
+    return [];
   }
 }
 
@@ -6504,7 +6439,8 @@ pause
   // GET /api/dependencias
   app.get("/api/dependencias", async (req, res) => {
     try {
-      return res.json({ success: true, count: INITIAL_DEPENDENCIAS.length, data: INITIAL_DEPENDENCIAS });
+      const deps = await getStoredDependencias();
+      return res.json({ success: true, count: deps.length, data: deps });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: "Error al obtener dependencias." });
     }
@@ -6515,6 +6451,14 @@ pause
     if (!checkAdminPermission(req, res, "dependencias")) return;
     try {
       const dep = req.body || {};
+      const deps = await getStoredDependencias();
+      const existingIdx = deps.findIndex((d: any) => d.id === dep.id || d.code === dep.code);
+      if (existingIdx >= 0) {
+        deps[existingIdx] = { ...deps[existingIdx], ...dep };
+      } else {
+        deps.push(dep);
+      }
+      await saveStoredDependencias(deps);
       return res.status(201).json({ success: true, message: "Dependencia registrada.", data: dep });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err?.message });
@@ -6524,7 +6468,8 @@ pause
   // GET /api/direcciones
   app.get("/api/direcciones", async (req, res) => {
     try {
-      return res.json({ success: true, count: INITIAL_DIRECCIONES_ORGANOS.length, data: INITIAL_DIRECCIONES_ORGANOS });
+      const dirs = await getStoredDirecciones();
+      return res.json({ success: true, count: dirs.length, data: dirs });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: "Error al obtener direcciones." });
     }
@@ -6535,6 +6480,14 @@ pause
     if (!checkAdminPermission(req, res, "direcciones y órganos")) return;
     try {
       const dir = req.body || {};
+      const dirs = await getStoredDirecciones();
+      const existingIdx = dirs.findIndex((d: any) => d.id === dir.id || d.code === dir.code);
+      if (existingIdx >= 0) {
+        dirs[existingIdx] = { ...dirs[existingIdx], ...dir };
+      } else {
+        dirs.push(dir);
+      }
+      await saveStoredDirecciones(dirs);
       return res.status(201).json({ success: true, message: "Dirección/Órgano registrado.", data: dir });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err?.message });
@@ -6544,7 +6497,8 @@ pause
   // GET /api/areas
   app.get("/api/areas", async (req, res) => {
     try {
-      return res.json({ success: true, count: INITIAL_AREAS.length, data: INITIAL_AREAS });
+      const areas = await getStoredAreas();
+      return res.json({ success: true, count: areas.length, data: areas });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: "Error al obtener áreas." });
     }
@@ -6555,6 +6509,14 @@ pause
     if (!checkAdminPermission(req, res, "áreas y oficinas")) return;
     try {
       const area = req.body || {};
+      const areas = await getStoredAreas();
+      const existingIdx = areas.findIndex((a: any) => a.id === area.id || a.code === area.code);
+      if (existingIdx >= 0) {
+        areas[existingIdx] = { ...areas[existingIdx], ...area };
+      } else {
+        areas.push(area);
+      }
+      await saveStoredAreas(areas);
       return res.status(201).json({ success: true, message: "Área/Oficina registrada.", data: area });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err?.message });
@@ -6564,9 +6526,29 @@ pause
   // GET /api/cargos
   app.get("/api/cargos", async (req, res) => {
     try {
-      return res.json({ success: true, count: INITIAL_CARGOS.length, data: INITIAL_CARGOS });
+      const cargos = await getStoredCargos();
+      return res.json({ success: true, count: cargos.length, data: cargos });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: "Error al obtener cargos." });
+    }
+  });
+
+  // POST /api/cargos
+  app.post("/api/cargos", async (req, res) => {
+    if (!checkAdminPermission(req, res, "cargos")) return;
+    try {
+      const cargo = req.body || {};
+      const cargos = await getStoredCargos();
+      const existingIdx = cargos.findIndex((c: any) => c.id === cargo.id || c.code === cargo.code);
+      if (existingIdx >= 0) {
+        cargos[existingIdx] = { ...cargos[existingIdx], ...cargo };
+      } else {
+        cargos.push(cargo);
+      }
+      await saveStoredCargos(cargos);
+      return res.status(201).json({ success: true, message: "Cargo registrado.", data: cargo });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, message: err?.message });
     }
   });
 

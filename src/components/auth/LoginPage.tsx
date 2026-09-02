@@ -75,12 +75,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
-  const handleSelectDemoUser = (username: string, defaultPass = 'Drac2026!') => {
-    setIdentifier(username);
-    setPassword(defaultPass);
-    setErrorMessage(null);
-  };
-
   return (
     <div className="min-h-screen bg-[#07080A] text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-white relative overflow-hidden">
       {/* Subtle institutional ambient background */}
