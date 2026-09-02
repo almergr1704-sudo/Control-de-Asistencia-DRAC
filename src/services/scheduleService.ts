@@ -1,5 +1,6 @@
 import { Turno, Horario } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
+import { normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../data/initialData';
 
 /**
@@ -29,8 +30,8 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
       return data.map((t: any) => ({
         id: t.id,
         code: t.codigo || t.code,
-        name: t.nombre || t.name,
-        description: t.descripcion || t.description || '',
+        name: normalizeInstitutionalName(t.nombre || t.name),
+        description: normalizeText(t.descripcion || t.description || ''),
         start_time: t.hora_inicio || t.start_time,
         end_time: t.hora_fin || t.end_time,
         window_entry_start: t.ventana_inicio || t.window_entry_start || '07:00',
@@ -48,25 +49,40 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
-        return apiData.data;
+        return apiData.data.map((t: Turno) => ({
+          ...t,
+          name: normalizeInstitutionalName(t.name),
+          description: normalizeText(t.description),
+        }));
       }
     }
   } catch (err) {
     console.warn('Conexión en progreso con Supabase turnos, aplicando catálogo base:', err);
   }
 
-  return INITIAL_TURNOS;
+  return INITIAL_TURNOS.map((t) => ({
+    ...t,
+    name: normalizeInstitutionalName(t.name),
+    description: normalizeText(t.description),
+  }));
 }
 
 export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: boolean; data?: Turno; message?: string }> {
   const origin = getAppOrigin();
+
+  const normalizedTurno: Turno = {
+    ...turno,
+    name: normalizeInstitutionalName(turno.name),
+    description: normalizeText(turno.description),
+  };
+
   const dbTurno = {
-    id: turno.id,
-    codigo: turno.code,
-    nombre: turno.name,
-    hora_inicio: turno.start_time,
-    hora_fin: turno.end_time,
-    tolerancia_minutos: turno.tolerance_minutes,
+    id: normalizedTurno.id,
+    codigo: normalizedTurno.code,
+    nombre: normalizedTurno.name,
+    hora_inicio: normalizedTurno.start_time,
+    hora_fin: normalizedTurno.end_time,
+    tolerancia_minutos: normalizedTurno.tolerance_minutes,
   };
 
   try {
@@ -75,7 +91,7 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
       .upsert(dbTurno);
 
     if (!error) {
-      return { success: true, data: turno };
+      return { success: true, data: normalizedTurno };
     }
   } catch (err) {
     console.warn('Error en upsert Supabase turnos:', err);
@@ -88,17 +104,17 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify(turno),
+      body: JSON.stringify(normalizedTurno),
     });
     if (res.ok) {
       const resJson = await res.json();
-      return { success: true, data: resJson.data || turno };
+      return { success: true, data: resJson.data || normalizedTurno };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
-  return { success: true, data: turno };
+  return { success: true, data: normalizedTurno };
 }
 
 // ==========================================
@@ -116,12 +132,12 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
       return data.map((h: any) => ({
         id: h.id,
         code: h.codigo || h.code,
-        name: h.nombre || h.name,
+        name: normalizeInstitutionalName(h.nombre || h.name),
         turn_count: (h.total_turnos || h.turn_count || 1) as 1 | 2,
         turno1_id: h.turno1_id,
-        turno1_name: h.turno1_nombre || h.turno1_name,
+        turno1_name: normalizeInstitutionalName(h.turno1_nombre || h.turno1_name),
         turno2_id: h.turno2_id || null,
-        turno2_name: h.turno2_nombre || h.turno2_name,
+        turno2_name: normalizeInstitutionalName(h.turno2_nombre || h.turno2_name),
         working_days: h.dias_laborables || h.working_days || ['MON', 'TUE', 'WED', 'THU', 'FRI'],
         active: h.activo !== undefined ? h.activo : true,
         effective_start_date: h.fecha_inicio_vigencia || h.effective_start_date || '2026-01-01',
@@ -136,26 +152,44 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
-        return apiData.data;
+        return apiData.data.map((h: Horario) => ({
+          ...h,
+          name: normalizeInstitutionalName(h.name),
+          turno1_name: normalizeInstitutionalName(h.turno1_name),
+          turno2_name: normalizeInstitutionalName(h.turno2_name),
+        }));
       }
     }
   } catch (err) {
     console.warn('Conexión en progreso con Supabase horarios, aplicando catálogo base:', err);
   }
 
-  return INITIAL_HORARIOS;
+  return INITIAL_HORARIOS.map((h) => ({
+    ...h,
+    name: normalizeInstitutionalName(h.name),
+    turno1_name: normalizeInstitutionalName(h.turno1_name),
+    turno2_name: normalizeInstitutionalName(h.turno2_name),
+  }));
 }
 
 export async function saveHorarioToSupabase(horario: Horario): Promise<{ success: boolean; data?: Horario; message?: string }> {
   const origin = getAppOrigin();
+
+  const normalizedHorario: Horario = {
+    ...horario,
+    name: normalizeInstitutionalName(horario.name),
+    turno1_name: normalizeInstitutionalName(horario.turno1_name),
+    turno2_name: normalizeInstitutionalName(horario.turno2_name),
+  };
+
   const dbHorario = {
-    id: horario.id,
-    codigo: horario.code,
-    nombre: horario.name,
-    total_turnos: horario.turn_count,
-    turno1_id: horario.turno1_id,
-    turno2_id: horario.turno2_id || null,
-    activo: horario.active,
+    id: normalizedHorario.id,
+    codigo: normalizedHorario.code,
+    nombre: normalizedHorario.name,
+    total_turnos: normalizedHorario.turn_count,
+    turno1_id: normalizedHorario.turno1_id,
+    turno2_id: normalizedHorario.turno2_id || null,
+    activo: normalizedHorario.active,
   };
 
   try {
@@ -164,7 +198,7 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
       .upsert(dbHorario);
 
     if (!error) {
-      return { success: true, data: horario };
+      return { success: true, data: normalizedHorario };
     }
   } catch (err) {
     console.warn('Error en upsert Supabase horarios:', err);
@@ -177,17 +211,17 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify(horario),
+      body: JSON.stringify(normalizedHorario),
     });
     if (res.ok) {
       const resJson = await res.json();
-      return { success: true, data: resJson.data || horario };
+      return { success: true, data: resJson.data || normalizedHorario };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
-  return { success: true, data: horario };
+  return { success: true, data: normalizedHorario };
 }
 
 // ==========================================

@@ -12,6 +12,7 @@ import {
   AsistenciaEstado,
 } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
+import { normalizePersonName, normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_DEVICES, INITIAL_ATTENDANCE } from '../data/initialData';
 import { INITIAL_RAW_PUNCHES } from '../data/initialRawPunches';
 
@@ -42,7 +43,7 @@ export async function fetchDevicesFromSupabase(): Promise<DispositivoZkTeco[]> {
       return data.map((d: any) => ({
         id: d.id,
         serial_number: d.serial_number || d.serialNumber || '',
-        name: d.name || 'Marcador ZKTeco',
+        name: normalizeInstitutionalName(d.name || 'Marcador ZKTeco'),
         brand: d.brand || 'ZKTeco',
         model: d.model || 'G3-id',
         ip_address: d.ip_address || d.ipAddress || '192.168.1.100',
@@ -50,10 +51,10 @@ export async function fetchDevicesFromSupabase(): Promise<DispositivoZkTeco[]> {
         protocol: d.protocol || 'PUSH_ADMS',
         dependencia_id: d.dependencia_id || 'dep-01',
         dependencia_tipo: d.dependencia_tipo || 'SEDE_CENTRAL',
-        dependencia_name: d.dependencia_name || 'SEDE CENTRAL',
+        dependencia_name: normalizeInstitutionalName(d.dependencia_name || 'Sede Central'),
         area_id: d.area_id,
-        area_name: d.area_name,
-        location_detail: d.location_detail || d.locationDetail || 'Ingreso Principal',
+        area_name: normalizeInstitutionalName(d.area_name),
+        location_detail: normalizeText(d.location_detail || d.locationDetail || 'Ingreso Principal'),
         status: d.status || 'ONLINE',
         firmware_version: d.firmware_version,
         enrolled_user_count: d.enrolled_user_count || 0,
@@ -73,14 +74,26 @@ export async function fetchDevicesFromSupabase(): Promise<DispositivoZkTeco[]> {
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
-        return apiData.data;
+        return apiData.data.map((d: DispositivoZkTeco) => ({
+          ...d,
+          name: normalizeInstitutionalName(d.name),
+          dependencia_name: normalizeInstitutionalName(d.dependencia_name),
+          area_name: normalizeInstitutionalName(d.area_name),
+          location_detail: normalizeText(d.location_detail),
+        }));
       }
     }
   } catch (err) {
     console.warn('Sincronización en curso con marcadores ZKTeco en Supabase:', err);
   }
 
-  return INITIAL_DEVICES;
+  return INITIAL_DEVICES.map((d) => ({
+    ...d,
+    name: normalizeInstitutionalName(d.name),
+    dependencia_name: normalizeInstitutionalName(d.dependencia_name),
+    area_name: normalizeInstitutionalName(d.area_name),
+    location_detail: normalizeText(d.location_detail),
+  }));
 }
 
 export async function saveDeviceToSupabase(
@@ -88,32 +101,40 @@ export async function saveDeviceToSupabase(
 ): Promise<{ success: boolean; data?: DispositivoZkTeco; message?: string }> {
   const origin = getAppOrigin();
 
+  const normalizedDev: DispositivoZkTeco = {
+    ...device,
+    name: normalizeInstitutionalName(device.name),
+    dependencia_name: normalizeInstitutionalName(device.dependencia_name),
+    area_name: normalizeInstitutionalName(device.area_name),
+    location_detail: normalizeText(device.location_detail),
+  };
+
   const dbDevice = {
-    id: device.id,
-    serial_number: device.serial_number,
-    name: device.name,
-    brand: device.brand || 'ZKTeco',
-    model: device.model || 'G3-id',
-    ip_address: device.ip_address,
-    port: device.port || 4370,
-    protocol: device.protocol || 'PUSH_ADMS',
-    dependencia_id: device.dependencia_id,
-    dependencia_tipo: device.dependencia_tipo || 'SEDE_CENTRAL',
-    dependencia_name: device.dependencia_name,
-    area_id: device.area_id || null,
-    area_name: device.area_name || null,
-    location_detail: device.location_detail,
-    status: device.status || 'ONLINE',
-    firmware_version: device.firmware_version || null,
-    enrolled_user_count: device.enrolled_user_count || 0,
-    enrolled_fingerprint_count: device.enrolled_fingerprint_count || 0,
-    enrolled_face_count: device.enrolled_face_count || 0,
-    log_count: device.log_count || 0,
-    adms_url: device.adms_url || null,
-    capabilities: device.capabilities || null,
-    last_activity: device.last_activity || new Date().toISOString(),
-    last_test: device.last_test || null,
-    push_config: device.push_config || null,
+    id: normalizedDev.id,
+    serial_number: normalizedDev.serial_number,
+    name: normalizedDev.name,
+    brand: normalizedDev.brand || 'ZKTeco',
+    model: normalizedDev.model || 'G3-id',
+    ip_address: normalizedDev.ip_address,
+    port: normalizedDev.port || 4370,
+    protocol: normalizedDev.protocol || 'PUSH_ADMS',
+    dependencia_id: normalizedDev.dependencia_id,
+    dependencia_tipo: normalizedDev.dependencia_tipo || 'SEDE_CENTRAL',
+    dependencia_name: normalizedDev.dependencia_name,
+    area_id: normalizedDev.area_id || null,
+    area_name: normalizedDev.area_name || null,
+    location_detail: normalizedDev.location_detail,
+    status: normalizedDev.status || 'ONLINE',
+    firmware_version: normalizedDev.firmware_version || null,
+    enrolled_user_count: normalizedDev.enrolled_user_count || 0,
+    enrolled_fingerprint_count: normalizedDev.enrolled_fingerprint_count || 0,
+    enrolled_face_count: normalizedDev.enrolled_face_count || 0,
+    log_count: normalizedDev.log_count || 0,
+    adms_url: normalizedDev.adms_url || null,
+    capabilities: normalizedDev.capabilities || null,
+    last_activity: normalizedDev.last_activity || new Date().toISOString(),
+    last_test: normalizedDev.last_test || null,
+    push_config: normalizedDev.push_config || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -129,12 +150,12 @@ export async function saveDeviceToSupabase(
         role: 'ADMIN_GENERAL',
         module: 'BIOMETRICOS',
         action: 'UPSERT_DISPOSITIVO',
-        affected_record_id: device.id,
-        details: `Dispositivo ZKTeco sincronizado: ${device.name} (SN: ${device.serial_number}, IP: ${device.ip_address})`,
+        affected_record_id: normalizedDev.id,
+        details: `Dispositivo ZKTeco sincronizado: ${normalizedDev.name} (SN: ${normalizedDev.serial_number}, IP: ${normalizedDev.ip_address})`,
         app_origin: origin,
       });
 
-      return { success: true, data: device };
+      return { success: true, data: normalizedDev };
     }
   } catch (err) {
     console.warn('Error en upsert Supabase marcadores_zkteco:', err);
@@ -148,17 +169,17 @@ export async function saveDeviceToSupabase(
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify(device),
+      body: JSON.stringify(normalizedDev),
     });
     if (res.ok) {
       const resJson = await res.json();
-      return { success: true, data: resJson.data || device };
+      return { success: true, data: resJson.data || normalizedDev };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
-  return { success: true, data: device };
+  return { success: true, data: normalizedDev };
 }
 
 export async function deleteDeviceInSupabase(id: string): Promise<{ success: boolean }> {
@@ -192,14 +213,14 @@ export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
         id: p.id,
         device_id: p.device_id,
         device_sn: p.device_sn,
-        device_name: p.device_name || 'Marcador ZKTeco',
+        device_name: normalizeInstitutionalName(p.device_name || 'Marcador ZKTeco'),
         device_dependencia_tipo: p.device_dependencia_tipo,
-        device_dependencia_name: p.device_dependencia_name,
+        device_dependencia_name: normalizeInstitutionalName(p.device_dependencia_name || 'Sede Central'),
         employee_dni: p.employee_dni,
         employee_code: p.employee_code,
-        employee_name: p.employee_name,
+        employee_name: normalizePersonName(p.employee_name || 'Trabajador DRAC'),
         employee_dependencia_tipo: p.employee_dependencia_tipo,
-        employee_dependencia_name: p.employee_dependencia_name,
+        employee_dependencia_name: normalizeInstitutionalName(p.employee_dependencia_name || 'Sede Central'),
         timestamp: p.timestamp,
         punch_type: p.punch_type || 'AUTO',
         punch_state: p.punch_state,
@@ -208,7 +229,7 @@ export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
         processed_at: p.processed_at,
         raw_payload: p.raw_payload,
         validation_status: p.validation_status || 'VALIDA',
-        rejection_reason: p.rejection_reason,
+        rejection_reason: normalizeText(p.rejection_reason),
         authorization_id: p.authorization_id,
       }));
     }
@@ -218,14 +239,26 @@ export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
-        return apiData.data;
+        return apiData.data.map((p: MarcacionRaw) => ({
+          ...p,
+          device_name: normalizeInstitutionalName(p.device_name),
+          device_dependencia_name: normalizeInstitutionalName(p.device_dependencia_name),
+          employee_name: normalizePersonName(p.employee_name),
+          employee_dependencia_name: normalizeInstitutionalName(p.employee_dependencia_name),
+        }));
       }
     }
   } catch (err) {
     console.warn('Sincronización en curso con marcaciones_raw en Supabase:', err);
   }
 
-  return INITIAL_RAW_PUNCHES;
+  return INITIAL_RAW_PUNCHES.map((p) => ({
+    ...p,
+    device_name: normalizeInstitutionalName(p.device_name),
+    device_dependencia_name: normalizeInstitutionalName(p.device_dependencia_name),
+    employee_name: normalizePersonName(p.employee_name),
+    employee_dependencia_name: normalizeInstitutionalName(p.employee_dependencia_name),
+  }));
 }
 
 /**
@@ -237,29 +270,37 @@ export async function saveRawPunchToSupabase(
 ): Promise<{ success: boolean; data?: MarcacionRaw; isDuplicate?: boolean; message?: string }> {
   const origin = getAppOrigin();
 
+  const normalizedPunch: MarcacionRaw = {
+    ...punch,
+    device_name: normalizeInstitutionalName(punch.device_name),
+    device_dependencia_name: normalizeInstitutionalName(punch.device_dependencia_name),
+    employee_name: normalizePersonName(punch.employee_name),
+    employee_dependencia_name: normalizeInstitutionalName(punch.employee_dependencia_name),
+  };
+
   const dbPunch = {
-    id: punch.id || `punch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-    device_id: punch.device_id,
-    device_sn: punch.device_sn || punch.device_name,
-    device_name: punch.device_name,
-    device_dependencia_tipo: punch.device_dependencia_tipo || 'SEDE_CENTRAL',
-    device_dependencia_name: punch.device_dependencia_name || 'SEDE CENTRAL',
-    employee_id: punch.employee_dni ? `emp-${punch.employee_dni.slice(-2)}` : null,
-    employee_dni: punch.employee_dni,
-    employee_code: punch.employee_code || punch.employee_dni,
-    employee_name: punch.employee_name || 'Trabajador DRAC',
-    employee_dependencia_tipo: punch.employee_dependencia_tipo || 'SEDE_CENTRAL',
-    employee_dependencia_name: punch.employee_dependencia_name || 'SEDE CENTRAL',
-    timestamp: punch.timestamp,
-    punch_type: punch.punch_type || 'AUTO',
-    punch_state: punch.punch_state || 0,
-    verify_mode: punch.verify_mode || 'FINGERPRINT',
-    processed: punch.processed ?? false,
-    processed_at: punch.processed_at || null,
-    raw_payload: punch.raw_payload || null,
-    validation_status: punch.validation_status || 'VALIDA',
-    rejection_reason: punch.rejection_reason || null,
-    authorization_id: punch.authorization_id || null,
+    id: normalizedPunch.id || `punch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    device_id: normalizedPunch.device_id,
+    device_sn: normalizedPunch.device_sn || normalizedPunch.device_name,
+    device_name: normalizedPunch.device_name,
+    device_dependencia_tipo: normalizedPunch.device_dependencia_tipo || 'SEDE_CENTRAL',
+    device_dependencia_name: normalizedPunch.device_dependencia_name || 'Sede Central',
+    employee_id: normalizedPunch.employee_dni ? `emp-${normalizedPunch.employee_dni.slice(-2)}` : null,
+    employee_dni: normalizedPunch.employee_dni,
+    employee_code: normalizedPunch.employee_code || normalizedPunch.employee_dni,
+    employee_name: normalizedPunch.employee_name || 'Trabajador DRAC',
+    employee_dependencia_tipo: normalizedPunch.employee_dependencia_tipo || 'SEDE_CENTRAL',
+    employee_dependencia_name: normalizedPunch.employee_dependencia_name || 'Sede Central',
+    timestamp: normalizedPunch.timestamp,
+    punch_type: normalizedPunch.punch_type || 'AUTO',
+    punch_state: normalizedPunch.punch_state || 0,
+    verify_mode: normalizedPunch.verify_mode || 'FINGERPRINT',
+    processed: normalizedPunch.processed ?? false,
+    processed_at: normalizedPunch.processed_at || null,
+    raw_payload: normalizedPunch.raw_payload || null,
+    validation_status: normalizedPunch.validation_status || 'VALIDA',
+    rejection_reason: normalizedPunch.rejection_reason || null,
+    authorization_id: normalizedPunch.authorization_id || null,
     created_at: new Date().toISOString(),
   };
 
@@ -274,7 +315,7 @@ export async function saveRawPunchToSupabase(
       .single();
 
     if (!error && data) {
-      return { success: true, data: { ...punch, id: data.id } };
+      return { success: true, data: { ...normalizedPunch, id: data.id } };
     }
   } catch (err) {
     console.warn('Error al guardar marcacion RAW en Supabase:', err);
@@ -288,17 +329,17 @@ export async function saveRawPunchToSupabase(
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify(punch),
+      body: JSON.stringify(normalizedPunch),
     });
     if (res.ok) {
       const resJson = await res.json();
-      return { success: true, data: resJson.data || punch, isDuplicate: resJson.isDuplicate };
+      return { success: true, data: resJson.data || normalizedPunch, isDuplicate: resJson.isDuplicate };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
-  return { success: true, data: punch };
+  return { success: true, data: normalizedPunch };
 }
 
 /**
@@ -313,18 +354,26 @@ export async function bulkSaveRawPunchesToSupabase(
   let skippedDuplicates = 0;
   let errorCount = 0;
 
-  const dbRows = punches.map((p) => ({
+  const normalizedList = punches.map((p) => ({
+    ...p,
+    device_name: normalizeInstitutionalName(p.device_name),
+    device_dependencia_name: normalizeInstitutionalName(p.device_dependencia_name),
+    employee_name: normalizePersonName(p.employee_name),
+    employee_dependencia_name: normalizeInstitutionalName(p.employee_dependencia_name),
+  }));
+
+  const dbRows = normalizedList.map((p) => ({
     id: p.id || `punch-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     device_id: p.device_id,
     device_sn: p.device_sn || p.device_name,
     device_name: p.device_name,
     device_dependencia_tipo: p.device_dependencia_tipo || 'SEDE_CENTRAL',
-    device_dependencia_name: p.device_dependencia_name || 'SEDE CENTRAL',
+    device_dependencia_name: p.device_dependencia_name || 'Sede Central',
     employee_dni: p.employee_dni,
     employee_code: p.employee_code || p.employee_dni,
     employee_name: p.employee_name || 'Trabajador DRAC',
     employee_dependencia_tipo: p.employee_dependencia_tipo || 'SEDE_CENTRAL',
-    employee_dependencia_name: p.employee_dependencia_name || 'SEDE CENTRAL',
+    employee_dependencia_name: p.employee_dependencia_name || 'Sede Central',
     timestamp: p.timestamp,
     punch_type: p.punch_type || 'AUTO',
     punch_state: p.punch_state || 0,
@@ -365,7 +414,7 @@ export async function bulkSaveRawPunchesToSupabase(
         'Content-Type': 'application/json',
         'X-App-Origin': getAppOrigin(),
       },
-      body: JSON.stringify({ punches }),
+      body: JSON.stringify({ punches: normalizedList }),
     });
     if (res.ok) {
       const resJson = await res.json();
@@ -396,11 +445,11 @@ export async function fetchAttendanceFromSupabase(): Promise<AsistenciaProcesada
         id: a.id,
         employee_id: a.employee_id || `emp-${a.employee_dni?.slice(-2)}`,
         employee_dni: a.employee_dni,
-        employee_name: a.employee_name || 'Trabajador',
-        dependencia_name: a.dependencia_name || 'SEDE CENTRAL',
-        area_name: a.area_name || 'Oficina DRAC',
+        employee_name: normalizePersonName(a.employee_name || 'Trabajador'),
+        dependencia_name: normalizeInstitutionalName(a.dependencia_name || 'Sede Central'),
+        area_name: normalizeInstitutionalName(a.area_name || 'Oficina DRAC'),
         fecha: a.fecha,
-        horario_name: a.horario_name || 'Jornada Administrativa',
+        horario_name: normalizeInstitutionalName(a.horario_name || 'Jornada Administrativa'),
         t1_scheduled_in: a.t1_scheduled_in,
         t1_scheduled_out: a.t1_scheduled_out,
         t1_window_entry_start: a.t1_window_entry_start,
@@ -426,7 +475,7 @@ export async function fetchAttendanceFromSupabase(): Promise<AsistenciaProcesada
         has_papeleta: a.has_papeleta === true,
         papeleta_code: a.papeleta_code,
         is_vacation_day: a.is_vacation_day === true,
-        observations: a.observations || '',
+        observations: normalizeText(a.observations || ''),
       }));
     }
 
@@ -435,14 +484,26 @@ export async function fetchAttendanceFromSupabase(): Promise<AsistenciaProcesada
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
-        return apiData.data;
+        return apiData.data.map((a: AsistenciaProcesada) => ({
+          ...a,
+          employee_name: normalizePersonName(a.employee_name),
+          dependencia_name: normalizeInstitutionalName(a.dependencia_name),
+          area_name: normalizeInstitutionalName(a.area_name),
+          horario_name: normalizeInstitutionalName(a.horario_name),
+        }));
       }
     }
   } catch (err) {
     console.warn('Sincronización en curso con asistencias en Supabase:', err);
   }
 
-  return INITIAL_ATTENDANCE;
+  return INITIAL_ATTENDANCE.map((a) => ({
+    ...a,
+    employee_name: normalizePersonName(a.employee_name),
+    dependencia_name: normalizeInstitutionalName(a.dependencia_name),
+    area_name: normalizeInstitutionalName(a.area_name),
+    horario_name: normalizeInstitutionalName(a.horario_name),
+  }));
 }
 
 export async function saveAttendanceToSupabase(
@@ -450,41 +511,50 @@ export async function saveAttendanceToSupabase(
 ): Promise<{ success: boolean; data?: AsistenciaProcesada; message?: string }> {
   const origin = getAppOrigin();
 
+  const normalizedAtt: AsistenciaProcesada = {
+    ...attendanceRecord,
+    employee_name: normalizePersonName(attendanceRecord.employee_name),
+    dependencia_name: normalizeInstitutionalName(attendanceRecord.dependencia_name),
+    area_name: normalizeInstitutionalName(attendanceRecord.area_name),
+    horario_name: normalizeInstitutionalName(attendanceRecord.horario_name),
+    observations: normalizeText(attendanceRecord.observations),
+  };
+
   const dbAttendance = {
-    id: attendanceRecord.id,
-    employee_id: attendanceRecord.employee_id || `emp-${attendanceRecord.employee_dni.slice(-2)}`,
-    employee_dni: attendanceRecord.employee_dni,
-    employee_name: attendanceRecord.employee_name,
-    dependencia_name: attendanceRecord.dependencia_name || 'SEDE CENTRAL',
-    area_name: attendanceRecord.area_name || 'Oficina',
-    fecha: attendanceRecord.fecha,
-    horario_name: attendanceRecord.horario_name || 'Jornada Administrativa',
-    t1_scheduled_in: attendanceRecord.t1_scheduled_in || null,
-    t1_scheduled_out: attendanceRecord.t1_scheduled_out || null,
-    t1_window_entry_start: attendanceRecord.t1_window_entry_start || null,
-    t1_window_exit_limit: attendanceRecord.t1_window_exit_limit || null,
-    t1_real_in: attendanceRecord.t1_real_in || null,
-    t1_real_out: attendanceRecord.t1_real_out || null,
-    t1_effective_hours: attendanceRecord.t1_effective_hours || 0,
-    t1_tardiness_minutes: attendanceRecord.t1_tardiness_minutes || 0,
-    t2_scheduled_in: attendanceRecord.t2_scheduled_in || null,
-    t2_scheduled_out: attendanceRecord.t2_scheduled_out || null,
-    t2_window_entry_start: attendanceRecord.t2_window_entry_start || null,
-    t2_window_exit_limit: attendanceRecord.t2_window_exit_limit || null,
-    t2_real_in: attendanceRecord.t2_real_in || null,
-    t2_real_out: attendanceRecord.t2_real_out || null,
-    t2_effective_hours: attendanceRecord.t2_effective_hours || 0,
-    t2_tardiness_minutes: attendanceRecord.t2_tardiness_minutes || 0,
-    total_effective_hours: attendanceRecord.total_effective_hours || 0,
-    total_tardiness_minutes: attendanceRecord.total_tardiness_minutes || 0,
-    tolerance_applied_minutes: attendanceRecord.tolerance_applied_minutes || 10,
-    net_tardiness_minutes: attendanceRecord.net_tardiness_minutes || 0,
-    overtime_minutes: attendanceRecord.overtime_minutes || 0,
-    status: attendanceRecord.status || 'PUNCTUAL',
-    has_papeleta: attendanceRecord.has_papeleta ?? false,
-    papeleta_code: attendanceRecord.papeleta_code || null,
-    is_vacation_day: attendanceRecord.is_vacation_day ?? false,
-    observations: attendanceRecord.observations || null,
+    id: normalizedAtt.id,
+    employee_id: normalizedAtt.employee_id || `emp-${normalizedAtt.employee_dni.slice(-2)}`,
+    employee_dni: normalizedAtt.employee_dni,
+    employee_name: normalizedAtt.employee_name,
+    dependencia_name: normalizedAtt.dependencia_name || 'Sede Central',
+    area_name: normalizedAtt.area_name || 'Oficina',
+    fecha: normalizedAtt.fecha,
+    horario_name: normalizedAtt.horario_name || 'Jornada Administrativa',
+    t1_scheduled_in: normalizedAtt.t1_scheduled_in || null,
+    t1_scheduled_out: normalizedAtt.t1_scheduled_out || null,
+    t1_window_entry_start: normalizedAtt.t1_window_entry_start || null,
+    t1_window_exit_limit: normalizedAtt.t1_window_exit_limit || null,
+    t1_real_in: normalizedAtt.t1_real_in || null,
+    t1_real_out: normalizedAtt.t1_real_out || null,
+    t1_effective_hours: normalizedAtt.t1_effective_hours || 0,
+    t1_tardiness_minutes: normalizedAtt.t1_tardiness_minutes || 0,
+    t2_scheduled_in: normalizedAtt.t2_scheduled_in || null,
+    t2_scheduled_out: normalizedAtt.t2_scheduled_out || null,
+    t2_window_entry_start: normalizedAtt.t2_window_entry_start || null,
+    t2_window_exit_limit: normalizedAtt.t2_window_exit_limit || null,
+    t2_real_in: normalizedAtt.t2_real_in || null,
+    t2_real_out: normalizedAtt.t2_real_out || null,
+    t2_effective_hours: normalizedAtt.t2_effective_hours || 0,
+    t2_tardiness_minutes: normalizedAtt.t2_tardiness_minutes || 0,
+    total_effective_hours: normalizedAtt.total_effective_hours || 0,
+    total_tardiness_minutes: normalizedAtt.total_tardiness_minutes || 0,
+    tolerance_applied_minutes: normalizedAtt.tolerance_applied_minutes || 10,
+    net_tardiness_minutes: normalizedAtt.net_tardiness_minutes || 0,
+    overtime_minutes: normalizedAtt.overtime_minutes || 0,
+    status: normalizedAtt.status || 'PUNCTUAL',
+    has_papeleta: normalizedAtt.has_papeleta ?? false,
+    papeleta_code: normalizedAtt.papeleta_code || null,
+    is_vacation_day: normalizedAtt.is_vacation_day ?? false,
+    observations: normalizedAtt.observations || null,
     updated_at: new Date().toISOString(),
   };
 
@@ -494,7 +564,7 @@ export async function saveAttendanceToSupabase(
       .upsert(dbAttendance, { onConflict: 'employee_dni, fecha' });
 
     if (!error) {
-      return { success: true, data: attendanceRecord };
+      return { success: true, data: normalizedAtt };
     }
   } catch (err) {
     console.warn('Error en upsert Supabase asistencias:', err);
@@ -508,17 +578,17 @@ export async function saveAttendanceToSupabase(
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify(attendanceRecord),
+      body: JSON.stringify(normalizedAtt),
     });
     if (res.ok) {
       const resJson = await res.json();
-      return { success: true, data: resJson.data || attendanceRecord };
+      return { success: true, data: resJson.data || normalizedAtt };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
-  return { success: true, data: attendanceRecord };
+  return { success: true, data: normalizedAtt };
 }
 
 /**
@@ -543,6 +613,11 @@ export function calculateAttendanceForEmployeeDay(
   const empPunches = dayPunches
     .filter((p) => p.employee_dni === emp.dni && p.timestamp.startsWith(fecha))
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  const empFullName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+  const depName = normalizeInstitutionalName(emp.dependencia_name || 'Sede Central');
+  const areaName = normalizeInstitutionalName(emp.area_name || '');
+  const scheduleName = normalizeInstitutionalName(horario?.name || 'Jornada Administrativa');
 
   // 1. Verificar Vacaciones en la fecha
   const hasActiveVacation = vacations.some((v) => {
@@ -575,11 +650,11 @@ export function calculateAttendanceForEmployeeDay(
       id: `att-${emp.dni}-${fecha}`,
       employee_id: emp.id,
       employee_dni: emp.dni,
-      employee_name: `${emp.first_name} ${emp.last_name}`,
-      dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
-      area_name: emp.area_name || '',
+      employee_name: empFullName,
+      dependencia_name: depName,
+      area_name: areaName,
       fecha,
-      horario_name: horario?.name || 'Jornada Administrativa',
+      horario_name: scheduleName,
       t1_scheduled_in: t1ScheduledIn,
       t1_scheduled_out: t1ScheduledOut,
       t2_scheduled_in: t2ScheduledIn,
@@ -605,11 +680,11 @@ export function calculateAttendanceForEmployeeDay(
         id: `att-${emp.dni}-${fecha}`,
         employee_id: emp.id,
         employee_dni: emp.dni,
-        employee_name: `${emp.first_name} ${emp.last_name}`,
-        dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
-        area_name: emp.area_name || '',
+        employee_name: empFullName,
+        dependencia_name: depName,
+        area_name: areaName,
         fecha,
-        horario_name: horario?.name || 'Jornada Administrativa',
+        horario_name: scheduleName,
         t1_scheduled_in: t1ScheduledIn,
         t1_scheduled_out: t1ScheduledOut,
         t2_scheduled_in: t2ScheduledIn,
@@ -633,11 +708,11 @@ export function calculateAttendanceForEmployeeDay(
       id: `att-${emp.dni}-${fecha}`,
       employee_id: emp.id,
       employee_dni: emp.dni,
-      employee_name: `${emp.first_name} ${emp.last_name}`,
-      dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
-      area_name: emp.area_name || '',
+      employee_name: empFullName,
+      dependencia_name: depName,
+      area_name: areaName,
       fecha,
-      horario_name: horario?.name || 'Jornada Administrativa',
+      horario_name: scheduleName,
       t1_scheduled_in: t1ScheduledIn,
       t1_scheduled_out: t1ScheduledOut,
       t2_scheduled_in: t2ScheduledIn,
@@ -732,11 +807,11 @@ export function calculateAttendanceForEmployeeDay(
     id: `att-${emp.dni}-${fecha}`,
     employee_id: emp.id,
     employee_dni: emp.dni,
-    employee_name: `${emp.first_name} ${emp.last_name}`,
-    dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
-    area_name: emp.area_name || '',
+    employee_name: empFullName,
+    dependencia_name: depName,
+    area_name: areaName,
     fecha,
-    horario_name: horario?.name || 'Jornada Administrativa',
+    horario_name: scheduleName,
     t1_scheduled_in: t1ScheduledIn,
     t1_scheduled_out: t1ScheduledOut,
     t1_real_in: t1RealIn,
@@ -779,12 +854,12 @@ export async function fetchAuditLogsFromSupabase(): Promise<AuditLog[]> {
         id: log.id,
         timestamp: log.timestamp,
         user_id: log.user_id,
-        user_name: log.user_name,
+        user_name: normalizePersonName(log.user_name || 'Sistema Central'),
         role: log.role,
         module: log.module,
         action: log.action,
         affected_record_id: log.affected_record_id,
-        details: log.details,
+        details: normalizeText(log.details || ''),
         ip_address: log.ip_address,
         app_origin: log.app_origin || 'WEB',
         result: log.result || 'SUCCESS',
@@ -796,7 +871,11 @@ export async function fetchAuditLogsFromSupabase(): Promise<AuditLog[]> {
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data)) {
-        return apiData.data;
+        return apiData.data.map((log: AuditLog) => ({
+          ...log,
+          user_name: normalizePersonName(log.user_name),
+          details: normalizeText(log.details),
+        }));
       }
     }
   } catch (err) {
@@ -813,12 +892,12 @@ export async function logAuditEventToSupabase(log: AuditLog): Promise<{ success:
     id: log.id || `aud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     timestamp: log.timestamp || new Date().toISOString(),
     user_id: log.user_id || 'SYSTEM',
-    user_name: log.user_name || 'Sistema Central',
+    user_name: normalizePersonName(log.user_name || 'Sistema Central'),
     role: log.role || 'TRABAJADOR',
     module: log.module || 'GENERAL',
     action: log.action || 'EVENTO',
     affected_record_id: log.affected_record_id || '-',
-    details: log.details || '',
+    details: normalizeText(log.details || ''),
     ip_address: log.ip_address || '127.0.0.1',
     app_origin: origin,
     result: log.result || 'SUCCESS',
