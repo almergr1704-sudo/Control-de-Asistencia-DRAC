@@ -9,6 +9,7 @@ import {
   AsistenciaProcesada,
   AsistenciaEstado,
 } from '../types';
+import { evaluatePunchesForSchedule } from './shiftCalculations';
 
 /**
  * Calculates time difference in minutes between two "HH:MM" strings
@@ -98,62 +99,27 @@ export function calculateAttendanceForDate(
     )
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
-  // Extract turn details
+  // Extract turn details and construct turnos array
   const t1 = turnosMap[horario.turno1_id];
   const t2 = horario.turno2_id ? turnosMap[horario.turno2_id] : null;
+  const turnosList = [t1, t2].filter(Boolean) as Turno[];
 
-  // Extract punch times HH:MM
-  const punchTimes = empPunches.map((p) => p.timestamp.substring(11, 16));
+  // Evaluate punches using strict "First Valid Entry and First Valid Exit" algorithm
+  const punchEval = evaluatePunchesForSchedule(empPunches, horario, turnosList);
 
-  // Turn 1 matching
-  let t1_real_in: string | undefined = undefined;
-  let t1_real_out: string | undefined = undefined;
-  let t1_tardiness = 0;
-
-  if (punchTimes.length > 0) {
-    t1_real_in = punchTimes[0];
-    if (punchTimes.length > 1) {
-      t1_real_out = horario.turn_count === 2 && punchTimes.length >= 2 ? punchTimes[1] : punchTimes[punchTimes.length - 1];
-    }
-  }
-
-  // Turn 2 matching (if Dual-Turn shift)
-  let t2_real_in: string | undefined = undefined;
-  let t2_real_out: string | undefined = undefined;
-  let t2_tardiness = 0;
-
-  if (horario.turn_count === 2 && punchTimes.length >= 3) {
-    t2_real_in = punchTimes[2];
-    if (punchTimes.length >= 4) {
-      t2_real_out = punchTimes[3];
-    }
-  }
-
-  // Calculate Turn 1 Tardiness
-  if (t1 && t1_real_in) {
-    const diff = timeDiffMinutes(t1.start_time, t1_real_in);
-    if (diff > 0) {
-      t1_tardiness = diff;
-    }
-  }
-
-  // Calculate Turn 2 Tardiness
-  if (t2 && t2_real_in) {
-    const diff = timeDiffMinutes(t2.start_time, t2_real_in);
-    if (diff > 0) {
-      t2_tardiness = diff;
-    }
-  }
-
-  const totalTardiness = t1_tardiness + t2_tardiness;
-  const tolerance = (t1?.tolerance_minutes || 10) + (t2?.tolerance_minutes || 0);
-
-  // Apply tolerance rule: If tardiness <= tolerance, net = 0. If > tolerance, computable tardiness = total - tolerance
-  const netTardiness = totalTardiness > tolerance ? totalTardiness - tolerance : 0;
+  const t1_real_in = punchEval.t1_real_in;
+  const t1_real_out = punchEval.t1_real_out;
+  const t2_real_in = punchEval.t2_real_in;
+  const t2_real_out = punchEval.t2_real_out;
+  const t1_tardiness = punchEval.t1_tardiness_minutes;
+  const t2_tardiness = punchEval.t2_tardiness_minutes;
+  const totalTardiness = punchEval.total_tardiness_minutes;
+  const tolerance = punchEval.tolerance_applied_minutes;
+  const netTardiness = punchEval.net_tardiness_minutes;
 
   // Determine Attendance Status
   let status: AsistenciaEstado = 'PUNCTUAL';
-  let obs = 'Jornada procesada correctamente.';
+  let obs = punchEval.observations;
 
   if (activeVacation) {
     status = 'VACATION';
@@ -161,12 +127,15 @@ export function calculateAttendanceForDate(
   } else if (empPunches.length === 0) {
     status = 'ABSENT';
     obs = 'Sin marcaciones registradas en sistema biométrico.';
+  } else if (!t1_real_in && !t2_real_in) {
+    status = 'ABSENT';
+    obs = `FALTA: Sin marcación válida de entrada dentro del rango permitido. ${punchEval.observations}`;
   } else if (netTardiness > 0) {
     status = 'LATE';
-    obs = `Tardanza computada de ${netTardiness} min (Total tardanza: ${totalTardiness} min, Tolerancia: ${tolerance} min).`;
+    obs = `Tardanza computada de ${netTardiness} min (Total tardanza: ${totalTardiness} min, Tolerancia: ${tolerance} min). ${punchEval.observations}`;
   } else if (activePapeleta) {
     status = 'OUTING_PERMISSION';
-    obs = `Con papeleta de salida autorizada ${activePapeleta.code} (${activePapeleta.hora_estimada_salida} - ${activePapeleta.hora_estimada_retorno}).`;
+    obs = `Con papeleta de salida autorizada ${activePapeleta.code} (${activePapeleta.hora_estimada_salida} - ${activePapeleta.hora_estimada_retorno}). ${punchEval.observations}`;
   }
 
   return {
@@ -298,6 +267,48 @@ export async function testZkTecoConnection(
     cleanIp.startsWith('127.') ||
     cleanIp === 'localhost' ||
     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp);
+
+  // Si estamos en la aplicación de escritorio Windows (Electron), usar socket TCP nativo
+  const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+  if (electronAPI?.isDesktop && typeof electronAPI.pingZkDevice === 'function') {
+    try {
+      const nativePing = await electronAPI.pingZkDevice(cleanIp, targetPort, timeoutMs);
+      if (!nativePing.reachable) {
+        const errorOutput = [
+          'CONEXIÓN TCP (DESKTOP NATIVO): ERROR',
+          'AUTENTICACIÓN: NO DISPONIBLE',
+          `DISPOSITIVO: ${model}`,
+          `SERIAL: ${finalSerial}`,
+          'USUARIOS: 0',
+          'MARCACIONES EN EL RELOJ: 0',
+          'MARCACIONES NUEVAS: 0',
+          'MARCACIONES GUARDADAS: 0',
+          'ERRORES: 1',
+        ].join('\n');
+
+        return {
+          success: false,
+          status: 'OFFLINE',
+          message: nativePing.message || `No se pudo conectar con el marcador ${cleanIp}:${targetPort}`,
+          cause: `Verifique que el biométrico ZKTeco ${model} esté encendido, conectado al switch/red LAN y con la IP ${cleanIp} configurada.`,
+          ip: cleanIp,
+          port: targetPort,
+          model,
+          serial_number: finalSerial,
+          user_count: 0,
+          clock_punches_count: 0,
+          new_punches_count: 0,
+          saved_punches_count: 0,
+          error_count: 1,
+          formatted_output: errorOutput,
+          is_private_ip: isPrivate,
+          timestamp: nowStr,
+        };
+      }
+    } catch (e) {
+      console.warn('Fallo en test nativo Electron, continuando con API REST:', e);
+    }
+  }
 
   try {
     const response = await fetch('/api/zkteco/test-connection', {

@@ -43,6 +43,7 @@ import {
   INITIAL_CARGOS,
 } from "./src/data/initialData";
 import { POSTGRES_DDL_SQL } from "./src/data/ddlSql";
+import { evaluatePunchesForSchedule, getShiftEvaluationRanges } from "./src/utils/shiftCalculations";
 
 // Helpers for Dependencias
 async function getStoredDependencias(): Promise<any[]> {
@@ -2719,77 +2720,182 @@ async function startServer() {
     };
   }
 
-  // Internal helper to auto-process raw punches to attendance
-  async function autoProcessRawPunchesToAttendance() {
+  // Internal helper to auto-process raw punches to attendance using strict First Valid Entry/Exit rules
+  async function autoProcessRawPunchesToAttendance(): Promise<{ processedCount: number; attendanceCount: number }> {
     const rawPunches = await getStoredRawPunches();
     const attendance = await getStoredAttendance();
     const employees = await getStoredEmployees();
+    const turnos = await getStoredTurnos();
+    const horarios = await getStoredHorarios();
     const nowIso = new Date().toISOString();
 
-    for (const punch of rawPunches) {
-      if (punch.processed) continue;
-      const empDni = punch.employee_dni;
-      const emp = employees.find((e: any) => e.dni === empDni || e.id === empDni || e.zkteco_pin === punch.employee_code);
-      if (!emp) continue; // Keep as PENDIENTE_IDENTIFICACION
+    const defaultHorario = horarios.find((h: any) => h.active) || horarios[0] || {
+      id: "hor-default",
+      turn_count: 1,
+      turno1_id: turnos[0]?.id || "tur-01",
+    };
 
-      const punchTimestamp = punch.timestamp;
-      const [punchDate, punchTimeFull] = punchTimestamp.split(' ');
-      const punchTime = punchTimeFull ? punchTimeFull.substring(0, 5) : '08:00';
+    // Find all distinct (empDni, fecha) pairs that have unprocessed punches
+    const pendingPunches = rawPunches.filter((p: any) => !p.processed);
+    if (pendingPunches.length === 0) {
+      return { processedCount: 0, attendanceCount: attendance.length };
+    }
 
-      let attIndex = attendance.findIndex((a: any) => a.employee_dni === emp.dni && a.fecha === punchDate);
+    const pairKeys = new Set<string>();
+    for (const p of pendingPunches) {
+      const emp = employees.find((e: any) => e.dni === p.employee_dni || e.id === p.employee_dni || e.zkteco_pin === p.employee_code);
+      if (!emp) {
+        p.validation_status = "ERROR_DNI";
+        p.rejection_reason = `DNI/Código ${p.employee_dni || p.employee_code} no identificado en directorio institucional.`;
+        continue;
+      }
+      const fecha = p.timestamp ? p.timestamp.split(" ")[0] : "";
+      if (fecha) {
+        pairKeys.add(`${emp.dni}|${fecha}`);
+      }
+    }
+
+    let newlyProcessedCount = 0;
+
+    for (const pairKey of pairKeys) {
+      const [dni, fecha] = pairKey.split("|");
+      const emp = employees.find((e: any) => e.dni === dni);
+      if (!emp) continue;
+
+      const empHorario = (emp.horario_id ? horarios.find((h: any) => h.id === emp.horario_id) : undefined) || defaultHorario;
+
+      // Get ALL raw punches for this employee and this date, sorted chronologically
+      const empDayPunches = rawPunches
+        .filter((p: any) => (p.employee_dni === dni || p.employee_code === emp.zkteco_pin) && p.timestamp && p.timestamp.startsWith(fecha))
+        .sort((a: any, b: any) => a.timestamp.localeCompare(b.timestamp));
+
+      // Run strict range evaluation with second-level precision
+      const punchEval = evaluatePunchesForSchedule(empDayPunches, empHorario, turnos);
+
+      // Mark the punches
+      for (const p of empDayPunches) {
+        p.processed = true;
+        p.processed_at = nowIso;
+        p.status = "PROCESADA";
+        p.processingStatus = "PROCESADA";
+
+        const isValid =
+          p === punchEval.t1_evaluation.firstValidEntryPunch ||
+          p === punchEval.t1_evaluation.firstValidExitPunch ||
+          p === punchEval.t2_evaluation?.firstValidEntryPunch ||
+          p === punchEval.t2_evaluation?.firstValidExitPunch;
+
+        if (isValid) {
+          p.validation_status = "VALIDA";
+          p.rejection_reason = undefined;
+        } else if (
+          punchEval.t1_evaluation.repeatedEntryPunches.includes(p) ||
+          punchEval.t1_evaluation.repeatedExitPunches.includes(p) ||
+          (punchEval.t2_evaluation && (punchEval.t2_evaluation.repeatedEntryPunches.includes(p) || punchEval.t2_evaluation.repeatedExitPunches.includes(p)))
+        ) {
+          p.validation_status = "REPETIDA";
+          p.rejection_reason = "Marcación repetida dentro del rango permitido (se conserva la primera marcación válida cronológica).";
+        } else {
+          p.validation_status = "FUERA_DE_RANGO";
+          p.rejection_reason = "Marcación fuera del rango permitido del turno.";
+        }
+        newlyProcessedCount++;
+      }
+
+      // Upsert attendance record
+      let attIndex = attendance.findIndex((a: any) => a.employee_dni === dni && a.fecha === fecha);
+
+      const t1 = turnos.find((t: any) => t.id === empHorario.turno1_id) || turnos[0];
+      const t2 = empHorario.turn_count === 2 && empHorario.turno2_id ? turnos.find((t: any) => t.id === empHorario.turno2_id) : undefined;
+
+      const t1RealIn = punchEval.t1_real_in || null;
+      const t1RealOut = punchEval.t1_real_out || null;
+      const t2RealIn = punchEval.t2_real_in || null;
+      const t2RealOut = punchEval.t2_real_out || null;
+
+      let status = "PUNCTUAL";
+      if (!t1RealIn && !t2RealIn) {
+        status = "ABSENT";
+      } else if (punchEval.net_tardiness_minutes > 0) {
+        status = "LATE";
+      }
+
+      let effectiveHours = 0;
+      if (t1RealIn && t1RealOut && t2RealIn && t2RealOut) {
+        effectiveHours = 8.0;
+      } else if (t1RealIn && t1RealOut && !t2) {
+        effectiveHours = 8.0;
+      } else if (t1RealIn && !t1RealOut && !t2RealIn) {
+        effectiveHours = 4.0;
+      } else if (t1RealIn) {
+        effectiveHours = 4.0;
+      }
 
       if (attIndex === -1) {
         const newAtt = {
-          id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          id: `att-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
           employee_id: emp.id,
           employee_dni: emp.dni,
           employee_name: `${emp.first_name} ${emp.last_name}`,
-          dependencia_id: emp.dependencia_id || 'dep-01',
-          dependencia_name: emp.dependencia_name || 'SEDE CENTRAL',
-          direccion_organo_name: emp.direccion_organo_name || '',
-          area_name: emp.area_name || 'OFICINA DRAC',
-          fecha: punchDate,
-          t1_scheduled_in: '08:00',
-          t1_scheduled_out: '13:00',
-          t1_real_in: punchTime,
-          t1_real_out: null,
-          t2_scheduled_in: '14:00',
-          t2_scheduled_out: '17:00',
-          t2_real_in: null,
-          t2_real_out: null,
-          status: punchTime <= '08:10' ? 'PUNCTUAL' : 'LATE',
-          tardiness_minutes: punchTime > '08:10' ? 15 : 0,
-          net_tardiness_minutes: punchTime > '08:10' ? 5 : 0,
-          total_effective_hours: 4.5,
-          raw_punch_id: punch.id,
+          dependencia_id: emp.dependencia_id || "dep-01",
+          dependencia_name: emp.dependencia_name || "SEDE CENTRAL",
+          direccion_organo_name: emp.direccion_organo_name || "",
+          area_name: emp.area_name || "OFICINA DRAC",
+          fecha,
+          horario_name: empHorario.name || "Horario Institucional",
+          t1_scheduled_in: t1?.start_time || "08:00",
+          t1_scheduled_out: t1?.end_time || "13:00",
+          t1_window_entry_start: punchEval.t1_evaluation.ranges.entryStartText,
+          t1_window_exit_limit: punchEval.t1_evaluation.ranges.exitEndText,
+          t1_real_in: t1RealIn,
+          t1_real_out: t1RealOut,
+          t1_tardiness_minutes: punchEval.t1_tardiness_minutes,
+          t2_scheduled_in: t2?.start_time || (empHorario.turn_count === 2 ? "14:00" : null),
+          t2_scheduled_out: t2?.end_time || (empHorario.turn_count === 2 ? "17:00" : null),
+          t2_window_entry_start: punchEval.t2_evaluation?.ranges.entryStartText || null,
+          t2_window_exit_limit: punchEval.t2_evaluation?.ranges.exitEndText || null,
+          t2_real_in: t2RealIn,
+          t2_real_out: t2RealOut,
+          t2_tardiness_minutes: punchEval.t2_tardiness_minutes,
+          status,
+          total_tardiness_minutes: punchEval.total_tardiness_minutes,
+          net_tardiness_minutes: punchEval.net_tardiness_minutes,
+          tolerance_applied_minutes: punchEval.tolerance_applied_minutes,
+          total_effective_hours: effectiveHours,
+          observations: punchEval.observations,
           created_at: nowIso,
           updated_at: nowIso,
         };
         attendance.unshift(newAtt);
       } else {
         const existing = attendance[attIndex];
-        if (!existing.t1_real_in) {
-          existing.t1_real_in = punchTime;
-        } else if (!existing.t1_real_out && punchTime > '11:30' && punchTime < '14:00') {
-          existing.t1_real_out = punchTime;
-        } else if (!existing.t2_real_in && punchTime >= '13:45' && punchTime < '15:30') {
-          existing.t2_real_in = punchTime;
-        } else if (!existing.t2_real_out && punchTime >= '16:00') {
-          existing.t2_real_out = punchTime;
-          existing.total_effective_hours = 8.0;
+        existing.t1_real_in = t1RealIn || existing.t1_real_in || null;
+        existing.t1_real_out = t1RealOut || existing.t1_real_out || null;
+        existing.t2_real_in = t2RealIn || existing.t2_real_in || null;
+        existing.t2_real_out = t2RealOut || existing.t2_real_out || null;
+        existing.t1_window_entry_start = punchEval.t1_evaluation.ranges.entryStartText;
+        existing.t1_window_exit_limit = punchEval.t1_evaluation.ranges.exitEndText;
+        if (punchEval.t2_evaluation) {
+          existing.t2_window_entry_start = punchEval.t2_evaluation.ranges.entryStartText;
+          existing.t2_window_exit_limit = punchEval.t2_evaluation.ranges.exitEndText;
         }
+        existing.t1_tardiness_minutes = punchEval.t1_tardiness_minutes;
+        existing.t2_tardiness_minutes = punchEval.t2_tardiness_minutes;
+        existing.total_tardiness_minutes = punchEval.total_tardiness_minutes;
+        existing.net_tardiness_minutes = punchEval.net_tardiness_minutes;
+        existing.tolerance_applied_minutes = punchEval.tolerance_applied_minutes;
+        existing.total_effective_hours = effectiveHours;
+        existing.status = status;
+        existing.observations = punchEval.observations;
         existing.updated_at = nowIso;
         attendance[attIndex] = existing;
       }
-
-      punch.processed = true;
-      punch.processed_at = nowIso;
-      punch.status = 'PROCESADA';
-      punch.processingStatus = 'PROCESADA';
     }
 
     await saveStoredRawPunches(rawPunches);
     await saveStoredAttendance(attendance);
+
+    return { processedCount: newlyProcessedCount, attendanceCount: attendance.length };
   }
 
   // POST /iclock/cdata & /iclock/cdata.php - ZKTeco ADMS Post Endpoint
@@ -3884,99 +3990,15 @@ pause
     }
   });
 
-  // POST /api/zkteco/process-punches - Process RAW punches into structured Attendance records
+  // POST /api/zkteco/process-punches - Process RAW punches into structured Attendance records using strict First Valid Entry/Exit rules
   app.post("/api/zkteco/process-punches", async (_req, res) => {
     try {
-      let rawPunches = await getStoredRawPunches();
-      let attendance = await getStoredAttendance();
-      const employees = await getStoredEmployees();
-      const turnos = await getStoredTurnos();
-      const horarios = await getStoredHorarios();
-
-      let newlyProcessedCount = 0;
-      const nowIso = new Date().toISOString();
-
-      // Find pending raw punches
-      const pending = rawPunches.filter((p: any) => !p.processed);
-
-      for (const punch of pending) {
-        const empDni = punch.employee_dni;
-        const emp = employees.find((e: any) => e.dni === empDni || e.id === empDni);
-        if (!emp) {
-          punch.validation_status = "ERROR_DNI";
-          punch.rejection_reason = `DNI ${empDni} no está registrado en el directorio institucional de personal.`;
-          continue;
-        }
-
-        const punchTimestamp = punch.timestamp; // e.g. "2026-08-21 07:55:00"
-        const [punchDate, punchTimeFull] = punchTimestamp.split(" ");
-        const punchTime = punchTimeFull ? punchTimeFull.substring(0, 5) : "08:00"; // "07:55"
-
-        // Find or create attendance row for this worker on this date
-        let attIndex = attendance.findIndex(
-          (a: any) => a.employee_dni === empDni && a.fecha === punchDate
-        );
-
-        if (attIndex === -1) {
-          // Create new record
-          const newAtt = {
-            id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            employee_id: emp.id,
-            employee_dni: emp.dni,
-            employee_name: `${emp.first_name} ${emp.last_name}`,
-            dependencia_id: emp.dependencia_id || "dep-01",
-            dependencia_name: emp.dependencia_name || "SEDE CENTRAL",
-            direccion_organo_name: emp.direccion_organo_name || "",
-            area_name: emp.area_name || "OFICINA DRAC",
-            fecha: punchDate,
-            t1_scheduled_in: "08:00",
-            t1_scheduled_out: "13:00",
-            t1_real_in: punchTime,
-            t1_real_out: null,
-            t2_scheduled_in: "14:00",
-            t2_scheduled_out: "17:00",
-            t2_real_in: null,
-            t2_real_out: null,
-            status: punchTime <= "08:10" ? "PUNCTUAL" : "LATE",
-            tardiness_minutes: punchTime > "08:10" ? 15 : 0,
-            net_tardiness_minutes: punchTime > "08:10" ? 5 : 0,
-            total_effective_hours: 4.5,
-            raw_punch_id: punch.id,
-            created_at: nowIso,
-            updated_at: nowIso,
-          };
-          attendance.unshift(newAtt);
-        } else {
-          // Update existing record with subsequent punches
-          const existing = attendance[attIndex];
-          if (!existing.t1_real_in) {
-            existing.t1_real_in = punchTime;
-          } else if (!existing.t1_real_out && punchTime > "11:30" && punchTime < "14:00") {
-            existing.t1_real_out = punchTime;
-          } else if (!existing.t2_real_in && punchTime >= "13:45" && punchTime < "15:30") {
-            existing.t2_real_in = punchTime;
-          } else if (!existing.t2_real_out && punchTime >= "16:00") {
-            existing.t2_real_out = punchTime;
-            existing.total_effective_hours = 8.0;
-          }
-          existing.updated_at = nowIso;
-          attendance[attIndex] = existing;
-        }
-
-        punch.processed = true;
-        punch.processed_at = nowIso;
-        punch.validation_status = "VALIDA";
-        newlyProcessedCount++;
-      }
-
-      await saveStoredRawPunches(rawPunches);
-      await saveStoredAttendance(attendance);
-
+      const result = await autoProcessRawPunchesToAttendance();
       return res.json({
         success: true,
-        processed_count: newlyProcessedCount,
-        total_attendance_records: attendance.length,
-        message: `Procesamiento completado: ${newlyProcessedCount} marcaciones convertidas a registros de asistencia calculados.`,
+        processed_count: result.processedCount,
+        total_attendance_records: result.attendanceCount,
+        message: `Procesamiento completado: ${result.processedCount} marcaciones evaluadas con regla estricta de Primera Marcación Válida de Entrada y Salida.`,
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: `Error al procesar marcaciones: ${err?.message}` });

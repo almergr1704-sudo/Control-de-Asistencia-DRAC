@@ -1,6 +1,6 @@
 {
-  "name": "HRMS Attendance & Outings Architecture",
-  "description": "Sistema Enterprise de Control de Asistencia, Biométricos ZKTeco, Vacaciones y Papeletas de Salida",
+  "name": "DRAC Control de Asistencia",
+  "description": "Sistema Institucional de Control de Asistencia, Biométricos ZKTeco, Papeletas de Salida y Vacaciones - Dirección Regional de Agricultura Cajamarca",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

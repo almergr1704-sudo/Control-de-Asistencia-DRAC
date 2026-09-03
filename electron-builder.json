@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "pe.gob.drac.controlasistencia",
+  "productName": "DRAC Control de Asistencia",
+  "executableName": "DRAC-Control-de-Asistencia",
+  "copyright": "Copyright © 2026 Dirección Regional de Agricultura Cajamarca",
+  "directories": {
+    "output": "dist-desktop",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "electron/main.cjs"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "DRAC Control de Asistencia",
+    "uninstallDisplayName": "DRAC Control de Asistencia - Desinstalar",
+    "artifactName": "DRAC-Control-de-Asistencia-Setup.exe"
+  },
+  "portable": {
+    "artifactName": "DRAC-Control-de-Asistencia-Portable.exe"
+  }
+}

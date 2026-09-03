@@ -15,6 +15,7 @@ import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizePersonName, normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_DEVICES, INITIAL_ATTENDANCE } from '../data/initialData';
 import { INITIAL_RAW_PUNCHES } from '../data/initialRawPunches';
+import { evaluatePunchesForSchedule } from '../utils/shiftCalculations';
 
 /**
  * SERVICIO CENTRALIZADO DE BIOMÉTRICOS, MARCACIONES Y ASISTENCIA (FASE 5)
@@ -732,68 +733,36 @@ export function calculateAttendanceForEmployeeDay(
     };
   }
 
-  // 4. Asignar marcaciones a Turno 1 y Turno 2
-  let t1RealIn: string | undefined;
-  let t1RealOut: string | undefined;
-  let t2RealIn: string | undefined;
-  let t2RealOut: string | undefined;
+  // 4. Evaluar marcaciones con regla estricta: Primera válida de entrada y salida con precisión de segundos
+  const punchEval = evaluatePunchesForSchedule(empPunches, horario, turnos);
 
-  const punchTimes = empPunches.map((p) => p.timestamp.split(' ')[1].substring(0, 5));
+  const t1RealIn = punchEval.t1_real_in;
+  const t1RealOut = punchEval.t1_real_out;
+  const t2RealIn = punchEval.t2_real_in;
+  const t2RealOut = punchEval.t2_real_out;
 
-  if (horario?.turn_count === 2 || t2ScheduledIn) {
-    // 2 turnos: mañana y tarde
-    const morningPunches = punchTimes.filter((t) => t < '13:30');
-    const afternoonPunches = punchTimes.filter((t) => t >= '13:30');
+  const t1Tardiness = punchEval.t1_tardiness_minutes;
+  const t2Tardiness = punchEval.t2_tardiness_minutes;
+  const totalTardiness = punchEval.total_tardiness_minutes;
+  const netTardiness = punchEval.net_tardiness_minutes;
 
-    t1RealIn = morningPunches[0] || punchTimes[0];
-    t1RealOut = morningPunches.length > 1 ? morningPunches[morningPunches.length - 1] : undefined;
-    t2RealIn = afternoonPunches[0] || (punchTimes.length > 2 ? punchTimes[1] : undefined);
-    t2RealOut = afternoonPunches.length > 1 ? afternoonPunches[afternoonPunches.length - 1] : (punchTimes.length > 3 ? punchTimes[punchTimes.length - 1] : undefined);
-  } else {
-    // 1 turno continuo
-    t1RealIn = punchTimes[0];
-    t1RealOut = punchTimes.length > 1 ? punchTimes[punchTimes.length - 1] : undefined;
-  }
-
-  // 5. Calcular tardanza en Turno 1
-  let t1Tardiness = 0;
-  if (t1RealIn && t1ScheduledIn) {
-    const [realH, realM] = t1RealIn.split(':').map(Number);
-    const [schedH, schedM] = t1ScheduledIn.split(':').map(Number);
-    const diffMins = realH * 60 + realM - (schedH * 60 + schedM);
-    if (diffMins > tolerance) {
-      t1Tardiness = diffMins - tolerance;
-    }
-  }
-
-  // 6. Calcular tardanza en Turno 2 (si aplica)
-  let t2Tardiness = 0;
-  if (t2RealIn && t2ScheduledIn) {
-    const [realH, realM] = t2RealIn.split(':').map(Number);
-    const [schedH, schedM] = t2ScheduledIn.split(':').map(Number);
-    const diffMins = realH * 60 + realM - (schedH * 60 + schedM);
-    if (diffMins > tolerance) {
-      t2Tardiness = diffMins - tolerance;
-    }
-  }
-
-  const totalTardiness = t1Tardiness + t2Tardiness;
-  const netTardiness = Math.max(0, totalTardiness);
-
-  // 7. Determinar Estado
+  // 5. Determinar Estado
   let status: AsistenciaEstado = 'PUNCTUAL';
-  let observations = 'Asistencia conforme.';
+  let observations = punchEval.observations;
 
   if (hasPapeleta) {
     status = 'OUTING_PERMISSION';
-    observations = `Permiso / Papeleta autorizada: ${primaryPapeleta.code}`;
+    observations = `Permiso / Papeleta autorizada: ${primaryPapeleta.code}. ${punchEval.observations}`;
+  } else if (!t1RealIn && !t2RealIn) {
+    status = 'ABSENT';
+    observations = `FALTA: Sin marcación válida de entrada dentro del rango permitido. ${punchEval.observations}`;
   } else if (netTardiness > 0) {
     status = 'LATE';
-    observations = `Tardanza acumulada: ${netTardiness} min.`;
+    observations = `Tardanza acumulada: ${netTardiness} min. ${punchEval.observations}`;
   }
 
-  // 8. Horas efectivas estimadas
-  let totalEffectiveHours = 8.0;
+  // 6. Horas efectivas estimadas
+  let totalEffectiveHours = 0;
   if (t1RealIn && t1RealOut && t2RealIn && t2RealOut) {
     totalEffectiveHours = 8.0;
   } else if (t1RealIn && t1RealOut && !t2ScheduledIn) {
@@ -801,6 +770,8 @@ export function calculateAttendanceForEmployeeDay(
   } else if (t1RealIn && !t1RealOut && !t2RealIn) {
     totalEffectiveHours = 4.0;
     observations += ' (Falta marcación de salida).';
+  } else if (t1RealIn) {
+    totalEffectiveHours = 4.0;
   }
 
   return {
@@ -814,19 +785,23 @@ export function calculateAttendanceForEmployeeDay(
     horario_name: scheduleName,
     t1_scheduled_in: t1ScheduledIn,
     t1_scheduled_out: t1ScheduledOut,
+    t1_window_entry_start: punchEval.t1_evaluation.ranges.entryStartText,
+    t1_window_exit_limit: punchEval.t1_evaluation.ranges.exitEndText,
     t1_real_in: t1RealIn,
     t1_real_out: t1RealOut,
     t1_tardiness_minutes: t1Tardiness,
     t1_effective_hours: 4.5,
     t2_scheduled_in: t2ScheduledIn,
     t2_scheduled_out: t2ScheduledOut,
+    t2_window_entry_start: punchEval.t2_evaluation?.ranges.entryStartText,
+    t2_window_exit_limit: punchEval.t2_evaluation?.ranges.exitEndText,
     t2_real_in: t2RealIn,
     t2_real_out: t2RealOut,
     t2_tardiness_minutes: t2Tardiness,
     t2_effective_hours: 3.5,
     total_effective_hours: totalEffectiveHours,
     total_tardiness_minutes: totalTardiness,
-    tolerance_applied_minutes: tolerance,
+    tolerance_applied_minutes: punchEval.tolerance_applied_minutes,
     net_tardiness_minutes: netTardiness,
     overtime_minutes: 0,
     status,
