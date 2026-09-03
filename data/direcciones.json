@@ -1,0 +1,82 @@
+[
+  {
+    "id": "dir-DIR",
+    "code": "DIR",
+    "name": "DIRECCION",
+    "type": "DIRECCION",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-ADMIN",
+    "code": "ADMIN",
+    "name": "OFICINA DE ADMINISTRACION",
+    "type": "ORGANO_APOYO",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-PLAN",
+    "code": "PLAN",
+    "name": "OFICINA DE PLANIFICACION AGRARIA",
+    "type": "ORGANO_APOYO",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-DDAGR",
+    "code": "DDAGR",
+    "name": "DIRECCION DE DESARROLLO AGRARIO, GANADERO Y RIEGO",
+    "type": "DIRECCION",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-DEI",
+    "code": "DEI",
+    "name": "DIRECCION DE ESTADISTICA E INFORMATICA",
+    "type": "DIRECCION",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-SRFFS",
+    "code": "SRFFS",
+    "name": "DIRECCION DE RECURSOS FORESTALES Y FAUNA SILVESTRE",
+    "type": "DIRECCION",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-DTTCR",
+    "code": "DTTCR",
+    "name": "DIRECCION TITULACION DE TIERRAS Y CATASTRO RURAL",
+    "type": "DIRECCION",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "dir-OAJ",
+    "code": "OAJ",
+    "name": "OFICINA DE ASESORIA JURIDICA",
+    "type": "ORGANO_APOYO",
+    "dependencia_id": "dep-01",
+    "dependencia_name": "SEDE CENTRAL",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  }
+]
