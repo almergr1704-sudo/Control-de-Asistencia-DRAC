@@ -1,0 +1,23 @@
+Sistema:
+Sistema de Control de Asistencia Institucional
+
+Institución:
+Dirección Regional de Agricultura Cajamarca - DRAC
+
+Plataforma:
+Windows (x64)
+
+Tecnología:
+Electron + React 19 + TypeScript + Vite + Tailwind CSS + Electron Builder (NSIS)
+
+Fecha de compilación:
+2026-09-03 14:11:50 UTC
+
+Versión:
+1.0.0
+
+Instalador generado:
+DRAC-Control-de-Asistencia-Setup.exe (Arquitectura x64, Nullsoft Scriptable Install System)
+
+Id de Aplicación:
+pe.gob.drac.controlasistencia

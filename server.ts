@@ -494,6 +494,19 @@ async function startServer() {
     next();
   });
 
+  // ==========================================
+  // Direct Download Route for Windows Desktop Installer & ZIP
+  // ==========================================
+  app.get(["/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "/api/download/desktop"], (req, res) => {
+    const zipPath = path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip");
+    res.download(zipPath, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip");
+  });
+
+  app.get("/download/DRAC-Control-de-Asistencia-Setup.exe", (req, res) => {
+    const exePath = path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe");
+    res.download(exePath, "DRAC-Control-de-Asistencia-Setup.exe");
+  });
+
   // RBAC Helper: Verify that caller has administrative permissions
   const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {
     const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "ADMIN_GENERAL";

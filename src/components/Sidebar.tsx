@@ -17,6 +17,8 @@ import {
   Menu,
   X,
   UserCheck,
+  Monitor,
+  Download,
 } from 'lucide-react';
 import { RoleType } from '../types';
 import { VIEW_TO_GROUP, isViewAllowedForRole } from '../utils/router';
@@ -426,9 +428,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
 
-        {/* Footer Role Badge */}
-        <div className="p-3 border-t border-slate-800/80 bg-[#060709] shrink-0 text-xs">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+        {/* Desktop Version Download Button */}
+        <div className="p-3 border-t border-slate-800/80 bg-[#060709] shrink-0 space-y-2">
+          <button
+            id="btn-sidebar-download-desktop"
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-download-desktop'))}
+            className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600/30 hover:to-teal-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-between transition-all cursor-pointer group shadow-sm"
+            title="Descargar versión de escritorio para Windows"
+          >
+            <div className="flex items-center gap-2">
+              <Monitor className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              <span>Instalador Windows .EXE</span>
+            </div>
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+          </button>
+
+          {/* Footer Role Badge */}
+          <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-0.5">
             <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span className="truncate">
               Rol: <strong className="text-white font-medium">{activeRole}</strong>

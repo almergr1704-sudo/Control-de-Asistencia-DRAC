@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Menu,
   RotateCcw,
@@ -12,10 +12,13 @@ import {
   KeyRound,
   Sparkles,
   Database,
+  Monitor,
+  Download,
 } from 'lucide-react';
 import { Employee, RoleType } from '../types';
 import { getEmployeeAssignedRoles } from '../utils/userAuthUtils';
 import { getAppOrigin } from '../lib/supabaseClient';
+import { DownloadDesktopModal } from './common/DownloadDesktopModal';
 
 interface HeaderProps {
 
@@ -38,6 +41,13 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSidebarMobile,
 }) => {
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+
+  useEffect(() => {
+    const handleOpenModal = () => setShowDownloadModal(true);
+    window.addEventListener('open-download-desktop', handleOpenModal);
+    return () => window.removeEventListener('open-download-desktop', handleOpenModal);
+  }, []);
 
   const roleLabels: Record<string, { label: string; icon: React.ElementType; color: string; badge: string }> = {
     ADMIN_GENERAL: { label: 'Admin General', icon: Shield, color: 'bg-indigo-600', badge: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
@@ -164,6 +174,20 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
+          {/* Download Desktop Version Button */}
+          <button
+            id="btn-header-download-desktop"
+            type="button"
+            onClick={() => setShowDownloadModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-md shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30 group"
+            title="Descargar versión de escritorio para Windows (Instalador .exe / .zip)"
+          >
+            <Monitor className="w-3.5 h-3.5 text-emerald-200 group-hover:scale-110 transition-transform" />
+            <span className="hidden sm:inline">Descargar</span>
+            <span>Desktop</span>
+            <span className="hidden md:inline px-1.5 py-0.2 rounded bg-emerald-700/60 text-[10px] text-emerald-100">.exe</span>
+          </button>
+
           {/* Logout Button */}
           {currentUser && (
             <button
@@ -190,6 +214,12 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Desktop Download Modal */}
+      <DownloadDesktopModal
+        isOpen={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+      />
     </header>
   );
 };
