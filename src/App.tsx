@@ -1652,32 +1652,34 @@ export default function App() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span className="font-semibold text-emerald-400">Instalador Desktop Windows:</span>
-            <span className="text-slate-300 hidden sm:inline">Haga clic para descargar e instalar el sistema nativo en su PC:</span>
+            <span className="text-slate-300 hidden sm:inline">Haga clic para descargar el sistema nativo para su PC:</span>
           </div>
           <div className="flex items-center gap-2">
-            <a
+            <button
               id="banner-btn-download-exe"
-              href="/download/DRAC-Control-de-Asistencia-Setup.exe"
-              download="DRAC-Control-de-Asistencia-Setup.exe"
+              type="button"
+              onClick={() => window.open('/download/DRAC-Control-de-Asistencia-Setup.exe', '_blank', 'noopener,noreferrer')}
               className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-950/50 transition-colors cursor-pointer"
+              title="Abrir y descargar instalador ejecutable en nueva pestaña"
             >
               <span>Descargar .EXE</span>
               <span className="text-[10px] text-emerald-200 font-mono">(129 MB)</span>
-            </a>
-            <a
+            </button>
+            <button
               id="banner-btn-download-zip"
-              href="/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"
-              download="DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"
+              type="button"
+              onClick={() => window.open('/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip', '_blank', 'noopener,noreferrer')}
               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors cursor-pointer"
+              title="Abrir y descargar archivo comprimido ZIP"
             >
               Descargar .ZIP
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent('open-download-desktop'))}
               className="text-[11px] text-emerald-400 underline hover:text-emerald-300 ml-1 cursor-pointer"
             >
-              Ver Guía
+              Ver Opciones y Guía
             </button>
           </div>
         </div>

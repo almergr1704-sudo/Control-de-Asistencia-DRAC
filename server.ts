@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs/promises";
+import nodeFs from "node:fs";
 import net from "node:net";
 import { createServer as createViteServer } from "vite";
 
@@ -495,17 +496,75 @@ async function startServer() {
   });
 
   // ==========================================
-  // Direct Download Route for Windows Desktop Installer & ZIP
+  // Direct Download Routes for Windows Desktop Installer & ZIP
   // ==========================================
-  app.get(["/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "/api/download/desktop"], (req, res) => {
-    const zipPath = path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip");
-    res.download(zipPath, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip");
-  });
+  const handleDownloadFile = (res: express.Response, candidatePaths: string[], fileName: string, contentType: string) => {
+    let targetPath: string | null = null;
+    for (const p of candidatePaths) {
+      if (nodeFs.existsSync(p)) {
+        targetPath = p;
+        break;
+      }
+    }
 
-  app.get("/download/DRAC-Control-de-Asistencia-Setup.exe", (req, res) => {
-    const exePath = path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe");
-    res.download(exePath, "DRAC-Control-de-Asistencia-Setup.exe");
-  });
+    if (!targetPath) {
+      return res.status(404).send(`Error: El archivo ${fileName} no se encuentra disponible temporalmente en el servidor.`);
+    }
+
+    const stat = nodeFs.statSync(targetPath);
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", stat.size.toString());
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Accept-Ranges", "bytes");
+
+    const fileStream = nodeFs.createReadStream(targetPath);
+    fileStream.on("error", (err) => {
+      console.error(`Error streaming ${fileName}:`, err);
+      if (!res.headersSent) {
+        res.status(500).send("Error al leer el archivo durante la descarga.");
+      }
+    });
+    fileStream.pipe(res);
+  };
+
+  app.get(
+    [
+      "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+      "/api/download/desktop",
+      "/api/download/zip",
+      "/download/zip",
+    ],
+    (req, res) => {
+      const candidates = [
+        path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      ];
+      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip");
+    }
+  );
+
+  app.get(
+    [
+      "/download/DRAC-Control-de-Asistencia-Setup.exe",
+      "/api/download/exe",
+      "/api/download/setup",
+      "/download/exe",
+    ],
+    (req, res) => {
+      const candidates = [
+        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "DRAC-Control-de-Asistencia-Setup.exe"),
+      ];
+      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia-Setup.exe", "application/octet-stream");
+    }
+  );
 
   // RBAC Helper: Verify that caller has administrative permissions
   const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {

@@ -23,6 +23,7 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   if (!isOpen) return null;
 
@@ -30,6 +31,16 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
     navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleTriggerDownload = (path: string) => {
+    // Escapes iframe sandbox by opening the download in a new tab
+    const fullUrl = path.startsWith('http') ? path : `${window.location.origin}${path}`;
+    window.open(fullUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleOpenAppInNewTab = () => {
+    window.open(window.location.href, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -74,6 +85,29 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+          {/* Notice for iframe / AI Studio Preview Environment */}
+          {isInsideIframe && (
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-amber-300 font-semibold block">Aviso para descarga en Vista Previa:</strong>
+                  <span>
+                    Debido a las políticas de seguridad del marco embebido (iframe), el navegador puede reportar <em>"archivo no disponible"</em> al pulsar descarga directa dentro del marco. Si esto ocurre, utilice el botón <strong>"Abrir y Descargar en Pestaña Nueva"</strong> o abra la aplicación en una pestaña independiente.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenAppInNewTab}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer shrink-0"
+                title="Abrir aplicación en pestaña nueva para descargar libremente"
+              >
+                Abrir App en Pestaña Nueva
+              </button>
+            </div>
+          )}
+
           {/* Main Download Options Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Option 1: Direct Installer .EXE */}
@@ -100,16 +134,27 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 mt-2 border-t border-slate-800/80">
-                <a
+              <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
+                <button
+                  type="button"
                   id="btn-download-exe-direct"
-                  href="/download/DRAC-Control-de-Asistencia-Setup.exe"
-                  download="DRAC-Control-de-Asistencia-Setup.exe"
+                  onClick={() => handleTriggerDownload('/download/DRAC-Control-de-Asistencia-Setup.exe')}
                   className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
                 >
                   <Download className="w-4 h-4" />
                   <span>Descargar Instalador .EXE</span>
-                </a>
+                </button>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                  <span>Enlace alternativo:</span>
+                  <a
+                    href="/api/download/exe"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:underline"
+                  >
+                    Descarga vía /api/download/exe
+                  </a>
+                </div>
               </div>
             </div>
 
@@ -137,16 +182,27 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 </div>
               </div>
 
-              <div className="pt-4 mt-2 border-t border-slate-800/80">
-                <a
+              <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
+                <button
+                  type="button"
                   id="btn-download-zip-direct"
-                  href="/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"
-                  download="DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"
+                  onClick={() => handleTriggerDownload('/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip')}
                   className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
                 >
                   <Download className="w-4 h-4" />
                   <span>Descargar Paquete .ZIP</span>
-                </a>
+                </button>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                  <span>Enlace alternativo:</span>
+                  <a
+                    href="/api/download/zip"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-400 hover:underline"
+                  >
+                    Descarga vía /api/download/zip
+                  </a>
+                </div>
               </div>
             </div>
           </div>
