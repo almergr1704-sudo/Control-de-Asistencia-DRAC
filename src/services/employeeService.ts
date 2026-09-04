@@ -198,6 +198,7 @@ export async function saveEmployeeToSupabase(employee: Employee): Promise<{ succ
     updated_at: new Date().toISOString(),
   };
 
+  let savedInSupabase = false;
   try {
     // 1. Guardar en tabla trabajadores
     const { error: trabError } = await supabase
@@ -223,19 +224,20 @@ export async function saveEmployeeToSupabase(employee: Employee): Promise<{ succ
     }
 
     if (!trabError) {
-      return { success: true, data: normalizedEmployee };
+      savedInSupabase = true;
     }
   } catch (err) {
     console.warn('Error al guardar en Supabase trabajadores:', err);
   }
 
-  // Backup vía API REST con trazabilidad
+  // Sincronización persistente en el servidor backend (garantiza persistencia entre reinicios)
   try {
     const res = await fetch('/api/trabajadores', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
+        'X-User-Role': normalizedEmployee.role || 'ADMIN_GENERAL',
       },
       body: JSON.stringify(normalizedEmployee),
     });
@@ -244,7 +246,10 @@ export async function saveEmployeeToSupabase(employee: Employee): Promise<{ succ
       return { success: true, data: resJson.data || normalizedEmployee };
     }
   } catch (apiErr: any) {
-    return { success: false, message: apiErr?.message };
+    console.warn('Error al sincronizar con /api/trabajadores:', apiErr?.message);
+    if (!savedInSupabase) {
+      return { success: false, message: apiErr?.message };
+    }
   }
 
   return { success: true, data: normalizedEmployee };

@@ -53,6 +53,7 @@ import {
   saveEmployeeToSupabase,
   getNextDracCodeFromPostgres,
 } from './services/employeeService';
+import { initiateDesktopDownload } from './utils/desktopDownloadUtils';
 
 import {
   fetchTurnosFromSupabase,
@@ -751,7 +752,15 @@ export default function App() {
   };
 
   const handleEditEmployee = async (updatedEmp: Employee) => {
-    setEmployees((prev) => prev.map((e) => (e.id === updatedEmp.id ? updatedEmp : e)));
+    setEmployees((prev) =>
+      prev.map((e) =>
+        e.id === updatedEmp.id ||
+        (e.dni && updatedEmp.dni && e.dni === updatedEmp.dni) ||
+        (e.username && updatedEmp.username && e.username.toLowerCase() === updatedEmp.username.toLowerCase())
+          ? updatedEmp
+          : e
+      )
+    );
     addAuditLog('PERSONAL', 'EDITAR_EMPLEADO', updatedEmp.id, `Actualización datos de personal: ${updatedEmp.first_name} ${updatedEmp.last_name}`);
     await saveEmployeeToSupabase(updatedEmp);
   };
@@ -1658,9 +1667,9 @@ export default function App() {
             <button
               id="banner-btn-download-exe"
               type="button"
-              onClick={() => window.open('/download/DRAC-Control-de-Asistencia-Setup.exe', '_blank', 'noopener,noreferrer')}
+              onClick={() => initiateDesktopDownload('exe')}
               className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-950/50 transition-colors cursor-pointer"
-              title="Abrir y descargar instalador ejecutable en nueva pestaña"
+              title="Descargar instalador ejecutable para Windows"
             >
               <span>Descargar .EXE</span>
               <span className="text-[10px] text-emerald-200 font-mono">(129 MB)</span>
@@ -1668,9 +1677,9 @@ export default function App() {
             <button
               id="banner-btn-download-zip"
               type="button"
-              onClick={() => window.open('/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip', '_blank', 'noopener,noreferrer')}
+              onClick={() => initiateDesktopDownload('zip')}
               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors cursor-pointer"
-              title="Abrir y descargar archivo comprimido ZIP"
+              title="Descargar paquete comprimido ZIP"
             >
               Descargar .ZIP
             </button>

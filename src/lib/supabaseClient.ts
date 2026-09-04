@@ -10,10 +10,17 @@ import { AppOrigin, Employee, Papeleta, Vacacion, Encargatura, DispositivoZkTeco
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 const procEnv = typeof process !== 'undefined' ? process.env : undefined;
 
-const SUPABASE_URL = 
+function cleanSupabaseUrl(rawUrl?: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return 'https://drac-cajamarca.supabase.co';
+  return rawUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+}
+
+const rawUrl = 
   metaEnv?.VITE_SUPABASE_URL || 
   procEnv?.VITE_SUPABASE_URL || 
   'https://drac-cajamarca.supabase.co';
+
+const SUPABASE_URL = cleanSupabaseUrl(rawUrl);
 
 const SUPABASE_ANON_KEY = 
   metaEnv?.VITE_SUPABASE_ANON_KEY || 

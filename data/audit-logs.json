@@ -1,5 +1,14 @@
 [
   {
+    "id": "audit-1788526111477",
+    "timestamp": "2026-09-04T12:48:30.877Z",
+    "module": "SEGURIDAD",
+    "action": "CAMBIO_PASSWORD_PRIMER_INGRESO",
+    "user_id": "emp-admin",
+    "user_name": "Administrador General",
+    "details": "Cambio obligatorio de contraseña inicial completado con éxito. Se removió el requerimiento de cambio para futuros inicios de sesión."
+  },
+  {
     "id": "aud-syncall-1787748459750",
     "timestamp": "2026-08-26T12:47:39.744Z",
     "user_id": "CONTROL_ASISTENCIA",

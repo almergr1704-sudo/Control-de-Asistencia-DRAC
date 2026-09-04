@@ -137,39 +137,59 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
     setIsProcessing(true);
 
     try {
-      // 1. Call Backend API endpoint to register and validate password change on server
+      // 1. Generate new cryptographic hash with fresh salt (NEVER plaintext)
+      const { hash: newHash, salt: newSalt, packed } = await hashPassword(newPassword);
+
+      // 2. Call Backend API endpoint to register and persist password change permanently
+      let serverUpdatedEmp: Employee | null = null;
       try {
-        await fetch('/api/auth/change-password', {
+        const response = await fetch('/api/auth/change-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             username: employee.username || employee.dni,
+            dni: employee.dni,
+            id: employee.id,
             currentPassword,
             newPassword,
+            passwordHash: packed,
+            passwordSalt: newSalt,
           }),
         });
-      } catch (e) {
-        // Fallback for offline mode
-      }
 
-      // 2. Generate new cryptographic hash with fresh salt (NEVER plaintext)
-      const { hash: newHash, salt: newSalt } = await hashPassword(newPassword);
+        if (!response.ok) {
+          const errData = await response.json().catch(() => null);
+          if (errData?.message) {
+            setIsProcessing(false);
+            setErrorMessage(errData.message);
+            return;
+          }
+        } else {
+          const data = await response.json().catch(() => null);
+          if (data?.employee) {
+            serverUpdatedEmp = data.employee;
+          }
+        }
+      } catch (e) {
+        console.warn('Servidor local / offline, continuando con actualización de cliente:', e);
+      }
 
       const updatedEmp: Employee = {
         ...employee,
-        password_hash: newHash,
+        ...(serverUpdatedEmp || {}),
+        password_hash: packed,
         password_salt: newSalt,
         password_change_required: false,
         primer_ingreso: 'COMPLETADO',
         last_password_change: new Date().toISOString(),
       };
 
-      setSuccessMessage('Contraseña actualizada correctamente.');
+      setSuccessMessage('Contraseña actualizada correctamente. Requerimiento completado permanentemente.');
 
       setTimeout(() => {
         setIsProcessing(false);
         onPasswordChanged(updatedEmp);
-      }, 900);
+      }, 700);
     } catch (err: any) {
       setIsProcessing(false);
       setErrorMessage('Ocurrió un error al procesar el cambio seguro de contraseña.');

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "emp-admin",
+    "codigo_trabajador": "DRAC-0001",
+    "dni": "10000001",
+    "first_name": "Administrador",
+    "last_name": "General",
+    "apellido_paterno": "General",
+    "apellido_materno": "",
+    "username": "admin",
+    "email": "admin@drac.gob.pe",
+    "phone": "",
+    "dependencia_id": "",
+    "dependencia_name": "",
+    "direccion_organo_id": "",
+    "direccion_organo_name": "",
+    "area_id": "",
+    "area_name": "",
+    "position": "Administrador General del Sistema",
+    "cargo_id": "",
+    "regimen_laboral": "D.L. 276",
+    "condicion_laboral": "NOMBRADO",
+    "role": "ADMIN_GENERAL",
+    "assigned_roles": [
+      "ADMIN_GENERAL"
+    ],
+    "has_system_access": true,
+    "account_status": "ACTIVE",
+    "auth_method": "PASSWORD",
+    "primer_ingreso": "PENDIENTE",
+    "password_change_required": true,
+    "active": true,
+    "hire_date": "2026-01-01",
+    "zkteco_pin": "10000001",
+    "schedule_id": "",
+    "schedule_name": "",
+    "password_hash": null,
+    "password_salt": null,
+    "last_password_change": "2026-09-04T12:48:30.877Z",
+    "updated_at": "2026-09-04T12:48:30.877Z"
+  }
+]

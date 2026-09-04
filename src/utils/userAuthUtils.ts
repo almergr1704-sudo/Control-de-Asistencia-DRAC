@@ -109,7 +109,10 @@ export function generateSalt(length = 16): string {
  * Genera el hash criptográfico SHA-256 de una contraseña con salt
  * NUNCA almacena contraseñas en texto plano
  */
-export async function hashPassword(password: string, salt?: string): Promise<{ hash: string; salt: string }> {
+export async function hashPassword(
+  password: string,
+  salt?: string
+): Promise<{ hash: string; salt: string; packed: string }> {
   const actualSalt = salt || generateSalt();
   const textToHash = `${actualSalt}:${password}`;
 
@@ -119,7 +122,7 @@ export async function hashPassword(password: string, salt?: string): Promise<{ h
       const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-      return { hash: hashHex, salt: actualSalt };
+      return { hash: hashHex, salt: actualSalt, packed: `${actualSalt}:${hashHex}` };
     }
   } catch (e) {
     console.warn('Crypto subtle no disponible, usando fallback hash:', e);
@@ -133,16 +136,45 @@ export async function hashPassword(password: string, salt?: string): Promise<{ h
     hash |= 0;
   }
   const fallbackHex = Math.abs(hash).toString(16).padStart(16, '0') + actualSalt.substring(0, 16);
-  return { hash: fallbackHex, salt: actualSalt };
+  return { hash: fallbackHex, salt: actualSalt, packed: `${actualSalt}:${fallbackHex}` };
 }
 
 /**
- * Verifica una contraseña contra su hash y salt almacenados
+ * Verifica una contraseña contra su hash y salt almacenados.
+ * Soporta formatos:
+ * 1. "salt:hash" empaquetado en una sola columna PostgreSQL / Supabase
+ * 2. Hash con salt separado
+ * 3. Hash legacy directo
  */
 export async function verifyPassword(password: string, storedHash: string, storedSalt?: string): Promise<boolean> {
   if (!password || !storedHash) return false;
-  const { hash } = await hashPassword(password, storedSalt);
-  return hash === storedHash;
+
+  // Formato 1: salt:hash empaquetado
+  if (storedHash.includes(':')) {
+    const colonIdx = storedHash.indexOf(':');
+    const saltPart = storedHash.substring(0, colonIdx);
+    const hashPart = storedHash.substring(colonIdx + 1);
+    const { hash } = await hashPassword(password, saltPart);
+    if (hash === hashPart || `${saltPart}:${hash}` === storedHash) {
+      return true;
+    }
+  }
+
+  // Formato 2: salt almacenado en campo separado
+  if (storedSalt) {
+    const { hash } = await hashPassword(password, storedSalt);
+    if (hash === storedHash) {
+      return true;
+    }
+  }
+
+  // Formato 3: Comparación directa con salt vacío / directo
+  const { hash: unSalted } = await hashPassword(password, '');
+  if (unSalted === storedHash) {
+    return true;
+  }
+
+  return false;
 }
 
 export interface AuthResult {
@@ -154,7 +186,7 @@ export interface AuthResult {
 }
 
 export const DEFAULT_ADMIN_USER: Employee = {
-  id: 'emp-01',
+  id: 'emp-admin',
   codigo_trabajador: 'DRAC-0001',
   dni: '10000001',
   first_name: 'Administrador',
@@ -219,7 +251,7 @@ export async function authenticateUser(
   // Garantía para usuario admin institucional si no fue localizado en la lista cargada
   if (!emp && (targetUser === 'admin' || targetUser === '10000001')) {
     const adminFromList = employees.find(
-      (e) => e.id === 'emp-01' || e.role === 'ADMIN_GENERAL' || (e.dni || '').trim() === '10000001'
+      (e) => e.id === 'emp-admin' || e.id === 'emp-01' || e.role === 'ADMIN_GENERAL' || (e.dni || '').trim() === '10000001'
     );
     if (adminFromList) {
       emp = {

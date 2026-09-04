@@ -11,7 +11,13 @@ import {
   Copy,
   Check,
   AlertCircle,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
+import {
+  initiateDesktopDownload,
+  getDesktopDownloadOptions,
+} from '../../utils/desktopDownloadUtils';
 
 interface DownloadDesktopModalProps {
   isOpen: boolean;
@@ -23,9 +29,16 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const [downloadingType, setDownloadingType] = useState<'exe' | 'zip' | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<{
+    text: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+  } | null>(null);
   const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
 
   if (!isOpen) return null;
+
+  const downloadOptions = getDesktopDownloadOptions();
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -33,10 +46,21 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleTriggerDownload = (path: string) => {
-    // Escapes iframe sandbox by opening the download in a new tab
-    const fullUrl = path.startsWith('http') ? path : `${window.location.origin}${path}`;
-    window.open(fullUrl, '_blank', 'noopener,noreferrer');
+  const handleTriggerDownload = async (type: 'exe' | 'zip') => {
+    setDownloadingType(type);
+    setDownloadNotice(null);
+    try {
+      await initiateDesktopDownload(type, (notice) => {
+        setDownloadNotice(notice);
+      });
+    } catch (err: any) {
+      setDownloadNotice({
+        text: `Error al iniciar descarga: ${err.message || 'Error inesperado'}`,
+        type: 'error',
+      });
+    } finally {
+      setTimeout(() => setDownloadingType(null), 1200);
+    }
   };
 
   const handleOpenAppInNewTab = () => {
@@ -108,6 +132,39 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
             </div>
           )}
 
+          {/* Live Download Feedback Notice */}
+          {downloadNotice && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 animate-in fade-in duration-150 ${
+                downloadNotice.type === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                  : downloadNotice.type === 'warning'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                  : downloadNotice.type === 'error'
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                  : 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                {downloadNotice.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <span className="font-semibold block">{downloadNotice.text}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDownloadNotice(null)}
+                className="text-slate-400 hover:text-white text-xs cursor-pointer p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Main Download Options Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Option 1: Direct Installer .EXE */}
@@ -118,19 +175,19 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                     Recomendado
                   </span>
-                  <span className="text-xs font-mono text-slate-400">129 MB</span>
+                  <span className="text-xs font-mono text-slate-400">{downloadOptions.exe.size}</span>
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <HardDrive className="w-4 h-4 text-emerald-400" />
-                    Instalador Windows (.exe)
+                    {downloadOptions.exe.label}
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Instalador autónomo NSIS para Windows 10 y 11 de 64 bits. Crea accesos directos en Escritorio y Menú Inicio.
+                    {downloadOptions.exe.description}
                   </p>
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
-                  DRAC-Control-de-Asistencia-Setup.exe
+                  {downloadOptions.exe.filename}
                 </div>
               </div>
 
@@ -138,21 +195,26 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 <button
                   type="button"
                   id="btn-download-exe-direct"
-                  onClick={() => handleTriggerDownload('/download/DRAC-Control-de-Asistencia-Setup.exe')}
-                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
+                  disabled={downloadingType === 'exe'}
+                  onClick={() => handleTriggerDownload('exe')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Descargar Instalador .EXE</span>
+                  {downloadingType === 'exe' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{downloadingType === 'exe' ? 'Verificando y Descargando...' : 'Descargar Instalador .EXE'}</span>
                 </button>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                   <span>Enlace alternativo:</span>
                   <a
-                    href="/api/download/exe"
+                    href={downloadOptions.exe.apiUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-emerald-400 hover:underline"
                   >
-                    Descarga vía /api/download/exe
+                    Descarga vía {downloadOptions.exe.apiUrl}
                   </a>
                 </div>
               </div>
@@ -166,19 +228,19 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                     <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
                     Paquete Completo
                   </span>
-                  <span className="text-xs font-mono text-slate-400">129 MB</span>
+                  <span className="text-xs font-mono text-slate-400">{downloadOptions.zip.size}</span>
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
                     <FileArchive className="w-4 h-4 text-indigo-400" />
-                    Paquete ZIP Windows (.zip)
+                    {downloadOptions.zip.label}
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Incluye el instalador .exe, el manual técnico <code className="text-indigo-300 font-mono">README_INSTALACION.txt</code> y ficha de versión.
+                    {downloadOptions.zip.description}
                   </p>
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
-                  DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+                  {downloadOptions.zip.filename}
                 </div>
               </div>
 
@@ -186,21 +248,26 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 <button
                   type="button"
                   id="btn-download-zip-direct"
-                  onClick={() => handleTriggerDownload('/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip')}
-                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
+                  disabled={downloadingType === 'zip'}
+                  onClick={() => handleTriggerDownload('zip')}
+                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Descargar Paquete .ZIP</span>
+                  {downloadingType === 'zip' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{downloadingType === 'zip' ? 'Verificando y Descargando...' : 'Descargar Paquete .ZIP'}</span>
                 </button>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                   <span>Enlace alternativo:</span>
                   <a
-                    href="/api/download/zip"
+                    href={downloadOptions.zip.apiUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-indigo-400 hover:underline"
                   >
-                    Descarga vía /api/download/zip
+                    Descarga vía {downloadOptions.zip.apiUrl}
                   </a>
                 </div>
               </div>

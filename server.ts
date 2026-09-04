@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs/promises";
 import nodeFs from "node:fs";
+import nodeCrypto from "node:crypto";
 import net from "node:net";
 import { createServer as createViteServer } from "vite";
 
@@ -498,7 +499,13 @@ async function startServer() {
   // ==========================================
   // Direct Download Routes for Windows Desktop Installer & ZIP
   // ==========================================
-  const handleDownloadFile = (res: express.Response, candidatePaths: string[], fileName: string, contentType: string) => {
+  const handleDownloadFile = (
+    res: express.Response,
+    candidatePaths: string[],
+    fileName: string,
+    contentType: string,
+    remoteFallbackUrl?: string
+  ) => {
     let targetPath: string | null = null;
     for (const p of candidatePaths) {
       if (nodeFs.existsSync(p)) {
@@ -508,7 +515,16 @@ async function startServer() {
     }
 
     if (!targetPath) {
-      return res.status(404).send(`Error: El archivo ${fileName} no se encuentra disponible temporalmente en el servidor.`);
+      if (remoteFallbackUrl) {
+        return res.redirect(302, remoteFallbackUrl);
+      }
+      return res.status(404).json({
+        success: false,
+        error: "FILE_NOT_FOUND_ON_SERVER",
+        message: `El archivo ${fileName} no se encuentra alojado localmente en este contenedor. En despliegues como Vercel, debe descargarse desde el almacenamiento de lanzamientos institucionales en GitHub Releases o Supabase Storage.`,
+        fileName,
+        suggestedReleaseUrl: `https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download/${fileName}`,
+      });
     }
 
     const stat = nodeFs.statSync(targetPath);
@@ -530,6 +546,41 @@ async function startServer() {
     fileStream.pipe(res);
   };
 
+  // GET /api/download/status - Check desktop installer availability
+  app.get("/api/download/status", (req, res) => {
+    const exeCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "DRAC-Control-de-Asistencia-Setup.exe"),
+    ];
+    const zipCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+    ];
+
+    const exeAvailable = exeCandidates.some((p) => nodeFs.existsSync(p));
+    const zipAvailable = zipCandidates.some((p) => nodeFs.existsSync(p));
+
+    return res.json({
+      success: true,
+      exe: {
+        available: exeAvailable,
+        filename: "DRAC-Control-de-Asistencia-Setup.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Setup.exe",
+        remoteUrl: process.env.DESKTOP_EXE_URL || "https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download/DRAC-Control-de-Asistencia-Setup.exe",
+      },
+      zip: {
+        available: zipAvailable,
+        filename: "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        url: "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        remoteUrl: process.env.DESKTOP_ZIP_URL || "https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+      },
+    });
+  });
+
   app.get(
     [
       "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
@@ -544,7 +595,8 @@ async function startServer() {
         path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       ];
-      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip");
+      const remoteUrl = process.env.DESKTOP_ZIP_URL || "https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip";
+      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip", remoteUrl);
     }
   );
 
@@ -562,7 +614,8 @@ async function startServer() {
         path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
         path.join(process.cwd(), "DRAC-Control-de-Asistencia-Setup.exe"),
       ];
-      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia-Setup.exe", "application/octet-stream");
+      const remoteUrl = process.env.DESKTOP_EXE_URL || "https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download/DRAC-Control-de-Asistencia-Setup.exe";
+      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia-Setup.exe", "application/octet-stream", remoteUrl);
     }
   );
 
@@ -4464,11 +4517,11 @@ pause
   // API ROUTES: Autenticación, Cambio de Contraseña y Acceso
   // ==============================================================
 
-  // POST /api/auth/change-password - Backend mandatory password change
+  // POST /api/auth/change-password - Backend mandatory password change and permanent persistence
   app.post("/api/auth/change-password", async (req, res) => {
     try {
-      const { username, currentPassword, newPassword } = req.body || {};
-      if (!username || !newPassword) {
+      const { username, dni, id, currentPassword, newPassword, passwordHash, passwordSalt } = req.body || {};
+      if ((!username && !dni && !id) || !newPassword) {
         return res.status(400).json({
           success: false,
           message: "Parámetros incompletos para el cambio de contraseña.",
@@ -4489,21 +4542,140 @@ pause
         });
       }
 
-      if (newPassword === currentPassword || newPassword === 'Drac2026') {
+      if (newPassword === currentPassword || newPassword === 'Drac2026' || newPassword === 'Drac2026!') {
         return res.status(400).json({
           success: false,
           message: "La nueva contraseña no puede ser idéntica a la contraseña temporal inicial.",
         });
       }
 
+      // 1. Update persistent local storage (data/employees.json)
+      const emps = await getStoredEmployees();
+      const targetUser = (username || '').trim().toLowerCase();
+      const targetDni = (dni || '').trim();
+      const targetId = (id || '').trim();
+
+      const targetIdx = emps.findIndex((e: any) => {
+        const u = (e.username || '').trim().toLowerCase();
+        const d = (e.dni || '').trim();
+        const i = (e.id || '').trim();
+        return (
+          (targetUser && (u === targetUser || d === targetUser || i === targetUser)) ||
+          (targetDni && d === targetDni) ||
+          (targetId && (i === targetId || d === targetId))
+        );
+      });
+
+      // Compute final salt & hash
+      let finalSalt = passwordSalt || '';
+      let finalHash = passwordHash || '';
+      if (!finalHash) {
+        finalSalt = nodeCrypto.randomBytes(16).toString('hex');
+        const digest = nodeCrypto.createHash('sha256').update(`${finalSalt}:${newPassword}`).digest('hex');
+        finalHash = `${finalSalt}:${digest}`;
+      }
+
+      const nowIso = new Date().toISOString();
+      let targetEmp: any = null;
+
+      if (targetIdx >= 0) {
+        emps[targetIdx] = {
+          ...emps[targetIdx],
+          password_hash: finalHash,
+          password_salt: finalSalt,
+          password_change_required: false,
+          primer_ingreso: 'COMPLETADO',
+          last_password_change: nowIso,
+          updated_at: nowIso,
+        };
+        targetEmp = emps[targetIdx];
+      } else {
+        // If not in array yet (e.g. fresh admin initialization), create/append
+        targetEmp = {
+          id: targetId || 'emp-admin',
+          codigo_trabajador: 'DRAC-0001',
+          dni: targetDni || '10000001',
+          username: targetUser || 'admin',
+          first_name: 'Administrador',
+          last_name: 'General',
+          role: 'ADMIN_GENERAL',
+          assigned_roles: ['TRABAJADOR', 'ADMIN_GENERAL'],
+          has_system_access: true,
+          account_status: 'ACTIVE',
+          password_hash: finalHash,
+          password_salt: finalSalt,
+          password_change_required: false,
+          primer_ingreso: 'COMPLETADO',
+          last_password_change: nowIso,
+          updated_at: nowIso,
+        };
+        emps.push(targetEmp);
+      }
+
+      await saveStoredEmployees(emps);
+      console.log(`[Seguridad DRAC] Contraseña y estado primer ingreso guardados permanentemente para ${targetEmp.username || targetEmp.dni}`);
+
+      // 2. Persist to Supabase PostgreSQL if configured
+      try {
+        const rawUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+        const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+        if (rawUrl && rawKey) {
+          const cleanUrl = rawUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+          const { createClient } = await import('@supabase/supabase-js');
+          const sbClient = createClient(cleanUrl, rawKey);
+
+          // Update usuarios table
+          await sbClient.from('usuarios').upsert(
+            {
+              username: targetEmp.username,
+              trabajador_id: targetEmp.id,
+              requiere_cambio_password: false,
+              password_hash: finalHash,
+              activo: true,
+              updated_at: nowIso,
+            },
+            { onConflict: 'username' }
+          );
+
+          // Update trabajadores table if exists
+          await sbClient
+            .from('trabajadores')
+            .update({ updated_at: nowIso })
+            .eq('id', targetEmp.id);
+          console.log(`[Seguridad DRAC] Estado sincronizado en Supabase`);
+        }
+      } catch (sbErr: any) {
+        console.warn('[Seguridad DRAC] Nota sobre sincronización Supabase:', sbErr?.message || sbErr);
+      }
+
+      // 3. Register institutional audit log
+      try {
+        const existingLogs = await getStoredAuditLogs();
+        existingLogs.unshift({
+          id: `audit-${Date.now()}`,
+          timestamp: nowIso,
+          module: 'SEGURIDAD',
+          action: 'CAMBIO_PASSWORD_PRIMER_INGRESO',
+          user_id: targetEmp.id,
+          user_name: `${targetEmp.first_name || ''} ${targetEmp.last_name || ''}`.trim() || targetEmp.username,
+          details: `Cambio obligatorio de contraseña inicial completado con éxito. Se removió el requerimiento de cambio para futuros inicios de sesión.`,
+        });
+        if (existingLogs.length > 1000) existingLogs.length = 1000;
+        await saveStoredAuditLogs(existingLogs);
+      } catch (auditErr) {
+        console.warn('Error al registrar auditoría de contraseña:', auditErr);
+      }
+
       return res.json({
         success: true,
-        message: "Contraseña cambiada exitosamente en el servidor.",
+        message: "Contraseña cambiada y guardada permanentemente en el servidor y base de datos.",
         password_change_required: false,
         primer_ingreso: 'COMPLETADO',
-        timestamp: new Date().toISOString(),
+        employee: targetEmp,
+        timestamp: nowIso,
       });
     } catch (err: any) {
+      console.error("Error en cambio de contraseña:", err);
       return res.status(500).json({
         success: false,
         message: "Error al procesar el cambio de contraseña en el servidor.",
@@ -6666,14 +6838,25 @@ pause
     try {
       const emp = req.body || {};
       const emps = await getStoredEmployees();
-      const existingIdx = emps.findIndex((e: any) => e.id === emp.id || e.dni === emp.dni);
+      const existingIdx = emps.findIndex((e: any) =>
+        e.id === emp.id ||
+        (e.dni && emp.dni && String(e.dni).trim() === String(emp.dni).trim()) ||
+        (e.username && emp.username && String(e.username).toLowerCase().trim() === String(emp.username).toLowerCase().trim())
+      );
       if (existingIdx >= 0) {
-        emps[existingIdx] = { ...emps[existingIdx], ...emp };
+        emps[existingIdx] = {
+          ...emps[existingIdx],
+          ...emp,
+          updated_at: new Date().toISOString(),
+        };
       } else {
-        emps.push(emp);
+        emps.push({
+          ...emp,
+          updated_at: new Date().toISOString(),
+        });
       }
       await saveStoredEmployees(emps);
-      return res.status(201).json({ success: true, message: "Trabajador sincronizado.", data: emp });
+      return res.status(201).json({ success: true, message: "Trabajador sincronizado permanentemente.", data: emp });
     } catch (err: any) {
       return res.status(500).json({ success: false, message: err?.message });
     }
