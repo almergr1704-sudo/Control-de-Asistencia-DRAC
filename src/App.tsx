@@ -1672,7 +1672,7 @@ export default function App() {
               title="Descargar instalador ejecutable para Windows"
             >
               <span>Descargar .EXE</span>
-              <span className="text-[10px] text-emerald-200 font-mono">(129 MB)</span>
+              <span className="text-[10px] text-emerald-200 font-mono">(Windows)</span>
             </button>
             <button
               id="banner-btn-download-zip"

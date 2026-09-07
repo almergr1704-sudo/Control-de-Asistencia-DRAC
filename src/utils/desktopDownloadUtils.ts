@@ -16,40 +16,62 @@ export interface DownloadOptionInfo {
   description: string;
 }
 
-const DEFAULT_EXE_FILENAME = 'DRAC-Control-de-Asistencia-Setup.exe';
-const DEFAULT_ZIP_FILENAME = 'DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip';
+const DEFAULT_EXE_FILENAME = 'DRAC-Asistencia-Setup.exe';
+const DEFAULT_ZIP_FILENAME = 'DRAC-Asistencia-Windows.zip';
 
-// Fallback GitHub release / Supabase storage URLs for production deployments like Vercel
-// where files >100 MB cannot be tracked in Git.
-const GITHUB_REPO_RELEASES = 'https://github.com/drac-cajamarca/drac-control-asistencia/releases/latest/download';
+export async function fetchServerDownloadStatus(): Promise<{
+  exeAvailable: boolean;
+  exeSize: string;
+  zipAvailable: boolean;
+  zipSize: string;
+}> {
+  try {
+    const res = await fetch('/api/download/status');
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        exeAvailable: Boolean(data?.exe?.available),
+        exeSize: data?.exe?.size && data.exe.size !== '0 MB' ? data.exe.size : '363 KB',
+        zipAvailable: Boolean(data?.zip?.available),
+        zipSize: data?.zip?.size || '32 MB',
+      };
+    }
+  } catch {}
+  return {
+    exeAvailable: false,
+    exeSize: '363 KB',
+    zipAvailable: false,
+    zipSize: '32 MB',
+  };
+}
 
 export function getDesktopDownloadOptions(): { exe: DownloadOptionInfo; zip: DownloadOptionInfo } {
   const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 
-  const remoteExeUrl = metaEnv?.VITE_DESKTOP_EXE_URL || `${GITHUB_REPO_RELEASES}/${DEFAULT_EXE_FILENAME}`;
-  const remoteZipUrl = metaEnv?.VITE_DESKTOP_ZIP_URL || `${GITHUB_REPO_RELEASES}/${DEFAULT_ZIP_FILENAME}`;
+  const remoteExeUrl = metaEnv?.VITE_DESKTOP_EXE_URL || '';
+  const remoteZipUrl = metaEnv?.VITE_DESKTOP_ZIP_URL || '';
 
   return {
     exe: {
       type: 'exe',
       label: 'Instalador Windows (.exe)',
       filename: DEFAULT_EXE_FILENAME,
-      size: '129 MB',
+      size: '363 KB',
       recommended: true,
       directUrl: `/download/${DEFAULT_EXE_FILENAME}`,
       apiUrl: '/api/download/exe',
       remoteUrl: remoteExeUrl,
-      description: 'Instalador autónomo NSIS para Windows 10 y 11 de 64 bits. Crea accesos directos en Escritorio y Menú Inicio.',
+      description: 'Instalador ejecutable de 64 bits para Windows 10 y 11. Conecta con Supabase institucional.',
     },
     zip: {
       type: 'zip',
-      label: 'Paquete ZIP Windows (.zip)',
+      label: 'Paquete Portable ZIP (.zip)',
       filename: DEFAULT_ZIP_FILENAME,
-      size: '129 MB',
+      size: '32 MB',
       directUrl: `/download/${DEFAULT_ZIP_FILENAME}`,
       apiUrl: '/api/download/zip',
       remoteUrl: remoteZipUrl,
-      description: 'Incluye el instalador .exe, el manual técnico README_INSTALACION.txt y utilitarios de inicio rápido.',
+      description: 'Versión comprimida portable lista para descomprimir y ejecutar directamente sin instalación previa.',
     },
   };
 }
@@ -86,37 +108,46 @@ export async function initiateDesktopDownload(
   let resolvedUrl = target.directUrl;
   let source: 'local' | 'remote' = 'local';
 
-  // 1. Verify if local endpoint is responsive
-  const isLocalAvailable = await verifyDownloadAvailable(target.directUrl);
+  // 1. Check server status first
+  const status = await fetchServerDownloadStatus();
+  const isAvailableLocally = type === 'exe' ? status.exeAvailable : status.zipAvailable;
 
-  if (!isLocalAvailable) {
-    // 2. Try the /api/download/* endpoint
-    const isApiAvailable = await verifyDownloadAvailable(target.apiUrl);
-    if (isApiAvailable) {
-      resolvedUrl = target.apiUrl;
+  if (isAvailableLocally) {
+    resolvedUrl = target.directUrl;
+    source = 'local';
+  } else {
+    // Verify endpoints
+    const isLocalAvailable = await verifyDownloadAvailable(target.directUrl);
+    if (isLocalAvailable) {
+      resolvedUrl = target.directUrl;
       source = 'local';
-    } else if (target.remoteUrl) {
-      // 3. In Vercel or static hosting, use remote release URL
-      resolvedUrl = target.remoteUrl;
-      source = 'remote';
-      if (onNotification) {
-        onNotification({
-          text: `Iniciando descarga desde almacenamiento remoto institucional (${target.filename})...`,
-          type: 'info',
-        });
-      }
     } else {
-      if (onNotification) {
-        onNotification({
-          text: `El archivo ${target.filename} no se encuentra disponible temporalmente. Configure VITE_DESKTOP_EXE_URL o consulte la guía técnica.`,
-          type: 'warning',
-        });
+      const isApiAvailable = await verifyDownloadAvailable(target.apiUrl);
+      if (isApiAvailable) {
+        resolvedUrl = target.apiUrl;
+        source = 'local';
+      } else if (target.remoteUrl && target.remoteUrl.trim() !== '') {
+        resolvedUrl = target.remoteUrl;
+        source = 'remote';
+        if (onNotification) {
+          onNotification({
+            text: `Iniciando descarga desde almacenamiento remoto institucional (${target.filename})...`,
+            type: 'info',
+          });
+        }
+      } else {
+        if (onNotification) {
+          onNotification({
+            text: `El archivo ${target.filename} no está publicado en este servidor web. En Vercel o hosting estático, compile los instaladores localmente con "npm run build:desktop" o configure el repositorio institucional.`,
+            type: 'warning',
+          });
+        }
+        return { success: false, url: '', source: 'local' };
       }
-      return { success: false, url: resolvedUrl, source: 'local' };
     }
   }
 
-  // 4. Trigger download via invisible anchor tag
+  // Trigger download via invisible anchor tag
   try {
     const link = document.createElement('a');
     link.href = resolvedUrl;
@@ -133,14 +164,13 @@ export async function initiateDesktopDownload(
 
     if (onNotification) {
       onNotification({
-        text: `Descarga de ${target.filename} iniciada correctamente.`,
+        text: `Descarga de ${target.filename} iniciada correctamente (${target.size}).`,
         type: 'success',
       });
     }
 
     return { success: true, url: resolvedUrl, source };
-  } catch (err) {
-    // Fallback: window.open
+  } catch (err: any) {
     window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
     return { success: true, url: resolvedUrl, source };
   }

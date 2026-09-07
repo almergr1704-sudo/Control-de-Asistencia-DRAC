@@ -8,6 +8,7 @@
     "output": "dist-desktop",
     "buildResources": "build"
   },
+  "compression": "normal",
   "files": [
     "dist/**/*",
     "electron/**/*",
@@ -21,9 +22,14 @@
       {
         "target": "nsis",
         "arch": ["x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64"]
       }
     ],
-    "icon": "build/icon.png"
+    "icon": "build/icon.png",
+    "artifactName": "DRAC-Asistencia-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,
@@ -34,6 +40,7 @@
     "createStartMenuShortcut": true,
     "shortcutName": "DRAC Control de Asistencia",
     "uninstallDisplayName": "DRAC Control de Asistencia - Desinstalar",
-    "artifactName": "DRAC-Control-de-Asistencia-Setup.exe"
+    "differentialPackage": false,
+    "artifactName": "DRAC-Asistencia-Setup.exe"
   }
 }

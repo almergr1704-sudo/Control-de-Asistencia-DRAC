@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Sistema Institucional de Control de Asistencia - DRAC Cajamarca",
+  "author": "Dirección Regional de Agricultura Cajamarca",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
