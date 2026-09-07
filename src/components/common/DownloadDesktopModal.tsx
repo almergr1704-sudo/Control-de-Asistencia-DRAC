@@ -234,13 +234,13 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 </button>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                   <span>Enlace directo:</span>
-                  <a
-                    href={downloadOptions.exe.directUrl}
-                    download={downloadOptions.exe.filename}
-                    className="text-emerald-400 hover:underline"
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerDownload('exe')}
+                    className="text-emerald-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
                   >
                     {downloadOptions.exe.filename}
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -286,13 +286,13 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 </button>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                   <span>Enlace directo:</span>
-                  <a
-                    href={downloadOptions.zip.directUrl}
-                    download={downloadOptions.zip.filename}
-                    className="text-indigo-400 hover:underline"
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerDownload('zip')}
+                    className="text-indigo-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
                   >
                     {downloadOptions.zip.filename}
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -336,20 +336,29 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
           </div>
 
           {/* Direct URL copy box for browser address bar */}
-          <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-2">
-            <div className="text-[11px] text-slate-400 truncate">
-              <span className="text-slate-300 font-medium">Ruta directa de descarga en el navegador:</span>{' '}
-              <span className="font-mono text-emerald-400">{window.location.origin}/download/DRAC-Asistencia-Windows.zip</span>
+          {(downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || serverStatus.exeAvailable || serverStatus.zipAvailable) && (
+            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-2">
+              <div className="text-[11px] text-slate-400 truncate">
+                <span className="text-slate-300 font-medium">Origen de descarga:</span>{' '}
+                <span className="font-mono text-emerald-400">
+                  {downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || `${window.location.origin}/api/download/exe`}
+                </span>
+              </div>
+              <button
+                id="btn-copy-download-url"
+                onClick={() =>
+                  handleCopy(
+                    downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || `${window.location.origin}/api/download/exe`,
+                    'url'
+                  )
+                }
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+              >
+                {copied === 'url' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copied === 'url' ? 'Copiado' : 'Copiar URL'}</span>
+              </button>
             </div>
-            <button
-              id="btn-copy-download-url"
-              onClick={() => handleCopy(`${window.location.origin}/download/DRAC-Asistencia-Windows.zip`, 'url')}
-              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-            >
-              {copied === 'url' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-              <span>{copied === 'url' ? 'Copiado' : 'Copiar URL'}</span>
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Modal Footer */}

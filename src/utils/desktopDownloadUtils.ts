@@ -16,8 +16,8 @@ export interface DownloadOptionInfo {
   description: string;
 }
 
-const DEFAULT_EXE_FILENAME = 'DRAC-Asistencia-Setup.exe';
-const DEFAULT_ZIP_FILENAME = 'DRAC-Asistencia-Windows.zip';
+const DEFAULT_EXE_FILENAME = 'DRAC-Control-de-Asistencia.exe';
+const DEFAULT_ZIP_FILENAME = 'DRAC-Asistencia-x64.zip';
 
 export async function fetchServerDownloadStatus(): Promise<{
   exeAvailable: boolean;
@@ -31,17 +31,17 @@ export async function fetchServerDownloadStatus(): Promise<{
       const data = await res.json();
       return {
         exeAvailable: Boolean(data?.exe?.available),
-        exeSize: data?.exe?.size && data.exe.size !== '0 MB' ? data.exe.size : '363 KB',
+        exeSize: data?.exe?.size && data.exe.size !== '0 MB' ? data.exe.size : '234 MB',
         zipAvailable: Boolean(data?.zip?.available),
-        zipSize: data?.zip?.size || '32 MB',
+        zipSize: data?.zip?.size || '245 MB',
       };
     }
   } catch {}
   return {
     exeAvailable: false,
-    exeSize: '363 KB',
+    exeSize: '234 MB',
     zipAvailable: false,
-    zipSize: '32 MB',
+    zipSize: '245 MB',
   };
 }
 
@@ -54,24 +54,24 @@ export function getDesktopDownloadOptions(): { exe: DownloadOptionInfo; zip: Dow
   return {
     exe: {
       type: 'exe',
-      label: 'Instalador Windows (.exe)',
+      label: 'Ejecutable Windows (.exe)',
       filename: DEFAULT_EXE_FILENAME,
-      size: '363 KB',
+      size: '234 MB',
       recommended: true,
       directUrl: `/download/${DEFAULT_EXE_FILENAME}`,
       apiUrl: '/api/download/exe',
       remoteUrl: remoteExeUrl,
-      description: 'Instalador ejecutable de 64 bits para Windows 10 y 11. Conecta con Supabase institucional.',
+      description: 'Ejecutable directo de 64 bits para Windows 10 y 11. Conecta con Supabase institucional.',
     },
     zip: {
       type: 'zip',
-      label: 'Paquete Portable ZIP (.zip)',
+      label: 'Paquete Portable Completo (.zip)',
       filename: DEFAULT_ZIP_FILENAME,
-      size: '32 MB',
+      size: '245 MB',
       directUrl: `/download/${DEFAULT_ZIP_FILENAME}`,
       apiUrl: '/api/download/zip',
       remoteUrl: remoteZipUrl,
-      description: 'Versión comprimida portable lista para descomprimir y ejecutar directamente sin instalación previa.',
+      description: 'Paquete comprimido con todos los binarios y dependencias listo para descomprimir y ejecutar.',
     },
   };
 }
@@ -84,7 +84,6 @@ export async function verifyDownloadAvailable(url: string): Promise<boolean> {
     const res = await fetch(url, { method: 'HEAD', cache: 'no-cache' });
     if (!res.ok) return false;
     const contentType = res.headers.get('content-type') || '';
-    // If Vercel rewrites to SPA HTML, contentType will be text/html
     if (contentType.includes('text/html')) {
       return false;
     }
@@ -95,8 +94,8 @@ export async function verifyDownloadAvailable(url: string): Promise<boolean> {
 }
 
 /**
- * Initiates a browser download reliably, bypassing iframe sandbox restrictions
- * and popup blockers by using an invisible DOM anchor element.
+ * Initiates a browser download reliably, prioritizing the remote storage URL (e.g. Supabase Storage),
+ * or serving from local environment if available.
  */
 export async function initiateDesktopDownload(
   type: 'exe' | 'zip',
@@ -105,61 +104,32 @@ export async function initiateDesktopDownload(
   const options = getDesktopDownloadOptions();
   const target = options[type];
 
-  let resolvedUrl = target.directUrl;
-  let source: 'local' | 'remote' = 'local';
+  // If a public remote URL (Supabase Storage) is configured, prioritize it directly:
+  if (target.remoteUrl && target.remoteUrl.trim() !== '') {
+    if (onNotification) {
+      onNotification({
+        text: `Iniciando descarga desde almacenamiento remoto (${target.filename})...`,
+        type: 'info',
+      });
+    }
+    window.open(target.remoteUrl, '_blank', 'noopener,noreferrer');
+    return { success: true, url: target.remoteUrl, source: 'remote' };
+  }
 
-  // 1. Check server status first
+  // Otherwise, check local server status (AI Studio / Dev container)
   const status = await fetchServerDownloadStatus();
   const isAvailableLocally = type === 'exe' ? status.exeAvailable : status.zipAvailable;
 
   if (isAvailableLocally) {
-    resolvedUrl = target.directUrl;
-    source = 'local';
-  } else {
-    // Verify endpoints
-    const isLocalAvailable = await verifyDownloadAvailable(target.directUrl);
-    if (isLocalAvailable) {
-      resolvedUrl = target.directUrl;
-      source = 'local';
-    } else {
-      const isApiAvailable = await verifyDownloadAvailable(target.apiUrl);
-      if (isApiAvailable) {
-        resolvedUrl = target.apiUrl;
-        source = 'local';
-      } else if (target.remoteUrl && target.remoteUrl.trim() !== '') {
-        resolvedUrl = target.remoteUrl;
-        source = 'remote';
-        if (onNotification) {
-          onNotification({
-            text: `Iniciando descarga desde almacenamiento remoto institucional (${target.filename})...`,
-            type: 'info',
-          });
-        }
-      } else {
-        if (onNotification) {
-          onNotification({
-            text: `El archivo ${target.filename} no está publicado en este servidor web. En Vercel o hosting estático, compile los instaladores localmente con "npm run build:desktop" o configure el repositorio institucional.`,
-            type: 'warning',
-          });
-        }
-        return { success: false, url: '', source: 'local' };
-      }
-    }
-  }
-
-  // Trigger download via invisible anchor tag
-  try {
     const link = document.createElement('a');
-    link.href = resolvedUrl;
+    link.href = target.apiUrl;
     link.setAttribute('download', target.filename);
     link.setAttribute('target', '_blank');
     link.setAttribute('rel', 'noopener noreferrer');
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
-      if (document.body.contains(link)) {
-        document.body.removeChild(link);
-      }
+      if (document.body.contains(link)) document.body.removeChild(link);
     }, 500);
 
     if (onNotification) {
@@ -168,10 +138,15 @@ export async function initiateDesktopDownload(
         type: 'success',
       });
     }
-
-    return { success: true, url: resolvedUrl, source };
-  } catch (err: any) {
-    window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
-    return { success: true, url: resolvedUrl, source };
+    return { success: true, url: target.apiUrl, source: 'local' };
   }
+
+  // Not available locally and no remote storage URL configured yet:
+  if (onNotification) {
+    onNotification({
+      text: `El archivo ${target.filename} aún no ha sido vinculado a una URL pública de almacenamiento (Supabase Storage). Suba el instalador compilado al bucket y configure su URL.`,
+      type: 'warning',
+    });
+  }
+  return { success: false, url: '', source: 'local' };
 }

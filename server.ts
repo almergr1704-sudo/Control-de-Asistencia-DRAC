@@ -575,26 +575,23 @@ async function startServer() {
   // GET /api/download/status - Check desktop installer availability
   app.get("/api/download/status", (req, res) => {
     const exeCandidates = [
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
       path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
     ];
     const zipCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
       path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
+      path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
-      path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Windows.zip"),
-      path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-      path.join(process.cwd(), "DRAC-Asistencia-Windows.zip"),
-      path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-x64.zip"),
+      path.join(process.cwd(), "DRAC-Asistencia-x64.zip"),
     ];
 
     const foundExe = exeCandidates.find((p) => nodeFs.existsSync(p));
@@ -637,6 +634,7 @@ async function startServer() {
 
   app.get(
     [
+      "/download/DRAC-Asistencia-x64.zip",
       "/download/DRAC-Asistencia-Windows.zip",
       "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
       "/download/DRAC-Control-de-Asistencia-1.0.0-win.zip",
@@ -646,22 +644,25 @@ async function startServer() {
     ],
     (req, res) => {
       const candidates = [
+        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
+        path.join(process.cwd(), "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "DRAC-Asistencia-Windows.zip"),
         path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
-        path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Windows.zip"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-x64.zip"),
       ];
       const remoteUrl = process.env.DESKTOP_ZIP_URL || "";
-      handleDownloadFile(res, candidates, "DRAC-Asistencia-Windows.zip", "application/zip", remoteUrl);
+      handleDownloadFile(res, candidates, "DRAC-Asistencia-x64.zip", "application/zip", remoteUrl);
     }
   );
 
   app.get(
     [
+      "/download/DRAC-Control-de-Asistencia.exe",
       "/download/DRAC-Asistencia-Setup.exe",
       "/download/DRAC-Control-de-Asistencia-Setup.exe",
       "/api/download/exe",
@@ -670,17 +671,16 @@ async function startServer() {
     ],
     (req, res) => {
       const candidates = [
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
       ];
       const remoteUrl = process.env.DESKTOP_EXE_URL || "";
-      handleDownloadFile(res, candidates, "DRAC-Asistencia-Setup.exe", "application/octet-stream", remoteUrl);
+      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia.exe", "application/octet-stream", remoteUrl);
     }
   );
 
