@@ -1,3 +1,8 @@
+================================================================================
+SISTEMA DE CONTROL DE ASISTENCIA INSTITUCIONAL (DRAC)
+INFORMACIÓN DE VERSIÓN Y COMPILACIÓN
+================================================================================
+
 Sistema:
 Sistema de Control de Asistencia Institucional
 
@@ -8,16 +13,25 @@ Plataforma:
 Windows (x64)
 
 Tecnología:
-Electron + React 19 + TypeScript + Vite + Tailwind CSS + Electron Builder (NSIS)
+Electron + React + TypeScript + Vite + Tailwind CSS + Node.js
 
 Fecha de compilación:
-2026-09-03 14:11:50 UTC
+2026-09-08
 
 Versión:
 1.0.0
 
-Instalador generado:
-DRAC-Control-de-Asistencia-Setup.exe (Arquitectura x64, Nullsoft Scriptable Install System)
-
-Id de Aplicación:
+Identificador de Aplicación:
 pe.gob.drac.controlasistencia
+
+Nombre de Producto:
+DRAC Control de Asistencia
+
+Arquitectura Soportada:
+Windows 10 / 11 (64 bits)
+
+Integraciones:
+- Base de datos institucional Supabase / PostgreSQL
+- Relojes y Marcadores Biométricos ZKTeco (Protocolo TCP/IP Puerto 4370)
+- Exportación de Asistencias a formato Excel (.xlsx) y PDF
+================================================================================
