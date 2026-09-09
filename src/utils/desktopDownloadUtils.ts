@@ -12,12 +12,13 @@ export interface DownloadOptionInfo {
   recommended?: boolean;
   directUrl: string;
   apiUrl: string;
-  remoteUrl?: string;
+  remoteUrl: string;
+  isConfigured: boolean;
   description: string;
 }
 
 const DEFAULT_EXE_FILENAME = 'DRAC-Control-de-Asistencia.exe';
-const DEFAULT_ZIP_FILENAME = 'DRAC-Asistencia-x64.zip';
+const DEFAULT_ZIP_FILENAME = 'DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip';
 
 export async function fetchServerDownloadStatus(): Promise<{
   exeAvailable: boolean;
@@ -31,47 +32,57 @@ export async function fetchServerDownloadStatus(): Promise<{
       const data = await res.json();
       return {
         exeAvailable: Boolean(data?.exe?.available),
-        exeSize: data?.exe?.size && data.exe.size !== '0 MB' ? data.exe.size : '234 MB',
+        exeSize: data?.exe?.size && data.exe.size !== '0 MB' ? data.exe.size : '34.4 MB',
         zipAvailable: Boolean(data?.zip?.available),
-        zipSize: data?.zip?.size || '245 MB',
+        zipSize: data?.zip?.size || '34.4 MB',
       };
     }
   } catch {}
   return {
     exeAvailable: false,
-    exeSize: '234 MB',
+    exeSize: '34.4 MB',
     zipAvailable: false,
-    zipSize: '245 MB',
+    zipSize: '34.4 MB',
   };
 }
 
 export function getDesktopDownloadOptions(): { exe: DownloadOptionInfo; zip: DownloadOptionInfo } {
   const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 
-  const remoteExeUrl = metaEnv?.VITE_DESKTOP_EXE_URL || '';
-  const remoteZipUrl = metaEnv?.VITE_DESKTOP_ZIP_URL || '';
+  const rawExeUrl = typeof metaEnv?.VITE_DESKTOP_EXE_URL === 'string' ? metaEnv.VITE_DESKTOP_EXE_URL.trim() : '';
+  const rawZipUrl = typeof metaEnv?.VITE_DESKTOP_ZIP_URL === 'string' ? metaEnv.VITE_DESKTOP_ZIP_URL.trim() : '';
+
+  const isValidUrl = (url: string) => url.startsWith('http://') || url.startsWith('https://');
+
+  const remoteExeUrl = isValidUrl(rawExeUrl) ? rawExeUrl : '';
+  const remoteZipUrl = isValidUrl(rawZipUrl) ? rawZipUrl : '';
+
+  const isExeConfigured = Boolean(remoteExeUrl);
+  const isZipConfigured = Boolean(remoteZipUrl);
 
   return {
     exe: {
       type: 'exe',
-      label: 'Ejecutable Windows (.exe)',
+      label: 'Instalador Windows (.exe)',
       filename: DEFAULT_EXE_FILENAME,
-      size: '234 MB',
+      size: '34.4 MB',
       recommended: true,
-      directUrl: `/download/${DEFAULT_EXE_FILENAME}`,
-      apiUrl: '/api/download/exe',
+      directUrl: remoteExeUrl,
+      apiUrl: remoteExeUrl || '/api/download/exe',
       remoteUrl: remoteExeUrl,
-      description: 'Ejecutable directo de 64 bits para Windows 10 y 11. Conecta con Supabase institucional.',
+      isConfigured: isExeConfigured,
+      description: 'Instalador ejecutable de 64 bits para Windows 10 y 11. Conecta con la base institucional.',
     },
     zip: {
       type: 'zip',
       label: 'Paquete Portable Completo (.zip)',
       filename: DEFAULT_ZIP_FILENAME,
-      size: '245 MB',
-      directUrl: `/download/${DEFAULT_ZIP_FILENAME}`,
-      apiUrl: '/api/download/zip',
+      size: '34.4 MB',
+      directUrl: remoteZipUrl,
+      apiUrl: remoteZipUrl || '/api/download/zip',
       remoteUrl: remoteZipUrl,
-      description: 'Paquete comprimido con todos los binarios y dependencias listo para descomprimir y ejecutar.',
+      isConfigured: isZipConfigured,
+      description: 'Paquete comprimido con instalador, script automatizado y manual técnico oficial.',
     },
   };
 }
@@ -80,6 +91,7 @@ export function getDesktopDownloadOptions(): { exe: DownloadOptionInfo; zip: Dow
  * Checks if a specific download URL is serving a valid file (not 404 or index.html rewrite).
  */
 export async function verifyDownloadAvailable(url: string): Promise<boolean> {
+  if (!url) return false;
   try {
     const res = await fetch(url, { method: 'HEAD', cache: 'no-cache' });
     if (!res.ok) return false;
@@ -94,21 +106,21 @@ export async function verifyDownloadAvailable(url: string): Promise<boolean> {
 }
 
 /**
- * Initiates a browser download reliably, prioritizing the remote storage URL (e.g. Supabase Storage),
+ * Initiates a browser download reliably, prioritizing the remote storage URL (VITE_DESKTOP_EXE_URL / VITE_DESKTOP_ZIP_URL),
  * or serving from local environment if available.
  */
 export async function initiateDesktopDownload(
   type: 'exe' | 'zip',
   onNotification?: (msg: { text: string; type: 'info' | 'success' | 'warning' | 'error' }) => void
-): Promise<{ success: boolean; url: string; source: 'local' | 'remote' }> {
+): Promise<{ success: boolean; url: string; source: 'local' | 'remote' | 'none' }> {
   const options = getDesktopDownloadOptions();
   const target = options[type];
 
-  // If a public remote URL (Supabase Storage) is configured, prioritize it directly:
-  if (target.remoteUrl && target.remoteUrl.trim() !== '') {
+  // 1. If an external URL is configured, download directly from it
+  if (target.isConfigured && target.remoteUrl) {
     if (onNotification) {
       onNotification({
-        text: `Iniciando descarga desde almacenamiento remoto (${target.filename})...`,
+        text: `Iniciando descarga oficial de ${target.filename}...`,
         type: 'info',
       });
     }
@@ -116,7 +128,7 @@ export async function initiateDesktopDownload(
     return { success: true, url: target.remoteUrl, source: 'remote' };
   }
 
-  // Otherwise, check local server status (AI Studio / Dev container)
+  // 2. Otherwise check if running in local environment where binary exists
   const status = await fetchServerDownloadStatus();
   const isAvailableLocally = type === 'exe' ? status.exeAvailable : status.zipAvailable;
 
@@ -141,12 +153,13 @@ export async function initiateDesktopDownload(
     return { success: true, url: target.apiUrl, source: 'local' };
   }
 
-  // Not available locally and no remote storage URL configured yet:
+  // 3. Not configured with an external URL and not available locally:
+  // Show a clear, friendly institutional message instead of letting browser 404 or Not Found
   if (onNotification) {
     onNotification({
-      text: `El archivo ${target.filename} aún no ha sido vinculado a una URL pública de almacenamiento (Supabase Storage). Suba el instalador compilado al bucket y configure su URL.`,
+      text: `El instalador para Windows (${target.filename}) aún no está publicado. Configure la variable VITE_DESKTOP_${type.toUpperCase()}_URL con el enlace de descarga oficial para habilitarlo.`,
       type: 'warning',
     });
   }
-  return { success: false, url: '', source: 'local' };
+  return { success: false, url: '', source: 'none' };
 }

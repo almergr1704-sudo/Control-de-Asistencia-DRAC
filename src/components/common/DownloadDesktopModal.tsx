@@ -194,108 +194,174 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
           {/* Main Download Options Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Option 1: Direct Installer .EXE */}
-            <div className="p-5 rounded-xl bg-[#131824] border border-emerald-500/30 hover:border-emerald-500/60 transition-all flex flex-col justify-between group">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    {serverStatus.exeAvailable ? 'Disponible' : 'Compilación'}
-                  </span>
-                  <span className="text-xs font-mono text-slate-400">{serverStatus.exeSize || downloadOptions.exe.size}</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <HardDrive className="w-4 h-4 text-emerald-400" />
-                    {downloadOptions.exe.label}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {downloadOptions.exe.description}
-                  </p>
-                </div>
-                <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
-                  {downloadOptions.exe.filename}
-                </div>
-              </div>
+            {(() => {
+              const isExeReady = downloadOptions.exe.isConfigured || serverStatus.exeAvailable;
+              return (
+                <div className={`p-5 rounded-xl bg-[#131824] border transition-all flex flex-col justify-between group ${
+                  isExeReady ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-slate-700/60'
+                }`}>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 ${
+                        isExeReady
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}>
+                        {isExeReady ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                        )}
+                        {downloadOptions.exe.isConfigured
+                          ? 'Publicado Oficial'
+                          : serverStatus.exeAvailable
+                          ? 'Disponible Local'
+                          : 'Pendiente de Publicación'}
+                      </span>
+                      <span className="text-xs font-mono text-slate-400">{serverStatus.exeSize || downloadOptions.exe.size}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <HardDrive className="w-4 h-4 text-emerald-400" />
+                        {downloadOptions.exe.label}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {downloadOptions.exe.description}
+                      </p>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
+                      {downloadOptions.exe.filename}
+                    </div>
+                  </div>
 
-              <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
-                <button
-                  type="button"
-                  id="btn-download-exe-direct"
-                  disabled={downloadingType === 'exe'}
-                  onClick={() => handleTriggerDownload('exe')}
-                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
-                >
-                  {downloadingType === 'exe' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  <span>{downloadingType === 'exe' ? 'Verificando y Descargando...' : 'Descargar Instalador .EXE'}</span>
-                </button>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-                  <span>Enlace directo:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleTriggerDownload('exe')}
-                    className="text-emerald-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
-                  >
-                    {downloadOptions.exe.filename}
-                  </button>
+                  <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
+                    <button
+                      type="button"
+                      id="btn-download-exe-direct"
+                      disabled={downloadingType === 'exe'}
+                      onClick={() => handleTriggerDownload('exe')}
+                      className={`w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] ${
+                        isExeReady
+                          ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/40'
+                          : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                      }`}
+                    >
+                      {downloadingType === 'exe' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      <span>
+                        {downloadingType === 'exe'
+                          ? 'Verificando y Descargando...'
+                          : isExeReady
+                          ? 'Descargar Instalador .EXE'
+                          : 'Consultar Instalador .EXE'}
+                      </span>
+                    </button>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                      <span>Estado:</span>
+                      {isExeReady ? (
+                        <button
+                          type="button"
+                          onClick={() => handleTriggerDownload('exe')}
+                          className="text-emerald-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
+                        >
+                          {downloadOptions.exe.filename}
+                        </button>
+                      ) : (
+                        <span className="text-amber-400/80 italic">Aún no publicado en la web</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Option 2: Full ZIP Package */}
-            <div className="p-5 rounded-xl bg-[#131824] border border-indigo-500/30 hover:border-indigo-500/60 transition-all flex flex-col justify-between group">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-md bg-indigo-500/20 text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1.5">
-                    <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
-                    {serverStatus.zipAvailable ? 'Disponible' : 'Portable'}
-                  </span>
-                  <span className="text-xs font-mono text-slate-400">{serverStatus.zipSize || downloadOptions.zip.size}</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <FileArchive className="w-4 h-4 text-indigo-400" />
-                    {downloadOptions.zip.label}
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {downloadOptions.zip.description}
-                  </p>
-                </div>
-                <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
-                  {downloadOptions.zip.filename}
-                </div>
-              </div>
+            {(() => {
+              const isZipReady = downloadOptions.zip.isConfigured || serverStatus.zipAvailable;
+              return (
+                <div className={`p-5 rounded-xl bg-[#131824] border transition-all flex flex-col justify-between group ${
+                  isZipReady ? 'border-indigo-500/30 hover:border-indigo-500/60' : 'border-slate-700/60'
+                }`}>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 ${
+                        isZipReady
+                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                      }`}>
+                        {isZipReady ? (
+                          <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                        )}
+                        {downloadOptions.zip.isConfigured
+                          ? 'Publicado Oficial'
+                          : serverStatus.zipAvailable
+                          ? 'Disponible Local'
+                          : 'Pendiente de Publicación'}
+                      </span>
+                      <span className="text-xs font-mono text-slate-400">{serverStatus.zipSize || downloadOptions.zip.size}</span>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <FileArchive className="w-4 h-4 text-indigo-400" />
+                        {downloadOptions.zip.label}
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {downloadOptions.zip.description}
+                      </p>
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-mono bg-slate-900/80 p-2 rounded-lg border border-slate-800 truncate">
+                      {downloadOptions.zip.filename}
+                    </div>
+                  </div>
 
-              <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
-                <button
-                  type="button"
-                  id="btn-download-zip-direct"
-                  disabled={downloadingType === 'zip'}
-                  onClick={() => handleTriggerDownload('zip')}
-                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40 transition-all cursor-pointer group-hover:scale-[1.01]"
-                >
-                  {downloadingType === 'zip' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  <span>{downloadingType === 'zip' ? 'Verificando y Descargando...' : 'Descargar Paquete .ZIP'}</span>
-                </button>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-                  <span>Enlace directo:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleTriggerDownload('zip')}
-                    className="text-indigo-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
-                  >
-                    {downloadOptions.zip.filename}
-                  </button>
+                  <div className="pt-4 mt-2 border-t border-slate-800/80 space-y-2">
+                    <button
+                      type="button"
+                      id="btn-download-zip-direct"
+                      disabled={downloadingType === 'zip'}
+                      onClick={() => handleTriggerDownload('zip')}
+                      className={`w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] ${
+                        isZipReady
+                          ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950/40'
+                          : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                      }`}
+                    >
+                      {downloadingType === 'zip' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      <span>
+                        {downloadingType === 'zip'
+                          ? 'Verificando y Descargando...'
+                          : isZipReady
+                          ? 'Descargar Paquete .ZIP'
+                          : 'Consultar Paquete .ZIP'}
+                      </span>
+                    </button>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                      <span>Estado:</span>
+                      {isZipReady ? (
+                        <button
+                          type="button"
+                          onClick={() => handleTriggerDownload('zip')}
+                          className="text-indigo-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
+                        >
+                          {downloadOptions.zip.filename}
+                        </button>
+                      ) : (
+                        <span className="text-amber-400/80 italic">Aún no publicado en la web</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           {/* Quick Technical Specs */}
@@ -335,20 +401,20 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
             </ol>
           </div>
 
-          {/* Direct URL copy box for browser address bar */}
-          {(downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || serverStatus.exeAvailable || serverStatus.zipAvailable) && (
+          {/* Direct URL copy box or Publication status box */}
+          {downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl ? (
             <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-2">
               <div className="text-[11px] text-slate-400 truncate">
-                <span className="text-slate-300 font-medium">Origen de descarga:</span>{' '}
+                <span className="text-slate-300 font-medium">URL Oficial de Descarga:</span>{' '}
                 <span className="font-mono text-emerald-400">
-                  {downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || `${window.location.origin}/api/download/exe`}
+                  {downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl}
                 </span>
               </div>
               <button
                 id="btn-copy-download-url"
                 onClick={() =>
                   handleCopy(
-                    downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl || `${window.location.origin}/api/download/exe`,
+                    downloadOptions.exe.remoteUrl || downloadOptions.zip.remoteUrl,
                     'url'
                   )
                 }
@@ -357,6 +423,11 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                 {copied === 'url' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 <span>{copied === 'url' ? 'Copiado' : 'Copiar URL'}</span>
               </button>
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+              <span>Estado del instalador: <strong className="text-slate-300 font-medium">Compilado y listo para publicación</strong></span>
+              <span className="text-slate-400 font-mono text-[10px]">VITE_DESKTOP_EXE_URL pendiente</span>
             </div>
           )}
         </div>

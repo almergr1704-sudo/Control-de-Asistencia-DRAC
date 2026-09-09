@@ -515,38 +515,41 @@ async function startServer() {
     }
 
     if (!targetPath) {
-      if (remoteFallbackUrl && (process.env.DESKTOP_EXE_URL || process.env.DESKTOP_ZIP_URL)) {
-        return res.redirect(302, remoteFallbackUrl);
+      const trimmedRemoteUrl = (remoteFallbackUrl || "").trim();
+      if (trimmedRemoteUrl && (trimmedRemoteUrl.startsWith("http://") || trimmedRemoteUrl.startsWith("https://"))) {
+        return res.redirect(302, trimmedRemoteUrl);
       }
+
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.status(200).send(`
         <!DOCTYPE html>
         <html lang="es">
         <head>
           <meta charset="UTF-8">
-          <title>Descarga de Versión Escritorio - DRAC Cajamarca</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Instalador en Preparación - DRAC Cajamarca</title>
           <style>
             body { font-family: system-ui, -apple-system, sans-serif; background: #0B0F19; color: #E2E8F0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .card { background: #151C2C; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; max-width: 600px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }
-            h1 { font-size: 20px; color: #10B981; margin-top: 0; }
-            p { font-size: 14px; line-height: 1.6; color: #94A3B8; }
-            .badge { display: inline-block; background: #064E3B; color: #34D399; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
-            .steps { background: #0A0D14; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin: 20px 0; font-family: monospace; font-size: 13px; color: #38BDF8; }
-            .btn { display: inline-block; background: #059669; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 12px; }
-            .btn:hover { background: #10B981; }
+            .card { background: #151C2C; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; max-width: 580px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); text-align: center; }
+            h1 { font-size: 20px; color: #38BDF8; margin-top: 0; margin-bottom: 12px; }
+            p { font-size: 14px; line-height: 1.6; color: #94A3B8; margin: 10px 0; }
+            .badge { display: inline-block; background: #0C4A6E; color: #38BDF8; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+            .notice-box { background: #0A0D14; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px; color: #F59E0B; text-align: left; }
+            .btn { display: inline-block; background: #0284C7; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 12px; transition: background 0.2s; }
+            .btn:hover { background: #0369A1; }
           </style>
         </head>
         <body>
           <div class="card">
-            <span class="badge">DRAC Cajamarca — Control de Asistencia Institucional</span>
-            <h1>Versión de Escritorio Windows</h1>
-            <p>El archivo <strong>${fileName}</strong> está disponible para compilar directamente desde el entorno de administración o mediante lanzamiento oficial.</p>
-            <div class="steps">
-              1. En AI Studio / Entorno Local: Ejecutar "npm run build:desktop"<br/>
-              2. Los archivos se generan en: dist-desktop/${fileName}<br/>
-              3. Para despliegue web (Vercel): Configure VITE_DESKTOP_EXE_URL o VITE_DESKTOP_ZIP_URL.
+            <span class="badge">DRAC Cajamarca — Control de Asistencia</span>
+            <h1>Instalador de Escritorio Pendiente de Publicación</h1>
+            <p>El paquete <strong>${fileName}</strong> aún no cuenta con un enlace público de descarga configurado.</p>
+            <div class="notice-box">
+              <strong>Información para el Administrador:</strong><br/>
+              Para habilitar la descarga directa en la plataforma web, configure la variable de entorno <code>VITE_DESKTOP_EXE_URL</code> o <code>VITE_DESKTOP_ZIP_URL</code> con el enlace de descarga permanente del instalador.
             </div>
-            <a href="/" class="btn">Volver a la Aplicación Web</a>
+            <p>Si es usuario institucional, por favor comuníquese con el área de TI de la Dirección Regional de Agricultura para obtener el instalador.</p>
+            <a href="/" class="btn">Volver al Sistema Web</a>
           </div>
         </body>
         </html>
@@ -578,20 +581,21 @@ async function startServer() {
       path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
       path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
       path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
       path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
     ];
     const zipCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
-      path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-      path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
+      path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-x64.zip"),
-      path.join(process.cwd(), "DRAC-Asistencia-x64.zip"),
+      path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
     ];
 
     const foundExe = exeCandidates.find((p) => nodeFs.existsSync(p));
@@ -613,50 +617,50 @@ async function startServer() {
       } catch {}
     }
 
+    const remoteExe = (process.env.VITE_DESKTOP_EXE_URL || "").trim();
+    const remoteZip = (process.env.VITE_DESKTOP_ZIP_URL || "").trim();
+
     return res.json({
       success: true,
       exe: {
-        available: Boolean(foundExe),
-        size: exeSize || "234 MB",
-        filename: "DRAC-Asistencia-Setup.exe",
-        url: "/download/DRAC-Asistencia-Setup.exe",
-        remoteUrl: process.env.DESKTOP_EXE_URL || "",
+        available: Boolean(foundExe) || Boolean(remoteExe),
+        size: exeSize || "34.4 MB",
+        filename: "DRAC-Control-de-Asistencia.exe",
+        url: remoteExe || "/download/DRAC-Control-de-Asistencia.exe",
+        remoteUrl: remoteExe,
       },
       zip: {
-        available: Boolean(foundZip),
-        size: zipSize || "181 MB",
-        filename: "DRAC-Asistencia-Windows.zip",
-        url: "/download/DRAC-Asistencia-Windows.zip",
-        remoteUrl: process.env.DESKTOP_ZIP_URL || "",
+        available: Boolean(foundZip) || Boolean(remoteZip),
+        size: zipSize || "34.4 MB",
+        filename: "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        url: remoteZip || "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        remoteUrl: remoteZip,
       },
     });
   });
 
   app.get(
     [
+      "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
       "/download/DRAC-Asistencia-x64.zip",
       "/download/DRAC-Asistencia-Windows.zip",
-      "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-      "/download/DRAC-Control-de-Asistencia-1.0.0-win.zip",
       "/api/download/desktop",
       "/api/download/zip",
       "/download/zip",
     ],
     (req, res) => {
       const candidates = [
+        path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
-        path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
-        path.join(process.cwd(), "DRAC-Asistencia-x64.zip"),
-        path.join(process.cwd(), "DRAC-Asistencia-Windows.zip"),
         path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
-        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-x64.zip"),
+        path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       ];
-      const remoteUrl = process.env.DESKTOP_ZIP_URL || "";
-      handleDownloadFile(res, candidates, "DRAC-Asistencia-x64.zip", "application/zip", remoteUrl);
+      const remoteUrl = (process.env.VITE_DESKTOP_ZIP_URL || "").trim();
+      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip", remoteUrl);
     }
   );
 
@@ -665,6 +669,7 @@ async function startServer() {
       "/download/DRAC-Control-de-Asistencia.exe",
       "/download/DRAC-Asistencia-Setup.exe",
       "/download/DRAC-Control-de-Asistencia-Setup.exe",
+      "/download/DRAC-Asistencia-x64.exe",
       "/api/download/exe",
       "/api/download/setup",
       "/download/exe",
@@ -674,12 +679,13 @@ async function startServer() {
         path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
         path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
         path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
       ];
-      const remoteUrl = process.env.DESKTOP_EXE_URL || "";
+      const remoteUrl = (process.env.VITE_DESKTOP_EXE_URL || "").trim();
       handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia.exe", "application/octet-stream", remoteUrl);
     }
   );

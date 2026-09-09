@@ -2,7 +2,7 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/((?!download/|api/|assets/|favicon.ico|icon.png|.*\\..*).*)",
+      "source": "/((?!api/|assets/|favicon.ico|icon.png|.*\\..*).*)",
       "destination": "/index.html"
     }
   ],
@@ -10,10 +10,6 @@
     {
       "source": "/download/(.*)",
       "headers": [
-        {
-          "key": "Content-Disposition",
-          "value": "attachment"
-        },
         {
           "key": "Cache-Control",
           "value": "public, max-age=3600"
