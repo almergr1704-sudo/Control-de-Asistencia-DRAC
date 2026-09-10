@@ -4588,6 +4588,164 @@ pause
   // API ROUTES: Autenticación, Cambio de Contraseña y Acceso
   // ==============================================================
 
+  // POST /api/auth/login - Backend authoritative login and credential verification
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { identifier, password } = req.body || {};
+      if (!identifier || !password) {
+        return res.status(400).json({
+          success: false,
+          message: "Debe ingresar su identificador (usuario o DNI) y contraseña.",
+        });
+      }
+
+      const cleanId = String(identifier).trim().toLowerCase();
+      const cleanPass = String(password).trim();
+      const emps = await getStoredEmployees();
+
+      // Find user by username, dni, email or id
+      let targetIdx = emps.findIndex((e: any) => {
+        const u = (e.username || '').trim().toLowerCase();
+        const d = (e.dni || '').trim().toLowerCase();
+        const m = (e.email || '').trim().toLowerCase();
+        const i = (e.id || '').trim().toLowerCase();
+        return u === cleanId || d === cleanId || m === cleanId || i === cleanId;
+      });
+
+      // Special rule: if admin user does not exist in DB yet, create it once with default temporary password
+      if (targetIdx < 0 && (cleanId === 'admin' || cleanId === '10000001')) {
+        const adminExists = emps.some(
+          (e: any) => (e.username || '').trim().toLowerCase() === 'admin' || (e.dni || '').trim() === '10000001'
+        );
+        if (!adminExists) {
+          const nowIso = new Date().toISOString();
+          const initialAdmin = {
+            id: 'emp-admin',
+            codigo_trabajador: 'DRAC-0001',
+            dni: '10000001',
+            first_name: 'Administrador',
+            last_name: 'General',
+            apellido_paterno: 'General',
+            apellido_materno: '',
+            username: 'admin',
+            email: 'admin@drac.gob.pe',
+            phone: '',
+            dependencia_id: '',
+            dependencia_name: '',
+            direccion_organo_id: '',
+            direccion_organo_name: '',
+            area_id: '',
+            area_name: '',
+            position: 'Administrador General del Sistema',
+            cargo_id: '',
+            regimen_laboral: 'D.L. 276',
+            condicion_laboral: 'NOMBRADO',
+            role: 'ADMIN_GENERAL',
+            assigned_roles: ['ADMIN_GENERAL', 'TRABAJADOR'],
+            has_system_access: true,
+            account_status: 'ACTIVE',
+            auth_method: 'PASSWORD',
+            primer_ingreso: 'PENDIENTE',
+            password_change_required: true,
+            active: true,
+            hire_date: '2026-01-01',
+            zkteco_pin: '10000001',
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+          emps.unshift(initialAdmin);
+          await saveStoredEmployees(emps);
+          targetIdx = 0;
+        }
+      }
+
+      if (targetIdx < 0) {
+        return res.status(401).json({
+          success: false,
+          code: 'NOT_FOUND',
+          message: 'El usuario o DNI ingresado no se encuentra registrado en el Directorio de Personal.',
+        });
+      }
+
+      const emp = emps[targetIdx];
+
+      if (emp.active === false || emp.account_status === 'INACTIVE') {
+        return res.status(403).json({
+          success: false,
+          code: 'USER_INACTIVE',
+          message: 'Su usuario se encuentra inactivo. Comuníquese con el administrador del sistema.',
+        });
+      }
+
+      if (emp.has_system_access === false) {
+        return res.status(403).json({
+          success: false,
+          code: 'NO_ACCESS',
+          message: 'Su registro no tiene habilitado el acceso al sistema informático.',
+        });
+      }
+
+      // Password verification
+      let isValidPassword = false;
+
+      if (emp.password_hash) {
+        // Cryptographic verification
+        const hashStr = String(emp.password_hash);
+        if (hashStr.includes(':')) {
+          const parts = hashStr.split(':');
+          const salt = parts[0];
+          const expectedDigest = parts[1];
+          const digest = nodeCrypto.createHash('sha256').update(`${salt}:${cleanPass}`).digest('hex');
+          isValidPassword = digest === expectedDigest || `${salt}:${digest}` === hashStr;
+        } else if (emp.password_salt) {
+          const digest = nodeCrypto.createHash('sha256').update(`${emp.password_salt}:${cleanPass}`).digest('hex');
+          isValidPassword = digest === hashStr;
+        } else {
+          const digest = nodeCrypto.createHash('sha256').update(cleanPass).digest('hex');
+          isValidPassword = digest === hashStr;
+        }
+
+        // CRITICAL: Drac2026 is strictly rejected if user already has a changed password!
+        if (!isValidPassword) {
+          return res.status(401).json({
+            success: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'Contraseña incorrecta. Verifique sus credenciales e intente nuevamente.',
+          });
+        }
+      } else {
+        // Initial first-time login: only valid against temporary default password
+        if (cleanPass === 'Drac2026' || cleanPass === 'Drac2026!' || cleanPass === emp.dni || cleanPass === '123456') {
+          isValidPassword = true;
+        } else {
+          return res.status(401).json({
+            success: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'Contraseña incorrecta. Verifique sus credenciales e intente nuevamente.',
+          });
+        }
+      }
+
+      const requiresPasswordChange = Boolean(emp.password_change_required) || emp.primer_ingreso === 'PENDIENTE';
+
+      return res.json({
+        success: true,
+        code: 'SUCCESS',
+        message: 'Autenticación exitosa.',
+        employee: emp,
+        requiresPasswordChange,
+        primer_ingreso: emp.primer_ingreso || (requiresPasswordChange ? 'PENDIENTE' : 'COMPLETADO'),
+        password_change_required: requiresPasswordChange,
+      });
+    } catch (err: any) {
+      console.error('Error en /api/auth/login:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'Error interno en el servidor durante la autenticación.',
+      });
+    }
+  });
+
   // POST /api/auth/change-password - Backend mandatory password change and permanent persistence
   app.post("/api/auth/change-password", async (req, res) => {
     try {

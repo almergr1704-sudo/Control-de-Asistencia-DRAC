@@ -128,6 +128,38 @@ export default function App() {
     }
   };
 
+  const saveStored = <T,>(key: string, data: T): void => {
+    try {
+      localStorage.setItem(`drac_data_${key}`, JSON.stringify(data));
+    } catch {}
+  };
+
+  // Cached session retrieval before entity initialization
+  const cachedAuthSession = (() => {
+    try {
+      const stored = localStorage.getItem('drac_auth_session');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {}
+    return null;
+  })();
+
+  // User Session Management
+  const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
+    if (cachedAuthSession && cachedAuthSession.currentUser) {
+      return cachedAuthSession.currentUser;
+    }
+    return null;
+  });
+
+  const [activeRole, setActiveRole] = useState<RoleType>(() => {
+    if (cachedAuthSession && cachedAuthSession.activeRole) {
+      return cachedAuthSession.activeRole;
+    }
+    return 'ADMIN_GENERAL';
+  });
+
   // State Entities - DRAC Structure
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadStored<Employee[]>('employees', INITIAL_EMPLOYEES);
@@ -155,34 +187,31 @@ export default function App() {
         });
       }
     }
-    return list;
-  });
 
-  // User Session Management
-  const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
-    try {
-      const stored = localStorage.getItem('drac_auth_session');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.currentUser) {
-          return parsed.currentUser;
+    // CRITICAL: Synchronize authenticated session user state into initial employee list
+    // so stale local storage or templates never override completed password changes
+    if (cachedAuthSession?.currentUser) {
+      const sessionUser = cachedAuthSession.currentUser;
+      list = list.map((e) => {
+        if (
+          e.id === sessionUser.id ||
+          (e.dni && sessionUser.dni && e.dni === sessionUser.dni) ||
+          (e.username && sessionUser.username && e.username.toLowerCase() === sessionUser.username.toLowerCase())
+        ) {
+          return {
+            ...e,
+            ...sessionUser,
+            password_change_required: sessionUser.password_change_required ?? e.password_change_required,
+            primer_ingreso: sessionUser.primer_ingreso ?? e.primer_ingreso,
+            password_hash: sessionUser.password_hash ?? e.password_hash,
+            password_salt: sessionUser.password_salt ?? e.password_salt,
+          };
         }
-      }
-      return null;
-    } catch {
-      return null;
+        return e;
+      });
     }
-  });
 
-  const [activeRole, setActiveRole] = useState<RoleType>(() => {
-    try {
-      const stored = localStorage.getItem('drac_auth_session');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.activeRole) return parsed.activeRole;
-      }
-    } catch {}
-    return 'ADMIN_GENERAL';
+    return list;
   });
 
   const [activeUserDni, setActiveUserDni] = useState<string>(() => {
@@ -272,12 +301,38 @@ export default function App() {
           // Invalidate session immediately
           setCurrentUser(null);
           localStorage.removeItem('drac_auth_session');
-        } else if (
-          freshRecord.password_change_required !== currentUser.password_change_required ||
-          freshRecord.primer_ingreso !== currentUser.primer_ingreso ||
-          freshRecord.role !== currentUser.role
-        ) {
-          setCurrentUser(freshRecord);
+        } else {
+          // Guard against stale records reverting completed password changes
+          const hasCompletedPassword =
+            currentUser.password_change_required === false &&
+            currentUser.primer_ingreso === 'COMPLETADO';
+
+          if (hasCompletedPassword && (freshRecord.password_change_required || freshRecord.primer_ingreso === 'PENDIENTE')) {
+            // Keep completed password status and update employee list
+            setEmployees((prev) =>
+              prev.map((e) =>
+                e.id === currentUser.id || e.dni === currentUser.dni
+                  ? { ...e, password_change_required: false, primer_ingreso: 'COMPLETADO' }
+                  : e
+              )
+            );
+          } else if (
+            freshRecord.password_change_required !== currentUser.password_change_required ||
+            freshRecord.primer_ingreso !== currentUser.primer_ingreso ||
+            freshRecord.role !== currentUser.role
+          ) {
+            setCurrentUser(freshRecord);
+            try {
+              const raw = localStorage.getItem('drac_auth_session');
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                localStorage.setItem(
+                  'drac_auth_session',
+                  JSON.stringify({ ...parsed, currentUser: freshRecord })
+                );
+              }
+            } catch {}
+          }
         }
       }
     }
@@ -384,7 +439,31 @@ export default function App() {
           if (dirs && dirs.length > 0) setDireccionesOrganos(dirs);
           if (ars && ars.length > 0) setAreas(ars);
           if (crgs && crgs.length > 0) setCargos(crgs);
-          if (emps && emps.length > 0) setEmployees(emps);
+          if (emps && emps.length > 0) {
+            setEmployees(emps);
+            saveStored('employees', emps);
+            try {
+              const rawSession = localStorage.getItem('drac_auth_session');
+              if (rawSession) {
+                const parsed = JSON.parse(rawSession);
+                if (parsed?.currentUser) {
+                  const found = emps.find(
+                    (e: any) =>
+                      e.id === parsed.currentUser.id ||
+                      e.dni === parsed.currentUser.dni ||
+                      (e.username && parsed.currentUser.username && e.username.toLowerCase() === parsed.currentUser.username.toLowerCase())
+                  );
+                  if (found) {
+                    setCurrentUser(found);
+                    localStorage.setItem(
+                      'drac_auth_session',
+                      JSON.stringify({ ...parsed, currentUser: found })
+                    );
+                  }
+                }
+              }
+            } catch {}
+          }
           if (turns && turns.length > 0) setTurnos(turns);
           if (hors && hors.length > 0) setHorarios(hors);
           if (encs && encs.length > 0) setEncargaturas(encs);
@@ -1599,15 +1678,20 @@ export default function App() {
   }
 
   // MANDATORY SECURITY GATE: If user has pending password change, NEVER render system dashboard/modules
-  const activeSessionEmp =
-    employees.find((e) => e.id === currentUser.id || e.dni === currentUser.dni) || currentUser;
+  const activeSessionEmp = currentUser
+    ? (employees.find((e) => e.id === currentUser.id || e.dni === currentUser.dni) || currentUser)
+    : null;
 
-  const requiresPasswordChange =
-    activeSessionEmp.has_system_access !== false &&
-    (Boolean(activeSessionEmp.password_change_required) ||
-      activeSessionEmp.primer_ingreso === 'PENDIENTE');
+  const requiresPasswordChange = Boolean(
+    currentUser &&
+    currentUser.has_system_access !== false &&
+    currentUser.password_change_required !== false &&
+    currentUser.primer_ingreso !== 'COMPLETADO' &&
+    activeSessionEmp &&
+    (Boolean(activeSessionEmp.password_change_required) || activeSessionEmp.primer_ingreso === 'PENDIENTE')
+  );
 
-  if (requiresPasswordChange) {
+  if (requiresPasswordChange && activeSessionEmp) {
     return (
       <ForcePasswordChangeModal
         employee={activeSessionEmp}
@@ -1622,6 +1706,14 @@ export default function App() {
               activeRole,
             })
           );
+          try {
+            const nextList = employees.map((e) =>
+              e.id === updatedEmp.id || e.dni === updatedEmp.dni || e.username === updatedEmp.username
+                ? updatedEmp
+                : e
+            );
+            saveStored('employees', nextList);
+          } catch {}
         }}
       />
     );

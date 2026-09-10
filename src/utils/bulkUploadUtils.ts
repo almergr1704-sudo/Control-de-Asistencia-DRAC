@@ -132,41 +132,18 @@ export function generateTemplateDireccionesOrganos(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  // Hoja 1: Datos con ejemplos reales DRAC
-  const sampleData = [
-    {
-      'Código': 'DIR-001',
-      'Nombre de Dirección / Órgano': 'Dirección de Administración',
-      'Clasificación Orgánica': 'DIRECCIÓN',
-      'Estado': 'ACTIVO',
-      'Código Dependencia (Opcional)': dependencias[0]?.code || 'SEDE-01',
-    },
-    {
-      'Código': 'ORG-001',
-      'Nombre de Dirección / Órgano': 'Oficina de Control Institucional',
-      'Clasificación Orgánica': 'ÓRGANOS DE APOYO',
-      'Estado': 'ACTIVO',
-      'Código Dependencia (Opcional)': dependencias[0]?.code || 'SEDE-01',
-    },
-    {
-      'Código': 'JEF-001',
-      'Nombre de Dirección / Órgano': 'Jefatura Agencia Agraria Jaén',
-      'Clasificación Orgánica': 'JEFATURA DE AGENCIA',
-      'Estado': 'ACTIVO',
-      'Código Dependencia (Opcional)': dependencias.find(d => d.type === 'AGENCIA_AGRARIA')?.code || 'AA-JAEN',
-    },
-    {
-      'Código': 'OAG-001',
-      'Nombre de Dirección / Órgano': 'Oficina Agraria San Ignacio',
-      'Clasificación Orgánica': 'OFICINA AGRARIA',
-      'Estado': 'ACTIVO',
-      'Código Dependencia (Opcional)': dependencias[0]?.code || 'SEDE-01',
-    },
+  // Hoja 1: Encabezados oficiales limpios (sin datos ficticios de prueba)
+  const headers = [
+    'Código',
+    'Nombre de Dirección / Órgano',
+    'Clasificación Orgánica',
+    'Estado',
+    'Código Dependencia (Opcional)',
   ];
-  const wsData = XLSX.utils.json_to_sheet(sampleData);
+  const wsData = XLSX.utils.aoa_to_sheet([headers]);
   wsData['!cols'] = [
     { wch: 15 }, // Código
-    { wch: 40 }, // Nombre
+    { wch: 42 }, // Nombre
     { wch: 26 }, // Clasificación
     { wch: 12 }, // Estado
     { wch: 30 }, // Dependencia
@@ -212,47 +189,16 @@ export function generateTemplateAreasOficinas(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  // Filtrar o agrupar ejemplos por tipo de unidad superior si existen
-  const dirEjemplo = direcciones.find((d) => d.type === 'DIRECCION') || direcciones[0];
-  const organoApoyoEjemplo = direcciones.find((d) => d.type === 'ORGANO_APOYO') || direcciones[1] || direcciones[0];
-  const oficinaAgrariaEjemplo = direcciones.find((d) => d.type === 'OFICINA_AGRARIA' || d.type === 'JEFATURA_AGENCIA') || direcciones[2] || direcciones[0];
-
-  // Hoja 1: Datos de ejemplo según directiva jerárquica DRAC
-  const sampleData = [
-    {
-      'Código Área / Oficina': 'ARE-001',
-      'Nombre del Área / Oficina': 'Área de Recursos Humanos',
-      'Tipo (Área / Oficina)': 'Área',
-      'Código Dirección / Órgano / Oficina Agraria': dirEjemplo?.code || 'ADMIN',
-      'Nombre Dirección / Órgano / Oficina Agraria': dirEjemplo?.name || 'OFICINA DE ADMINISTRACION',
-      'Estado': 'ACTIVO',
-    },
-    {
-      'Código Área / Oficina': 'ARE-002',
-      'Nombre del Área / Oficina': 'Área de Abastecimiento y Servicios',
-      'Tipo (Área / Oficina)': 'Área',
-      'Código Dirección / Órgano / Oficina Agraria': dirEjemplo?.code || 'ADMIN',
-      'Nombre Dirección / Órgano / Oficina Agraria': dirEjemplo?.name || 'OFICINA DE ADMINISTRACION',
-      'Estado': 'ACTIVO',
-    },
-    {
-      'Código Área / Oficina': 'OFI-001',
-      'Nombre del Área / Oficina': 'Oficina de Auditoría Interna',
-      'Tipo (Área / Oficina)': 'Oficina',
-      'Código Dirección / Órgano / Oficina Agraria': organoApoyoEjemplo?.code || 'OAJ',
-      'Nombre Dirección / Órgano / Oficina Agraria': organoApoyoEjemplo?.name || 'OFICINA DE ASESORIA JURIDICA',
-      'Estado': 'ACTIVO',
-    },
-    {
-      'Código Área / Oficina': 'ARE-003',
-      'Nombre del Área / Oficina': 'Área Técnica Agraria',
-      'Tipo (Área / Oficina)': 'Área',
-      'Código Dirección / Órgano / Oficina Agraria': oficinaAgrariaEjemplo?.code || 'OAG-001',
-      'Nombre Dirección / Órgano / Oficina Agraria': oficinaAgrariaEjemplo?.name || 'Oficina Agraria Cajamarca',
-      'Estado': 'ACTIVO',
-    },
+  // Hoja 1: Encabezados oficiales limpios (sin datos ficticios de prueba)
+  const headers = [
+    'Código Área / Oficina',
+    'Nombre del Área / Oficina',
+    'Tipo (Área / Oficina)',
+    'Código Dirección / Órgano / Oficina Agraria',
+    'Nombre Dirección / Órgano / Oficina Agraria',
+    'Estado',
   ];
-  const wsData = XLSX.utils.json_to_sheet(sampleData);
+  const wsData = XLSX.utils.aoa_to_sheet([headers]);
   wsData['!cols'] = [
     { wch: 22 }, // Código Área
     { wch: 40 }, // Nombre Área
@@ -302,70 +248,37 @@ export function generateTemplateTrabajadores(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  // Hoja 1: Datos de ejemplo según directiva actualizada DRAC
-  // NO incluye Código DRAC ni Perfil (ambos automáticos)
-  const sampleData = [
-    {
-      'DNI': '12345678',
-      'Nombres': 'Juan',
-      'Apellido Paterno': 'Pérez',
-      'Apellido Materno': 'García',
-      'Dirección / Órgano': direcciones[0]?.name || 'DIRECCION',
-      'Área / Oficina': areas[0]?.name || 'JEFATURA',
-      'Cargo Institucional': cargos[0]?.name || 'Especialista Agrario',
-      'Sexo': 'M',
-      'Fecha de Nacimiento': '1988-05-14',
-      'Fecha de Ingreso': '2018-03-01',
-      'Tipo de vínculo': 'D.L. 276',
-      'Correo': 'jperez@dracajamarca.gob.pe',
-      'Estado': 'ACTIVO',
-    },
-    {
-      'DNI': '23456789',
-      'Nombres': 'María',
-      'Apellido Paterno': 'López',
-      'Apellido Materno': 'Sánchez',
-      'Dirección / Órgano': direcciones[1]?.name || 'OFICINA DE ADMINISTRACION',
-      'Área / Oficina': '', // Opcional (Sin asignar)
-      'Cargo Institucional': '', // Opcional (Sin asignar)
-      'Sexo': 'F',
-      'Fecha de Nacimiento': '1982-11-20',
-      'Fecha de Ingreso': '2015-06-15',
-      'Tipo de vínculo': 'D.L. 276',
-      'Correo': 'mlopez@dracajamarca.gob.pe',
-      'Estado': 'ACTIVO',
-    },
-    {
-      'DNI': '34567890',
-      'Nombres': 'Carlos',
-      'Apellido Paterno': 'Torres',
-      'Apellido Materno': 'Díaz',
-      'Dirección / Órgano': direcciones[1]?.name || 'OFICINA DE ADMINISTRACION',
-      'Área / Oficina': 'UNIDAD FUNCIONAL DE ABASTECIMIENTOS',
-      'Cargo Institucional': 'Técnico Administrativo',
-      'Sexo': 'M',
-      'Fecha de Nacimiento': '1992-08-10',
-      'Fecha de Ingreso': '2021-01-15',
-      'Tipo de vínculo': 'D. LEG. 1057 - CAS',
-      'Correo': 'ctorres@dracajamarca.gob.pe',
-      'Estado': 'ACTIVO',
-    },
+  // Hoja 1: Encabezados oficiales limpios (sin datos ficticios de prueba)
+  const headers = [
+    'DNI',
+    'Nombres',
+    'Apellido Paterno',
+    'Apellido Materno',
+    'Dirección / Órgano',
+    'Área / Oficina',
+    'Cargo Institucional',
+    'Sexo',
+    'Fecha de Nacimiento',
+    'Fecha de Ingreso',
+    'Tipo de vínculo',
+    'Correo',
+    'Estado',
   ];
 
-  const wsData = XLSX.utils.json_to_sheet(sampleData);
+  const wsData = XLSX.utils.aoa_to_sheet([headers]);
   wsData['!cols'] = [
-    { wch: 12 }, // DNI
-    { wch: 20 }, // Nombres
-    { wch: 18 }, // Apellido Paterno
-    { wch: 18 }, // Apellido Materno
+    { wch: 14 }, // DNI
+    { wch: 22 }, // Nombres
+    { wch: 20 }, // Apellido Paterno
+    { wch: 20 }, // Apellido Materno
     { wch: 38 }, // Dirección / Órgano
     { wch: 38 }, // Área / Oficina
     { wch: 30 }, // Cargo Institucional
-    { wch: 8 },  // Sexo
-    { wch: 18 }, // F. Nacimiento
-    { wch: 18 }, // F. Ingreso
-    { wch: 18 }, // Vinculo
-    { wch: 30 }, // Correo
+    { wch: 10 }, // Sexo
+    { wch: 20 }, // F. Nacimiento
+    { wch: 20 }, // F. Ingreso
+    { wch: 22 }, // Vinculo
+    { wch: 32 }, // Correo
     { wch: 12 }, // Estado
   ];
   XLSX.utils.book_append_sheet(wb, wsData, 'Trabajadores');
@@ -420,25 +333,24 @@ export function generateTemplateEncargaturas(
 ): void {
   const wb = XLSX.utils.book_new();
 
-  const sampleData = [
-    {
-      'DNI Titular': employees[0]?.dni || '42987654',
-      'Nombre Titular (Opcional)': `${employees[0]?.first_name || 'Carlos'} ${employees[0]?.last_name || 'Mendoza'}`,
-      'DNI Encargado': employees[1]?.dni || '40123987',
-      'Nombre Encargado (Opcional)': `${employees[1]?.first_name || 'María'} ${employees[1]?.last_name || 'Silva'}`,
-      'Código Dirección/Órgano Encargada': direcciones[0]?.code || 'DIR-001',
-      'Código Área/Oficina (Opcional)': areas[0]?.code || 'ARE-001',
-      'Fecha Inicio (YYYY-MM-DD)': '2026-08-01',
-      'Fecha Término (YYYY-MM-DD)': '2026-08-31',
-      'Motivo': 'VACACIONES',
-      'Tipo Documento': 'MEMORANDO',
-      'Número Documento': 'Memorando N.° 045-2026-DRAC',
-      'Fecha Documento (YYYY-MM-DD)': '2026-07-28',
-      'Observaciones': 'Encargatura de funciones de Dirección de Administración por descanso vacacional del titular.',
-    },
+  // Hoja 1: Encabezados oficiales limpios (sin datos ficticios de prueba)
+  const headers = [
+    'DNI Titular',
+    'Nombre Titular (Opcional)',
+    'DNI Encargado',
+    'Nombre Encargado (Opcional)',
+    'Código Dirección/Órgano Encargada',
+    'Código Área/Oficina (Opcional)',
+    'Fecha Inicio (YYYY-MM-DD)',
+    'Fecha Término (YYYY-MM-DD)',
+    'Motivo',
+    'Tipo Documento',
+    'Número Documento',
+    'Fecha Documento (YYYY-MM-DD)',
+    'Observaciones',
   ];
 
-  const wsData = XLSX.utils.json_to_sheet(sampleData);
+  const wsData = XLSX.utils.aoa_to_sheet([headers]);
   wsData['!cols'] = [
     { wch: 14 }, // DNI Titular
     { wch: 26 }, // Nombre Titular
@@ -921,10 +833,40 @@ export function validateTrabajadoresExcel(
   rows.forEach((row, index) => {
     const rowNum = index + 2;
 
-    const rawDni = String(row['DNI'] || row['dni'] || row['DOCUMENTO'] || '').trim();
-    const rawNombres = normalizePersonName(String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || ''));
-    const rawPaterno = normalizePersonName(String(row['Apellido Paterno'] || row['Paterno'] || row['APELLIDO_PATERNO'] || ''));
-    const rawMaterno = normalizePersonName(String(row['Apellido Materno'] || row['Materno'] || row['APELLIDO_MATERNO'] || ''));
+    let rawDni = String(
+      row['DNI'] ||
+      row['dni'] ||
+      row['Dni'] ||
+      row['DOCUMENTO'] ||
+      row['Documento'] ||
+      row['N° Documento'] ||
+      row['Nro Documento'] ||
+      row['NRO_DOCUMENTO'] ||
+      ''
+    ).trim();
+
+    // Auto-fix if Excel numeric formatting removed leading zero for an 8-digit Peruvian DNI
+    if (/^\d{7}$/.test(rawDni)) {
+      rawDni = rawDni.padStart(8, '0');
+    }
+
+    let rawNombres = normalizePersonName(
+      String(row['Nombres'] || row['Nombre'] || row['NOMBRES'] || row['first_name'] || '')
+    );
+    let rawPaterno = normalizePersonName(
+      String(row['Apellido Paterno'] || row['Paterno'] || row['APELLIDO_PATERNO'] || row['Apellido_Paterno'] || '')
+    );
+    let rawMaterno = normalizePersonName(
+      String(row['Apellido Materno'] || row['Materno'] || row['APELLIDO_MATERNO'] || row['Apellido_Materno'] || '')
+    );
+
+    // Intelligent fallback if combined surnames or full names were provided in a single column
+    if ((!rawPaterno || !rawMaterno) && (row['Apellidos'] || row['APELLIDOS'] || row['apellidos'])) {
+      const surnameParts = String(row['Apellidos'] || row['APELLIDOS'] || row['apellidos']).trim().split(/\s+/);
+      if (!rawPaterno && surnameParts.length > 0) rawPaterno = normalizePersonName(surnameParts[0]);
+      if (!rawMaterno && surnameParts.length > 1) rawMaterno = normalizePersonName(surnameParts.slice(1).join(' '));
+    }
+
     const rawDirInput = String(
       row['Dirección / Órgano'] ||
       row['Direccion / Organo'] ||
@@ -933,6 +875,8 @@ export function validateTrabajadoresExcel(
       row['Código Dirección/Órgano'] ||
       row['Codigo Direccion'] ||
       row['CODIGO_DIR'] ||
+      row['Unidad Orgánica'] ||
+      row['Unidad Organica'] ||
       ''
     ).trim();
     const rawAreaInput = String(
@@ -943,6 +887,8 @@ export function validateTrabajadoresExcel(
       row['Código Área/Oficina'] ||
       row['Codigo Area'] ||
       row['CODIGO_AREA'] ||
+      row['Subárea'] ||
+      row['Subarea'] ||
       ''
     ).trim();
     const rawCargo = String(
@@ -1044,7 +990,7 @@ export function validateTrabajadoresExcel(
       rowHasError = true;
     }
 
-    // Validar existencia de Dirección / Órgano en el sistema por Código o por Nombre
+    // Validar existencia de Dirección / Órgano en el sistema por Código o por Nombre (tolerante a tildes y mayúsculas)
     let parentDir: DireccionOrgano | undefined = undefined;
     if (rawDirInput) {
       parentDir = existingDirs.find(
@@ -1052,6 +998,14 @@ export function validateTrabajadoresExcel(
           d.code.toUpperCase() === rawDirInput.toUpperCase() ||
           normalizeStr(d.name) === normalizeStr(rawDirInput)
       );
+
+      if (!parentDir) {
+        const normTarget = normalizeStr(rawDirInput);
+        parentDir = existingDirs.find((d) => {
+          const normD = normalizeStr(d.name);
+          return normD.includes(normTarget) || normTarget.includes(normD);
+        });
+      }
 
       if (!parentDir) {
         errors.push({
@@ -1073,6 +1027,14 @@ export function validateTrabajadoresExcel(
           a.code.toUpperCase() === rawAreaInput.toUpperCase() ||
           normalizeStr(a.name) === normalizeStr(rawAreaInput)
       );
+
+      if (!parentArea) {
+        const normTarget = normalizeStr(rawAreaInput);
+        parentArea = existingAreas.find((a) => {
+          const normA = normalizeStr(a.name);
+          return normA.includes(normTarget) || normTarget.includes(normA);
+        });
+      }
 
       if (!parentArea) {
         errors.push({
@@ -1477,18 +1439,87 @@ export function validateEncargaturasExcel(
 // 7. HELPER UNIVERSAL PARA LEER ARCHIVOS EXCEL / CSV
 // ==========================================
 
+export function cleanImportedRows(rows: Record<string, any>[]): Record<string, any>[] {
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .map((row) => {
+      const cleanRow: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const trimmedKey = String(key || '').trim();
+        if (!trimmedKey) continue;
+        let cleanVal = val;
+        if (typeof cleanVal === 'string') {
+          cleanVal = cleanVal.trim();
+        }
+        cleanRow[trimmedKey] = cleanVal;
+      }
+      return cleanRow;
+    })
+    .filter((row) => {
+      // Exclude completely empty rows
+      const values = Object.values(row).filter((v) => v !== '' && v !== null && v !== undefined);
+      if (values.length === 0) return false;
+
+      // Exclude instruction rows accidentally included
+      const firstVal = String(values[0] || '').toUpperCase();
+      if (firstVal.startsWith('INSTRUCCION') || firstVal.startsWith('EJEMPLO') || firstVal.startsWith('NOTA:')) {
+        return false;
+      }
+      return true;
+    });
+}
+
 export async function readExcelFileRows(file: File): Promise<Record<string, any>[]> {
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+
+  if (isCsv) {
+    return new Promise((resolve, reject) => {
+      const textReader = new FileReader();
+      textReader.onload = (e) => {
+        try {
+          const text = (e.target?.result as string) || '';
+          const workbook = XLSX.read(text, { type: 'string', raw: false });
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          if (!sheet) {
+            resolve([]);
+            return;
+          }
+          const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+            defval: '',
+            raw: false,
+          });
+          resolve(cleanImportedRows(json));
+        } catch (err) {
+          reject(err);
+        }
+      };
+      textReader.onerror = (err) => reject(err);
+      textReader.readAsText(file, 'utf-8');
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
 
-        // Prefer first sheet with data
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        // Select the primary data sheet, skipping instructions and catalogs
+        let targetSheetName = workbook.SheetNames[0];
+        const skipKeywords = ['instruc', 'referenc', 'codigo', 'guia', 'ayuda'];
+        for (const name of workbook.SheetNames) {
+          const lower = name.toLowerCase();
+          if (!skipKeywords.some((k) => lower.includes(k))) {
+            targetSheetName = name;
+            break;
+          }
+        }
+
+        const worksheet = workbook.Sheets[targetSheetName] || workbook.Sheets[workbook.SheetNames[0]];
         if (!worksheet) {
           resolve([]);
           return;
@@ -1499,7 +1530,7 @@ export async function readExcelFileRows(file: File): Promise<Record<string, any>
           raw: false,
         });
 
-        resolve(json);
+        resolve(cleanImportedRows(json));
       } catch (err) {
         reject(err);
       }

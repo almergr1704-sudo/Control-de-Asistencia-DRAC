@@ -33,19 +33,55 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Client-side & database authentication check
-      const result = await authenticateUser(cleanId, password, employees);
+      // 1. Primary authoritative check: Server-side API (/api/auth/login)
+      let emp: Employee | null = null;
+      let requiresPasswordChange = false;
 
-      if (!result.success || !result.employee) {
-        setErrorMessage(result.message || 'Credenciales incorrectas.');
-        onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${result.message}`, cleanId);
-        setIsLoading(false);
-        return;
+      try {
+        const resp = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: cleanId, password }),
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.success && data.employee) {
+            emp = data.employee;
+            requiresPasswordChange = Boolean(data.requiresPasswordChange);
+          } else {
+            setErrorMessage(data.message || 'Credenciales incorrectas.');
+            onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${data.message}`, cleanId);
+            setIsLoading(false);
+            return;
+          }
+        } else if (resp.status === 401 || resp.status === 403) {
+          const data = await resp.json().catch(() => ({}));
+          setErrorMessage(data.message || 'Credenciales incorrectas.');
+          onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${data.message}`, cleanId);
+          setIsLoading(false);
+          return;
+        }
+      } catch (netErr) {
+        console.warn('Backend login API no disponible directamente, usando autenticación local:', netErr);
       }
 
-      const emp = result.employee;
+      // 2. Fallback to client-side verification only if server was completely unreachable
+      if (!emp) {
+        const result = await authenticateUser(cleanId, password, employees);
 
-      // 2. Extra verification for inactive employee
+        if (!result.success || !result.employee) {
+          setErrorMessage(result.message || 'Credenciales incorrectas.');
+          onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${result.message}`, cleanId);
+          setIsLoading(false);
+          return;
+        }
+
+        emp = result.employee;
+        requiresPasswordChange = Boolean(result.requiresPasswordChange);
+      }
+
+      // 3. Extra verification for inactive employee
       if (emp.active === false || emp.account_status === 'INACTIVE') {
         const inactiveMsg = 'Su usuario se encuentra inactivo. Comuníquese con el administrador del sistema.';
         setErrorMessage(inactiveMsg);
@@ -54,11 +90,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         return;
       }
 
-      // 3. Resolve initial active role
+      // 4. Resolve initial active role
       const assignedRoles = getEmployeeAssignedRoles(emp);
       const initialRole: RoleType = emp.role || (assignedRoles.length > 0 ? assignedRoles[0] : 'TRABAJADOR');
 
-      // 4. Record successful login
+      // 5. Record successful login
       onRecordAudit(
         'LOGIN_EXITOSO',
         `Inicio de sesión exitoso de ${emp.first_name} ${emp.last_name} (@${emp.username || emp.dni}) con rol [${initialRole}]`,
@@ -66,8 +102,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         `${emp.first_name} ${emp.last_name}`
       );
 
-      // 5. Trigger success callback to set session
-      onLoginSuccess(emp, initialRole, Boolean(result.requiresPasswordChange));
+      // 6. Trigger success callback to set session
+      onLoginSuccess(emp, initialRole, requiresPasswordChange);
     } catch (err: any) {
       setErrorMessage('Ocurrió un error al procesar el inicio de sesión. Intente nuevamente.');
     } finally {

@@ -183,6 +183,19 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const handleConfirmImport = () => {
     if (!validationSummary) return;
 
+    const totalValid = validationSummary.validCount + (validationSummary.parsedUpdateRecords?.length || 0);
+    if (totalValid === 0) {
+      alert('No es posible importar: Todos los registros del archivo presentan errores y no hay datos válidos para procesar.');
+      return;
+    }
+
+    if (validationSummary.errorCount > 0) {
+      const proceed = confirm(
+        `Atención: Se han detectado ${validationSummary.errorCount} fila(s) con errores en el archivo.\n\n¿Desea continuar importando ÚNICAMENTE los ${validationSummary.validCount} registro(s) válidos y descartar las filas con error?`
+      );
+      if (!proceed) return;
+    }
+
     if (selectedEntity === 'DIRECCIONES') {
       onConfirmDirecciones(
         validationSummary.parsedValidRecords,
