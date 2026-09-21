@@ -27,23 +27,29 @@
         "arch": ["x64"]
       },
       {
+        "target": "portable",
+        "arch": ["x64"]
+      },
+      {
         "target": "zip",
         "arch": ["x64"]
       }
     ],
-    "icon": "build/icon.png",
-    "artifactName": "DRAC_ASISTENCIA_DESKTOP_WINDOWS.${ext}"
+    "icon": "build/icon.png"
   },
   "nsis": {
     "oneClick": false,
+    "perMachine": false,
+    "allowElevation": false,
     "allowToChangeInstallationDirectory": true,
-    "allowElevation": true,
-    "packElevateHelper": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "DRAC Control de Asistencia",
     "uninstallDisplayName": "DRAC Control de Asistencia - Desinstalar",
     "differentialPackage": false,
-    "artifactName": "DRAC-Asistencia-Setup.exe"
+    "artifactName": "DRAC-Control-de-Asistencia-Setup.exe"
+  },
+  "portable": {
+    "artifactName": "DRAC-Control-de-Asistencia-Portable.exe"
   }
 }

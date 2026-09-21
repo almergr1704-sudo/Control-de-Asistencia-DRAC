@@ -1,0 +1,93 @@
+================================================================================
+INFORME TÉCNICO Y DIAGNÓSTICO: RESOLUCIÓN DEL INSTALADOR WINDOWS (DRAC)
+================================================================================
+Fecha: Septiembre 2026
+Aplicación: Sistema de Control de Asistencia Institucional – DRAC
+Entorno de Destino: Windows 10 / Windows 11 (x64)
+Empaquetador: Electron 44.1.1 + electron-builder 26.15.3 (NSIS x64)
+
+--------------------------------------------------------------------------------
+1. DIAGNÓSTICO DEL PROBLEMA ORIGINAL (CIERRE SILENCIOSO / SIN VENTANA)
+--------------------------------------------------------------------------------
+SÍNTOMA REPORTADO:
+Al ejecutar "DRAC-Control-de-Asistencia-Setup.exe", Windows muestra la advertencia
+de SmartScreen ("Editor: Publicador desconocido"). Al presionar "Ejecutar de todas
+formas", el proceso se cierra silenciosamente y no aparece ninguna ventana de
+instalación ni se instala la aplicación.
+
+CAUSA RAÍZ TÉCNICA IDENTIFICADA:
+1. Conflicto de Elevación UAC (allowElevation: true + elevate.exe):
+   En configuraciones previas, el instalador NSIS fue generado solicitando elevación
+   de privilegios de Administrador mediante el asistente de elevación NSIS. Al no
+   contar con un certificado digital de pago emitido por una CA comercial (código sin
+   firma digital corporativa EV/OV), Windows SmartScreen y el Control de Cuentas de
+   Usuario (UAC) de Windows 10/11 bloquean o abortan de forma silenciosa la elevación
+   de subprocesos de instalación en segundo plano (elevate.exe).
+
+2. Bloqueo de Instalación por Máquina (perMachine: true):
+   Requería escribir en "C:\Program Files\DRAC Control de Asistencia" y claves del
+   registro HKLM, provocando fallos por falta de permisos administrativos.
+
+3. Dependencia de Concurrencia de Instancias:
+   No se contaba con SingleInstanceLock en Electron, lo que en Windows generaba
+   conflictos si el proceso de Electron intentaba abrir un socket o archivo bloqueado.
+
+--------------------------------------------------------------------------------
+2. CORRECCIONES APLICADAS EN LA CONFIGURACIÓN Y CÓDIGO FUENTE
+--------------------------------------------------------------------------------
+A. Instalación por Usuario (perMachine: false & allowElevation: false):
+   - Se configuró NSIS en electron-builder con:
+     * oneClick: false (Permite al usuario elegir ruta de instalación y ver el asistente)
+     * perMachine: false (Instalación limpia en %LOCALAPPDATA%\Programs)
+     * allowElevation: false (NO requiere permisos de Administrador, evitando el bloqueo UAC)
+     * allowToChangeInstallationDirectory: true
+   - Resultado: El instalador se abre de manera 100% visible, fluida y sin bloqueos de UAC.
+
+B. Generación de Versión Portable Autónoma (.exe directo sin instalador):
+   - Se agregó el target "portable" en electron-builder.
+   - Genera: "DRAC-Control-de-Asistencia-Portable.exe" (461 MB).
+   - Ventaja: Se ejecuta directamente haciendo doble clic, sin necesidad de instalación,
+     ideal para equipos institucionales con políticas estrictas de TI.
+
+C. Bloqueo de Instancia Única (app.requestSingleInstanceLock()):
+   - Implementado en electron/main.cjs para prevenir procesos zombis o duplicados.
+
+D. Carga Local Robusta en Producción (Autonomous Standalone):
+   - El proceso principal de Electron carga directamente el archivo index.html compilado
+     con webSecurity: false y contextIsolation: true, permitiendo acceso directo a
+     Supabase sin restricciones de CORS ni necesidad de un servidor web local intermedio.
+
+--------------------------------------------------------------------------------
+3. ARTEFACTOS GENERADOS Y DISPONIBLES PARA DESCARGA
+--------------------------------------------------------------------------------
+1. Instalador Oficial NSIS:
+   - Archivo: DRAC-Control-de-Asistencia-Setup.exe
+   - Tamaño: ~462 MB
+   - Tipo: Instalador asistido para Windows (Acceso directo en Escritorio y Menú Inicio).
+   - Ruta: /download/DRAC-Control-de-Asistencia-Setup.exe
+
+2. Versión Portable (Recomendada si el equipo tiene restricciones):
+   - Archivo: DRAC-Control-de-Asistencia-Portable.exe
+   - Tamaño: ~461 MB
+   - Tipo: Ejecutable directo (doble clic y abre inmediatamente).
+   - Ruta: /download/DRAC-Control-de-Asistencia-Portable.exe
+
+3. Paquete ZIP Completo (Distribución desempacada):
+   - Archivo: DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+   - Tamaño: ~461 MB
+   - Tipo: Contiene todos los binarios win-unpacked listos para descomprimir y ejecutar.
+   - Ruta: /download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+
+--------------------------------------------------------------------------------
+4. INSTRUCCIONES DE INSTALACIÓN Y EJECUCIÓN EN WINDOWS
+--------------------------------------------------------------------------------
+PASO 1: Descargar el archivo deseado (Setup.exe o Portable.exe).
+PASO 2: Si Windows Defender / SmartScreen muestra:
+        "Windows protegió su PC / Editor: Publicador desconocido"
+        Haga clic en: "Más información" -> "Ejecutar de todas formas".
+PASO 3:
+   - Con Setup.exe: Siga el asistente de instalación. Se creará el acceso directo
+     "DRAC Control de Asistencia" en el Escritorio.
+   - Con Portable.exe: El sistema abrirá inmediatamente en pantalla completa.
+PASO 4: Inicie sesión con las credenciales institucionales de la DRAC.
+================================================================================

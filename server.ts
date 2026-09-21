@@ -558,66 +558,76 @@ async function startServer() {
 
   // GET /api/download/status - Check desktop installer availability
   app.get("/api/download/status", (req, res) => {
-    const exeCandidates = [
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+    const setupCandidates = [
       path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia.exe"),
-      path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
-      path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+    ];
+    const portableCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Portable.exe"),
+      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Portable.exe"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Portable.exe"),
     ];
     const zipCandidates = [
       path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
       path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-      path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
-      path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
       path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
     ];
+    const diagCandidates = [
+      path.join(process.cwd(), "dist-desktop", "DIAGNOSTICO_DESKTOP.txt"),
+      path.join(process.cwd(), "public", "download", "DIAGNOSTICO_DESKTOP.txt"),
+      path.join(process.cwd(), "DIAGNOSTICO_DESKTOP.txt"),
+    ];
 
-    const foundExe = exeCandidates.find((p) => nodeFs.existsSync(p));
+    const foundSetup = setupCandidates.find((p) => nodeFs.existsSync(p));
+    const foundPortable = portableCandidates.find((p) => nodeFs.existsSync(p));
     const foundZip = zipCandidates.find((p) => nodeFs.existsSync(p));
+    const foundDiag = diagCandidates.find((p) => nodeFs.existsSync(p));
 
-    let exeSize = "";
-    if (foundExe) {
+    const formatSize = (filePath: string | undefined): string => {
+      if (!filePath) return "";
       try {
-        const bytes = nodeFs.statSync(foundExe).size;
-        exeSize = bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
-      } catch {}
-    }
-
-    let zipSize = "";
-    if (foundZip) {
-      try {
-        const bytes = nodeFs.statSync(foundZip).size;
-        zipSize = bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
-      } catch {}
-    }
-
-    const remoteExe = (process.env.VITE_DESKTOP_EXE_URL || "").trim();
-    const remoteZip = (process.env.VITE_DESKTOP_ZIP_URL || "").trim();
+        const bytes = nodeFs.statSync(filePath).size;
+        return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+      } catch {
+        return "";
+      }
+    };
 
     return res.json({
       success: true,
-      exe: {
-        available: Boolean(foundExe) || Boolean(remoteExe),
-        size: exeSize || "100.4 MB",
-        filename: "DRAC-Asistencia-Setup.exe",
-        url: remoteExe || "/download/DRAC-Asistencia-Setup.exe",
-        remoteUrl: remoteExe,
+      setup: {
+        available: Boolean(foundSetup),
+        size: formatSize(foundSetup) || "458 MB",
+        filename: "DRAC-Control-de-Asistencia-Setup.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Setup.exe",
+      },
+      portable: {
+        available: Boolean(foundPortable),
+        size: formatSize(foundPortable) || "457 MB",
+        filename: "DRAC-Control-de-Asistencia-Portable.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Portable.exe",
       },
       zip: {
-        available: Boolean(foundZip) || Boolean(remoteZip),
-        size: zipSize || "100.4 MB",
+        available: Boolean(foundZip),
+        size: formatSize(foundZip) || "456 MB",
         filename: "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-        url: remoteZip || "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-        remoteUrl: remoteZip,
+        url: "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+      },
+      diagnostico: {
+        available: Boolean(foundDiag),
+        size: formatSize(foundDiag) || "9.3 KB",
+        filename: "DIAGNOSTICO_DESKTOP.txt",
+        url: "/download/DIAGNOSTICO_DESKTOP.txt",
+      },
+      // Backward-compatible alias
+      exe: {
+        available: Boolean(foundSetup),
+        size: formatSize(foundSetup) || "458 MB",
+        filename: "DRAC-Control-de-Asistencia-Setup.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Setup.exe",
       },
     });
   });
@@ -634,53 +644,65 @@ async function startServer() {
     (req, res) => {
       const candidates = [
         path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        "/app/applet/dist-desktop/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-        "/app/applet/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-        path.join(__dirname, "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(__dirname, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
         path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
-        path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
-        path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
         path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       ];
-      const remoteUrl = (process.env.VITE_DESKTOP_ZIP_URL || "").trim();
-      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip", remoteUrl);
+      handleDownloadFile(res, candidates, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip", "application/zip");
     }
   );
 
   app.get(
     [
-      "/download/DRAC-Control-de-Asistencia.exe",
-      "/download/DRAC-Asistencia-Setup.exe",
       "/download/DRAC-Control-de-Asistencia-Setup.exe",
+      "/download/DRAC-Asistencia-Setup.exe",
+      "/download/DRAC-Control-de-Asistencia.exe",
       "/download/DRAC-Asistencia-x64.exe",
       "/api/download/exe",
       "/api/download/setup",
       "/download/exe",
+      "/download/setup",
     ],
     (req, res) => {
       const candidates = [
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "DRAC-Asistencia-Setup.exe"),
-        "/app/applet/dist-desktop/DRAC-Asistencia-Setup.exe",
-        "/app/applet/DRAC-Asistencia-Setup.exe",
-        path.join(__dirname, "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-        path.join(__dirname, "DRAC-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
-        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia.exe"),
-        path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
-        path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Setup.exe"),
       ];
-      const remoteUrl = (process.env.VITE_DESKTOP_EXE_URL || "").trim();
-      handleDownloadFile(res, candidates, "DRAC-Asistencia-Setup.exe", "application/octet-stream", remoteUrl);
+      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia-Setup.exe", "application/octet-stream");
+    }
+  );
+
+  app.get(
+    [
+      "/download/DRAC-Control-de-Asistencia-Portable.exe",
+      "/api/download/portable",
+      "/download/portable",
+    ],
+    (req, res) => {
+      const candidates = [
+        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Portable.exe"),
+        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia-Portable.exe"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia-Portable.exe"),
+      ];
+      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia-Portable.exe", "application/octet-stream");
+    }
+  );
+
+  app.get(
+    [
+      "/download/DIAGNOSTICO_DESKTOP.txt",
+      "/api/download/diagnostico",
+      "/download/diagnostico",
+    ],
+    (req, res) => {
+      const candidates = [
+        path.join(process.cwd(), "dist-desktop", "DIAGNOSTICO_DESKTOP.txt"),
+        path.join(process.cwd(), "public", "download", "DIAGNOSTICO_DESKTOP.txt"),
+        path.join(process.cwd(), "DIAGNOSTICO_DESKTOP.txt"),
+      ];
+      handleDownloadFile(res, candidates, "DIAGNOSTICO_DESKTOP.txt", "text/plain; charset=utf-8");
     }
   );
 

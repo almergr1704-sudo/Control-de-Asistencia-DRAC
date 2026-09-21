@@ -17,8 +17,10 @@ export interface DownloadOptionInfo {
   description: string;
 }
 
-export const DEFAULT_EXE_FILENAME = 'DRAC-Asistencia-Setup.exe';
+export const DEFAULT_EXE_FILENAME = 'DRAC-Control-de-Asistencia-Setup.exe';
+export const DEFAULT_PORTABLE_FILENAME = 'DRAC-Control-de-Asistencia-Portable.exe';
 export const DEFAULT_ZIP_FILENAME = 'DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip';
+export const DEFAULT_DIAG_FILENAME = 'DIAGNOSTICO_DESKTOP.txt';
 export const REAL_ARTIFACT_SIZE = '461 MB';
 
 /**

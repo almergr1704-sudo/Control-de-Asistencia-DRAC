@@ -2,10 +2,23 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const net = require('net');
 const os = require('os');
-const http = require('http');
 const fs = require('fs');
 
-// Manejo global de excepciones para prevenir que la app se cierre inesperadamente (Caso C)
+// Bloqueo de instancia única para evitar que se abran múltiples procesos en Windows
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+// Manejo global de excepciones para prevenir que la app se cierre inesperadamente
 process.on('uncaughtException', (err) => {
   log(`[CRITICAL] Uncaught Exception: ${err ? err.stack || err.message : 'Unknown'}`);
 });
@@ -120,32 +133,11 @@ async function createWindow() {
       setTimeout(() => mainWindow.loadURL(devUrl), 2000);
     });
   } else {
-    // 1. Iniciar servidor Express interno local si existe el archivo compilado
-    try {
-      const serverCandidates = [
-        path.join(app.getAppPath(), 'dist', 'server.cjs'),
-        path.join(__dirname, '..', 'dist', 'server.cjs'),
-        path.join(process.resourcesPath, 'app.asar', 'dist', 'server.cjs'),
-      ];
-      const serverPath = serverCandidates.find((p) => fs.existsSync(p));
-      if (serverPath) {
-        log(`Iniciando backend interno en: ${serverPath}`);
-        require(serverPath);
-      } else {
-        log('Aviso: backend interno server.cjs no requerido o no presente, usando cliente autónomo.');
-      }
-    } catch (err) {
-      log(`Aviso al iniciar backend integrado (la app continuará funcionando con Supabase directo): ${err.message}`);
-    }
-
-    // 2. Cargar la interfaz compilada
+    // Cargar directamente el index.html local compilado
     const targetHtml = resolveIndexPath();
     log(`Cargando archivo principal: ${targetHtml}`);
     mainWindow.loadFile(targetHtml).catch((err) => {
-      log(`Error al cargar ${targetHtml}: ${err.message}. Intentando fallback local...`);
-      mainWindow.loadURL(`http://localhost:${DESKTOP_PORT}`).catch((fallbackErr) => {
-        log(`Error final de carga: ${fallbackErr.message}`);
-      });
+      log(`Error al cargar ${targetHtml}: ${err.message}`);
     });
   }
 
