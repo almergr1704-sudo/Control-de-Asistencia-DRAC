@@ -4,7 +4,10 @@ import fs from "fs/promises";
 import nodeFs from "node:fs";
 import nodeCrypto from "node:crypto";
 import net from "node:net";
-import { createServer as createViteServer } from "vite";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DB_DIR = path.join(process.cwd(), "data");
 const DEPENDENCIAS_FILE = path.join(DB_DIR, "dependencias.json");
@@ -506,85 +509,65 @@ async function startServer() {
     contentType: string,
     remoteFallbackUrl?: string
   ) => {
+    // 1. Si existe URL remota configurada (Supabase Storage / CDN / Releases), redirigir directamente
+    const trimmedRemoteUrl = (remoteFallbackUrl || "").trim();
+    if (trimmedRemoteUrl && (trimmedRemoteUrl.startsWith("http://") || trimmedRemoteUrl.startsWith("https://"))) {
+      return res.redirect(302, trimmedRemoteUrl);
+    }
+
+    // 2. Si no hay URL remota, buscar archivos locales para desarrollo / vista previa
     let targetPath: string | null = null;
     for (const p of candidatePaths) {
-      if (nodeFs.existsSync(p)) {
-        targetPath = p;
-        break;
+      if (p && nodeFs.existsSync(p)) {
+        try {
+          nodeFs.accessSync(p, nodeFs.constants.R_OK);
+          targetPath = p;
+          break;
+        } catch {
+          // Si no tiene permisos de lectura, continuar con el siguiente candidato
+        }
       }
     }
 
     if (!targetPath) {
-      const trimmedRemoteUrl = (remoteFallbackUrl || "").trim();
-      if (trimmedRemoteUrl && (trimmedRemoteUrl.startsWith("http://") || trimmedRemoteUrl.startsWith("https://"))) {
-        return res.redirect(302, trimmedRemoteUrl);
-      }
-
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      return res.status(200).send(`
-        <!DOCTYPE html>
-        <html lang="es">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Instalador en Preparación - DRAC Cajamarca</title>
-          <style>
-            body { font-family: system-ui, -apple-system, sans-serif; background: #0B0F19; color: #E2E8F0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
-            .card { background: #151C2C; border: 1px solid #1E293B; border-radius: 16px; padding: 32px; max-width: 580px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); text-align: center; }
-            h1 { font-size: 20px; color: #38BDF8; margin-top: 0; margin-bottom: 12px; }
-            p { font-size: 14px; line-height: 1.6; color: #94A3B8; margin: 10px 0; }
-            .badge { display: inline-block; background: #0C4A6E; color: #38BDF8; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
-            .notice-box { background: #0A0D14; border: 1px solid #1E293B; border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px; color: #F59E0B; text-align: left; }
-            .btn { display: inline-block; background: #0284C7; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 12px; transition: background 0.2s; }
-            .btn:hover { background: #0369A1; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <span class="badge">DRAC Cajamarca — Control de Asistencia</span>
-            <h1>Instalador de Escritorio Pendiente de Publicación</h1>
-            <p>El paquete <strong>${fileName}</strong> aún no cuenta con un enlace público de descarga configurado.</p>
-            <div class="notice-box">
-              <strong>Información para el Administrador:</strong><br/>
-              Para habilitar la descarga directa en la plataforma web, configure la variable de entorno <code>VITE_DESKTOP_EXE_URL</code> o <code>VITE_DESKTOP_ZIP_URL</code> con el enlace de descarga permanente del instalador.
-            </div>
-            <p>Si es usuario institucional, por favor comuníquese con el área de TI de la Dirección Regional de Agricultura para obtener el instalador.</p>
-            <a href="/" class="btn">Volver al Sistema Web</a>
-          </div>
-        </body>
-        </html>
-      `);
+      // Mensaje de texto claro y código 404 (no 500 ni HTML) si no se encuentra el archivo
+      return res.status(404).type("text/plain; charset=utf-8").send("El archivo del instalador no está disponible en este momento.");
     }
 
-    const stat = nodeFs.statSync(targetPath);
+    // Cabeceras indispensables para reverse proxy Nginx / Cloud Run
+    // X-Accel-Buffering: no evita que Nginx intente bufferizar los 100MB en disco temporal y falle con 500
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Content-Length", stat.size.toString());
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("Accept-Ranges", "bytes");
 
-    const fileStream = nodeFs.createReadStream(targetPath);
-    fileStream.on("error", (err) => {
-      console.error(`Error streaming ${fileName}:`, err);
-      if (!res.headersSent) {
-        res.status(500).send("Error al leer el archivo durante la descarga.");
+    return res.sendFile(path.resolve(targetPath), {
+      dotfiles: "allow",
+      acceptRanges: true,
+      cacheControl: false,
+    }, (err) => {
+      if (err) {
+        // Ignorar interrupciones normales del cliente durante la descarga (cierre de pestaña o socket abortado)
+        if (!res.headersSent) {
+          console.error(`[DOWNLOAD_ERROR] Fallo al entregar ${fileName}:`, err);
+          res.status(500).type("text/plain; charset=utf-8").send("Error interno al procesar la descarga.");
+        }
       }
     });
-    fileStream.pipe(res);
   };
 
   // GET /api/download/status - Check desktop installer availability
   app.get("/api/download/status", (req, res) => {
     const exeCandidates = [
-      path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
       path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
-      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
       path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
+      path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
       path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
+      path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia.exe"),
+      path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
       path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
     ];
     const zipCandidates = [
@@ -624,14 +607,14 @@ async function startServer() {
       success: true,
       exe: {
         available: Boolean(foundExe) || Boolean(remoteExe),
-        size: exeSize || "34.4 MB",
-        filename: "DRAC-Control-de-Asistencia.exe",
-        url: remoteExe || "/download/DRAC-Control-de-Asistencia.exe",
+        size: exeSize || "100.4 MB",
+        filename: "DRAC-Asistencia-Setup.exe",
+        url: remoteExe || "/download/DRAC-Asistencia-Setup.exe",
         remoteUrl: remoteExe,
       },
       zip: {
         available: Boolean(foundZip) || Boolean(remoteZip),
-        size: zipSize || "34.4 MB",
+        size: zipSize || "100.4 MB",
         filename: "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
         url: remoteZip || "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
         remoteUrl: remoteZip,
@@ -651,9 +634,13 @@ async function startServer() {
     (req, res) => {
       const candidates = [
         path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        "/app/applet/dist-desktop/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        "/app/applet/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        path.join(__dirname, "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(__dirname, "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Windows.zip"),
-        path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-x64.zip"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Windows.zip"),
@@ -676,17 +663,24 @@ async function startServer() {
     ],
     (req, res) => {
       const candidates = [
-        path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-Setup.exe"),
-        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
-        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "DRAC-Asistencia-Setup.exe"),
+        "/app/applet/dist-desktop/DRAC-Asistencia-Setup.exe",
+        "/app/applet/DRAC-Asistencia-Setup.exe",
+        path.join(__dirname, "dist-desktop", "DRAC-Asistencia-Setup.exe"),
+        path.join(__dirname, "DRAC-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia-Setup.exe"),
         path.join(process.cwd(), "public", "download", "DRAC-Asistencia-Setup.exe"),
+        path.join(process.cwd(), "public", "download", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "dist", "download", "DRAC-Asistencia-Setup.exe"),
         path.join(process.cwd(), "dist", "download", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Asistencia-x64.exe"),
+        path.join(process.cwd(), "dist-desktop", "DRAC-Control-de-Asistencia.exe"),
+        path.join(process.cwd(), "dist-desktop", "win-unpacked", "DRAC-Control-de-Asistencia.exe"),
         path.join(process.cwd(), "DRAC-Control-de-Asistencia.exe"),
       ];
       const remoteUrl = (process.env.VITE_DESKTOP_EXE_URL || "").trim();
-      handleDownloadFile(res, candidates, "DRAC-Control-de-Asistencia.exe", "application/octet-stream", remoteUrl);
+      handleDownloadFile(res, candidates, "DRAC-Asistencia-Setup.exe", "application/octet-stream", remoteUrl);
     }
   );
 
@@ -7273,6 +7267,7 @@ pause
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

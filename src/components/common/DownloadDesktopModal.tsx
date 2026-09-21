@@ -14,11 +14,14 @@ import {
   ExternalLink,
   Loader2,
   Server,
+  CloudUpload,
 } from 'lucide-react';
 import {
   initiateDesktopDownload,
   getDesktopDownloadOptions,
   fetchServerDownloadStatus,
+  downloadLocalDevelopmentArtifact,
+  REAL_ARTIFACT_SIZE,
 } from '../../utils/desktopDownloadUtils';
 
 interface DownloadDesktopModalProps {
@@ -39,10 +42,10 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
     zipSize: string;
     loaded: boolean;
   }>({
-    exeAvailable: true,
-    exeSize: '234 MB',
-    zipAvailable: true,
-    zipSize: '181 MB',
+    exeAvailable: false,
+    exeSize: REAL_ARTIFACT_SIZE,
+    zipAvailable: false,
+    zipSize: REAL_ARTIFACT_SIZE,
     loaded: false,
   });
   const [downloadNotice, setDownloadNotice] = useState<{
@@ -61,6 +64,19 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
       });
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const handleCustomOpen = (e: any) => {
+      if (e?.detail?.message) {
+        setDownloadNotice({
+          text: e.detail.message,
+          type: 'warning',
+        });
+      }
+    };
+    window.addEventListener('open-download-desktop', handleCustomOpen);
+    return () => window.removeEventListener('open-download-desktop', handleCustomOpen);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -195,30 +211,26 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Option 1: Direct Installer .EXE */}
             {(() => {
-              const isExeReady = downloadOptions.exe.isConfigured || serverStatus.exeAvailable;
+              const isExeConfigured = downloadOptions.exe.isConfigured;
               return (
                 <div className={`p-5 rounded-xl bg-[#131824] border transition-all flex flex-col justify-between group ${
-                  isExeReady ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-slate-700/60'
+                  isExeConfigured ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-slate-700/60'
                 }`}>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 ${
-                        isExeReady
+                        isExeConfigured
                           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                           : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
                       }`}>
-                        {isExeReady ? (
+                        {isExeConfigured ? (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                         ) : (
                           <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
                         )}
-                        {downloadOptions.exe.isConfigured
-                          ? 'Publicado Oficial'
-                          : serverStatus.exeAvailable
-                          ? 'Disponible Local'
-                          : 'Pendiente de Publicación'}
+                        {isExeConfigured ? 'Publicado Oficial' : 'Pendiente de Publicación'}
                       </span>
-                      <span className="text-xs font-mono text-slate-400">{serverStatus.exeSize || downloadOptions.exe.size}</span>
+                      <span className="text-xs font-mono text-slate-400">{REAL_ARTIFACT_SIZE}</span>
                     </div>
                     <div>
                       <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -240,11 +252,7 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                       id="btn-download-exe-direct"
                       disabled={downloadingType === 'exe'}
                       onClick={() => handleTriggerDownload('exe')}
-                      className={`w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] ${
-                        isExeReady
-                          ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/40'
-                          : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                      }`}
+                      className="w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/40"
                     >
                       {downloadingType === 'exe' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -253,24 +261,16 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                       )}
                       <span>
                         {downloadingType === 'exe'
-                          ? 'Verificando y Descargando...'
-                          : isExeReady
-                          ? 'Descargar Instalador .EXE'
-                          : 'Consultar Instalador .EXE'}
+                          ? 'Iniciando descarga...'
+                          : 'Descargar instalador Windows'}
                       </span>
                     </button>
                     <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                       <span>Estado:</span>
-                      {isExeReady ? (
-                        <button
-                          type="button"
-                          onClick={() => handleTriggerDownload('exe')}
-                          className="text-emerald-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
-                        >
-                          {downloadOptions.exe.filename}
-                        </button>
+                      {isExeConfigured ? (
+                        <span className="text-emerald-400 font-medium font-mono text-xs">URL pública oficial activa</span>
                       ) : (
-                        <span className="text-amber-400/80 italic">Aún no publicado en la web</span>
+                        <span className="text-emerald-400 font-mono text-xs">Listo en AI Studio ({REAL_ARTIFACT_SIZE})</span>
                       )}
                     </div>
                   </div>
@@ -280,30 +280,16 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
 
             {/* Option 2: Full ZIP Package */}
             {(() => {
-              const isZipReady = downloadOptions.zip.isConfigured || serverStatus.zipAvailable;
+              const isZipConfigured = downloadOptions.zip.isConfigured;
               return (
-                <div className={`p-5 rounded-xl bg-[#131824] border transition-all flex flex-col justify-between group ${
-                  isZipReady ? 'border-indigo-500/30 hover:border-indigo-500/60' : 'border-slate-700/60'
-                }`}>
+                <div className="p-5 rounded-xl bg-[#131824] border border-indigo-500/30 hover:border-indigo-500/60 transition-all flex flex-col justify-between group">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className={`px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 ${
-                        isZipReady
-                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                          : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                      }`}>
-                        {isZipReady ? (
-                          <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
-                        ) : (
-                          <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-                        )}
-                        {downloadOptions.zip.isConfigured
-                          ? 'Publicado Oficial'
-                          : serverStatus.zipAvailable
-                          ? 'Disponible Local'
-                          : 'Pendiente de Publicación'}
+                      <span className="px-2.5 py-1 rounded-md text-xs font-semibold border flex items-center gap-1.5 bg-indigo-500/20 text-indigo-300 border-indigo-500/30">
+                        <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
+                        {isZipConfigured ? 'Publicado Oficial' : 'Disponible en AI Studio'}
                       </span>
-                      <span className="text-xs font-mono text-slate-400">{serverStatus.zipSize || downloadOptions.zip.size}</span>
+                      <span className="text-xs font-mono text-slate-400">{REAL_ARTIFACT_SIZE}</span>
                     </div>
                     <div>
                       <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -325,11 +311,7 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                       id="btn-download-zip-direct"
                       disabled={downloadingType === 'zip'}
                       onClick={() => handleTriggerDownload('zip')}
-                      className={`w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] ${
-                        isZipReady
-                          ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950/40'
-                          : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                      }`}
+                      className="w-full py-2.5 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer group-hover:scale-[1.01] bg-indigo-600 hover:bg-indigo-500 shadow-indigo-950/40"
                     >
                       {downloadingType === 'zip' ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -338,24 +320,16 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
                       )}
                       <span>
                         {downloadingType === 'zip'
-                          ? 'Verificando y Descargando...'
-                          : isZipReady
-                          ? 'Descargar Paquete .ZIP'
-                          : 'Consultar Paquete .ZIP'}
+                          ? 'Iniciando descarga...'
+                          : 'Descargar versión comprimida'}
                       </span>
                     </button>
                     <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                       <span>Estado:</span>
-                      {isZipReady ? (
-                        <button
-                          type="button"
-                          onClick={() => handleTriggerDownload('zip')}
-                          className="text-indigo-400 hover:underline cursor-pointer bg-transparent border-none p-0 text-left font-mono"
-                        >
-                          {downloadOptions.zip.filename}
-                        </button>
+                      {isZipConfigured ? (
+                        <span className="text-indigo-400 font-medium font-mono text-xs">URL pública oficial activa</span>
                       ) : (
-                        <span className="text-amber-400/80 italic">Aún no publicado en la web</span>
+                        <span className="text-indigo-400 font-mono text-xs">Listo en AI Studio ({REAL_ARTIFACT_SIZE})</span>
                       )}
                     </div>
                   </div>
@@ -363,6 +337,43 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
               );
             })()}
           </div>
+
+          {/* Local Development Physical Artifacts (AI Studio Box) */}
+          {serverStatus.exeAvailable && (
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <CloudUpload className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-white">
+                    Descargar archivos compilados en AI Studio (para publicar en Storage):
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Utilice estos botones en este entorno para descargar físicamente los archivos generados y subirlos a su almacenamiento público (Supabase Storage / CDN):
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  id="btn-download-physical-exe"
+                  onClick={() => downloadLocalDevelopmentArtifact('exe')}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-700/60 hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Obtener {downloadOptions.exe.filename} ({REAL_ARTIFACT_SIZE})</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-download-physical-zip"
+                  onClick={() => downloadLocalDevelopmentArtifact('zip')}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-700/60 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Obtener {downloadOptions.zip.filename} ({REAL_ARTIFACT_SIZE})</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Quick Technical Specs */}
           <div className="p-4 rounded-xl bg-[#090C14] border border-slate-800 space-y-3">

@@ -3,19 +3,80 @@ const path = require('path');
 const net = require('net');
 const os = require('os');
 const http = require('http');
+const fs = require('fs');
+
+// Manejo global de excepciones para prevenir que la app se cierre inesperadamente (Caso C)
+process.on('uncaughtException', (err) => {
+  log(`[CRITICAL] Uncaught Exception: ${err ? err.stack || err.message : 'Unknown'}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  log(`[WARNING] Unhandled Rejection: ${reason}`);
+});
 
 let mainWindow = null;
-let serverProcess = null;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const DESKTOP_PORT = process.env.PORT || 3000;
 
-// Configurar logging seguro
+// Configuración de archivo de log persistente en la carpeta del usuario
+let logFilePath = null;
+function initLogger() {
+  try {
+    const userDataDir = app.getPath('userData');
+    if (!fs.existsSync(userDataDir)) {
+      fs.mkdirSync(userDataDir, { recursive: true });
+    }
+    logFilePath = path.join(userDataDir, 'drac-desktop.log');
+  } catch (e) {
+    // Si falla la inicialización temprana de ruta, se usará console.log
+  }
+}
+
 function log(msg) {
-  console.log(`[DRAC-DESKTOP] ${new Date().toISOString()} - ${msg}`);
+  const line = `[DRAC-DESKTOP] ${new Date().toISOString()} - ${msg}\n`;
+  console.log(line.trim());
+  if (logFilePath) {
+    try {
+      fs.appendFileSync(logFilePath, line, 'utf-8');
+    } catch (_) {}
+  }
+}
+
+// Resolver ruta de icono institucional de manera segura
+function resolveIconPath() {
+  const candidates = [
+    path.join(app.getAppPath(), 'dist', 'icon.png'),
+    path.join(__dirname, '..', 'dist', 'icon.png'),
+    path.join(__dirname, '..', 'build', 'icon.png'),
+    path.join(process.resourcesPath, 'icon.png'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+// Resolver ruta de index.html institucional
+function resolveIndexPath() {
+  const candidates = [
+    path.join(app.getAppPath(), 'dist', 'index.html'),
+    path.join(__dirname, '..', 'dist', 'index.html'),
+    path.join(process.resourcesPath, 'app.asar', 'dist', 'index.html'),
+    path.join(process.resourcesPath, 'dist', 'index.html'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(app.getAppPath(), 'dist', 'index.html');
 }
 
 async function createWindow() {
-  log('Inicializando ventana principal de DRAC Control de Asistencia...');
+  initLogger();
+  log('Iniciando ventana principal de DRAC Control de Asistencia...');
+  log(`Modo: ${isDev ? 'DESARROLLO' : 'PRODUCCIÓN (EMPAQUETADO)'}`);
+  log(`AppPath: ${app.getAppPath()}`);
+
+  const icon = resolveIconPath();
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -23,49 +84,68 @@ async function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: 'DRAC Control de Asistencia - Dirección Regional de Agricultura Cajamarca',
-    icon: path.join(__dirname, '..', 'build', 'icon.png'),
+    icon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: true,
+      webSecurity: false, // Permite consultar Supabase HTTPS sin bloqueo de origen file://
+      allowRunningInsecureContent: true,
     },
     show: false,
     backgroundColor: '#07080A',
     autoHideMenuBar: true,
   });
 
-  // Mostrar cuando esté listo para evitar flash blanco
+  // Mostrar cuando esté listo para evitar pantalla en blanco inicial
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    log('Ventana principal cargada y visible.');
+    log('Ventana principal lista y mostrada al usuario.');
   });
 
-  // Cargar frontend
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    log(`[ERROR] Fallo al cargar URL (${errorCode}: ${errorDescription}) en: ${validatedURL}`);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log(`[CRITICAL] Proceso de renderizado terminado: ${details.reason} (código de salida: ${details.exitCode})`);
+  });
+
   if (isDev) {
     const devUrl = `http://localhost:${DESKTOP_PORT}`;
-    log(`Modo Desarrollo: cargando ${devUrl}`);
+    log(`Modo Desarrollo: conectando a ${devUrl}`);
     mainWindow.loadURL(devUrl).catch((err) => {
-      log(`Error cargando URL dev: ${err.message}. Reintentando en 2s...`);
+      log(`Error conectando a devUrl: ${err.message}. Reintentando...`);
       setTimeout(() => mainWindow.loadURL(devUrl), 2000);
     });
   } else {
-    // En producción empaquetada:
-    // 1. Iniciamos el servidor Express local compilado si está disponible
+    // 1. Iniciar servidor Express interno local si existe el archivo compilado
     try {
-      const serverPath = path.join(__dirname, '..', 'dist', 'server.cjs');
-      log(`Iniciando backend integrado en ${serverPath}...`);
-      require(serverPath);
+      const serverCandidates = [
+        path.join(app.getAppPath(), 'dist', 'server.cjs'),
+        path.join(__dirname, '..', 'dist', 'server.cjs'),
+        path.join(process.resourcesPath, 'app.asar', 'dist', 'server.cjs'),
+      ];
+      const serverPath = serverCandidates.find((p) => fs.existsSync(p));
+      if (serverPath) {
+        log(`Iniciando backend interno en: ${serverPath}`);
+        require(serverPath);
+      } else {
+        log('Aviso: backend interno server.cjs no requerido o no presente, usando cliente autónomo.');
+      }
     } catch (err) {
-      log(`Aviso al iniciar backend integrado: ${err.message}`);
+      log(`Aviso al iniciar backend integrado (la app continuará funcionando con Supabase directo): ${err.message}`);
     }
 
-    // 2. Cargamos la aplicación
-    const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
-    mainWindow.loadFile(indexPath).catch((err) => {
-      log(`Fallback cargando archivo estático: ${err.message}`);
-      mainWindow.loadURL(`http://localhost:${DESKTOP_PORT}`);
+    // 2. Cargar la interfaz compilada
+    const targetHtml = resolveIndexPath();
+    log(`Cargando archivo principal: ${targetHtml}`);
+    mainWindow.loadFile(targetHtml).catch((err) => {
+      log(`Error al cargar ${targetHtml}: ${err.message}. Intentando fallback local...`);
+      mainWindow.loadURL(`http://localhost:${DESKTOP_PORT}`).catch((fallbackErr) => {
+        log(`Error final de carga: ${fallbackErr.message}`);
+      });
     });
   }
 
@@ -81,7 +161,7 @@ async function createWindow() {
 // 1. Verificación Real TCP Socket para Marcadores ZKTeco
 ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3000 }) => {
   log(`Verificando conectividad física con marcador ZKTeco: ${ip}:${port}`);
-  
+
   return new Promise((resolve) => {
     const startTime = Date.now();
     const socket = new net.Socket();
@@ -146,11 +226,11 @@ ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3
 ipcMain.handle('system:get-info', async () => {
   const networkInterfaces = os.networkInterfaces();
   const addresses = [];
-  
+
   for (const name of Object.keys(networkInterfaces)) {
-    for (const net of networkInterfaces[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        addresses.push({ interface: name, ip: net.address });
+    for (const netIf of networkInterfaces[name] || []) {
+      if (netIf.family === 'IPv4' && !netIf.internal) {
+        addresses.push({ interface: name, ip: netIf.address });
       }
     }
   }

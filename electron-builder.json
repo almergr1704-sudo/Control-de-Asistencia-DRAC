@@ -8,7 +8,10 @@
     "output": "dist-desktop",
     "buildResources": "build"
   },
-  "compression": "normal",
+  "toolsets": {
+    "wine": "1.0.1"
+  },
+  "compression": "store",
   "files": [
     "dist/**/*",
     "electron/**/*",
@@ -29,7 +32,7 @@
       }
     ],
     "icon": "build/icon.png",
-    "artifactName": "DRAC-Asistencia-${arch}.${ext}"
+    "artifactName": "DRAC_ASISTENCIA_DESKTOP_WINDOWS.${ext}"
   },
   "nsis": {
     "oneClick": false,

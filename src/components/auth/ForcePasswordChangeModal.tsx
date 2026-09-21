@@ -15,6 +15,7 @@ import {
   Info,
 } from 'lucide-react';
 import { Employee, PasswordPolicy } from '../../types';
+import { supabase } from '../../lib/supabaseClient';
 import {
   validatePasswordWithPolicy,
   hashPassword,
@@ -172,6 +173,21 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
         }
       } catch (e) {
         console.warn('Servidor local / offline, continuando con actualización de cliente:', e);
+      }
+
+      // 3. Persistir directamente en Supabase (tabla usuarios)
+      try {
+        const usernameOrDni = employee.username || employee.dni;
+        await supabase
+          .from('usuarios')
+          .update({
+            requiere_cambio_password: false,
+            password_hash: packed,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('username', usernameOrDni);
+      } catch (sbErr) {
+        console.warn('Nota sobre sincronización directa con Supabase usuarios:', sbErr);
       }
 
       const updatedEmp: Employee = {
