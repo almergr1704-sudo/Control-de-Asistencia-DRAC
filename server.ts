@@ -537,7 +537,9 @@ async function startServer() {
     // Cabeceras indispensables para reverse proxy Nginx / Cloud Run
     // X-Accel-Buffering: no evita que Nginx intente bufferizar los 100MB en disco temporal y falle con 500
     res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
     res.setHeader("Content-Type", contentType);
 
@@ -571,6 +573,7 @@ async function startServer() {
     ];
     const zipCandidates = [
       path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+      path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
       path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
       path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
@@ -600,34 +603,34 @@ async function startServer() {
       success: true,
       setup: {
         available: Boolean(foundSetup),
-        size: formatSize(foundSetup) || "458 MB",
+        size: formatSize(foundSetup) || "461.8 MB",
         filename: "DRAC-Control-de-Asistencia-Setup.exe",
-        url: "/download/DRAC-Control-de-Asistencia-Setup.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Setup.exe?v=2",
       },
       portable: {
         available: Boolean(foundPortable),
-        size: formatSize(foundPortable) || "457 MB",
+        size: formatSize(foundPortable) || "460.9 MB",
         filename: "DRAC-Control-de-Asistencia-Portable.exe",
-        url: "/download/DRAC-Control-de-Asistencia-Portable.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Portable.exe?v=2",
       },
       zip: {
         available: Boolean(foundZip),
-        size: formatSize(foundZip) || "456 MB",
+        size: formatSize(foundZip) || "460.1 MB",
         filename: "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
-        url: "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip",
+        url: "/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip?v=2",
       },
       diagnostico: {
         available: Boolean(foundDiag),
-        size: formatSize(foundDiag) || "9.3 KB",
+        size: formatSize(foundDiag) || "8.1 KB",
         filename: "DIAGNOSTICO_DESKTOP.txt",
-        url: "/download/DIAGNOSTICO_DESKTOP.txt",
+        url: "/download/DIAGNOSTICO_DESKTOP.txt?v=2",
       },
       // Backward-compatible alias
       exe: {
         available: Boolean(foundSetup),
-        size: formatSize(foundSetup) || "458 MB",
+        size: formatSize(foundSetup) || "461.8 MB",
         filename: "DRAC-Control-de-Asistencia-Setup.exe",
-        url: "/download/DRAC-Control-de-Asistencia-Setup.exe",
+        url: "/download/DRAC-Control-de-Asistencia-Setup.exe?v=2",
       },
     });
   });
@@ -644,6 +647,7 @@ async function startServer() {
     (req, res) => {
       const candidates = [
         path.join(process.cwd(), "dist-desktop", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
+        path.join(process.cwd(), "dist-desktop", "DRAC Control de Asistencia-1.0.0-win.zip"),
         path.join(process.cwd(), "public", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "dist", "download", "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),
         path.join(process.cwd(), "DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip"),

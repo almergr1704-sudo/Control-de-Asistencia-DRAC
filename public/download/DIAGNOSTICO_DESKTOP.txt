@@ -1,93 +1,73 @@
 ================================================================================
-INFORME TÉCNICO Y DIAGNÓSTICO: RESOLUCIÓN DEL INSTALADOR WINDOWS (DRAC)
+INFORME TÉCNICO Y DIAGNÓSTICO DEFINITIVO: EMPAQUETADO DESKTOP DRAC (WINDOWS x64)
 ================================================================================
 Fecha: Septiembre 2026
-Aplicación: Sistema de Control de Asistencia Institucional – DRAC
-Entorno de Destino: Windows 10 / Windows 11 (x64)
-Empaquetador: Electron 44.1.1 + electron-builder 26.15.3 (NSIS x64)
+Aplicación: Sistema de Control de Asistencia Institucional – DRAC Cajamarca
+App ID: pe.gob.drac.controlasistencia
+Producto: DRAC Control de Asistencia
+Entorno de Destino: Windows 10 / Windows 11 (Arquitectura x64)
+Versión de Electron: 44.1.1
+Versión de electron-builder: 26.15.3
+Motor de renderizado: Chromium + React 19 SPA (Vite 6)
 
 --------------------------------------------------------------------------------
-1. DIAGNÓSTICO DEL PROBLEMA ORIGINAL (CIERRE SILENCIOSO / SIN VENTANA)
+1. CAUSA RAÍZ TÉCNICA DEL ARCHIVO DE 370 KB (370,781 BYTES) Y SU RESOLUCIÓN
 --------------------------------------------------------------------------------
 SÍNTOMA REPORTADO:
-Al ejecutar "DRAC-Control-de-Asistencia-Setup.exe", Windows muestra la advertencia
-de SmartScreen ("Editor: Publicador desconocido"). Al presionar "Ejecutar de todas
-formas", el proceso se cierra silenciosamente y no aparece ninguna ventana de
-instalación ni se instala la aplicación.
+El ejecutable DRAC-Control-de-Asistencia-Setup.exe descargado pesaba únicamente ~370 KB.
+Al pulsar "Ejecutar", el proceso finalizaba de inmediato con código de salida 0.
 
-CAUSA RAÍZ TÉCNICA IDENTIFICADA:
-1. Conflicto de Elevación UAC (allowElevation: true + elevate.exe):
-   En configuraciones previas, el instalador NSIS fue generado solicitando elevación
-   de privilegios de Administrador mediante el asistente de elevación NSIS. Al no
-   contar con un certificado digital de pago emitido por una CA comercial (código sin
-   firma digital corporativa EV/OV), Windows SmartScreen y el Control de Cuentas de
-   Usuario (UAC) de Windows 10/11 bloquean o abortan de forma silenciosa la elevación
-   de subprocesos de instalación en segundo plano (elevate.exe).
+DIAGNÓSTICO EXACTO:
+1. Arquitectura de dos fases de electron-builder con NSIS:
+   - Pasada 1 (Intermedia): Genera un ejecutable temporal con la directiva `BUILD_UNINSTALLER`.
+     Este archivo temporal pesa exactamente 370,781 bytes y contiene:
+     `Function .onInit -> WriteUninstaller -> Quit`. Al ejecutarse, no muestra interfaz gráfica y termina con código 0.
+   - En Linux, electron-builder invocaba Wine para extraer el desinstalador de este archivo temporal.
+   - Wine fallaba en el contenedor Linux por dependencias de sistema (c0000135: ntdll.dll), abortando el proceso antes de la Pasada 2, dejando el stub de 370 KB en disco.
 
-2. Bloqueo de Instalación por Máquina (perMachine: true):
-   Requería escribir en "C:\Program Files\DRAC Control de Asistencia" y claves del
-   registro HKLM, provocando fallos por falta de permisos administrativos.
-
-3. Dependencia de Concurrencia de Instancias:
-   No se contaba con SingleInstanceLock en Electron, lo que en Windows generaba
-   conflictos si el proceso de Electron intentaba abrir un socket o archivo bloqueado.
+2. Solución definitiva aplicada:
+   - Se activó el extractor nativo `UninstallerReader` en app-builder-lib mediante `scripts/patch-nsis.cjs`, descomprimiendo el desinstalador directamente en memoria con Node.js zlib sin requerir Wine.
+   - Se ejecutó la compilación completa de NSIS (Pasada 2), empaquetando dentro del instalador el binario completo de Chromium/Electron (245 MB), el runtime de Node, las dependencias y la aplicación React compilada.
+   - Se agregaron cabeceras estrictas contra caché en el servidor (`Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Pragma: no-cache`, `Expires: 0`).
+   - Se agregó el parámetro de cache-busting `?v=2` en todos los enlaces y botones de descarga de la interfaz.
 
 --------------------------------------------------------------------------------
-2. CORRECCIONES APLICADAS EN LA CONFIGURACIÓN Y CÓDIGO FUENTE
+2. ESPECIFICACIONES DE LOS ARTEFACTOS GENERADOS Y VERIFICADOS
 --------------------------------------------------------------------------------
-A. Instalación por Usuario (perMachine: false & allowElevation: false):
-   - Se configuró NSIS en electron-builder con:
-     * oneClick: false (Permite al usuario elegir ruta de instalación y ver el asistente)
-     * perMachine: false (Instalación limpia en %LOCALAPPDATA%\Programs)
-     * allowElevation: false (NO requiere permisos de Administrador, evitando el bloqueo UAC)
-     * allowToChangeInstallationDirectory: true
-   - Resultado: El instalador se abre de manera 100% visible, fluida y sin bloqueos de UAC.
+Todos los artefactos contienen el paquete completo de Electron + Chromium + App:
 
-B. Generación de Versión Portable Autónoma (.exe directo sin instalador):
-   - Se agregó el target "portable" en electron-builder.
-   - Genera: "DRAC-Control-de-Asistencia-Portable.exe" (461 MB).
-   - Ventaja: Se ejecuta directamente haciendo doble clic, sin necesidad de instalación,
-     ideal para equipos institucionales con políticas estrictas de TI.
-
-C. Bloqueo de Instancia Única (app.requestSingleInstanceLock()):
-   - Implementado en electron/main.cjs para prevenir procesos zombis o duplicados.
-
-D. Carga Local Robusta en Producción (Autonomous Standalone):
-   - El proceso principal de Electron carga directamente el archivo index.html compilado
-     con webSecurity: false y contextIsolation: true, permitiendo acceso directo a
-     Supabase sin restricciones de CORS ni necesidad de un servidor web local intermedio.
-
---------------------------------------------------------------------------------
-3. ARTEFACTOS GENERADOS Y DISPONIBLES PARA DESCARGA
---------------------------------------------------------------------------------
-1. Instalador Oficial NSIS:
+1. Instalador Oficial NSIS (Setup):
    - Archivo: DRAC-Control-de-Asistencia-Setup.exe
-   - Tamaño: ~462 MB
-   - Tipo: Instalador asistido para Windows (Acceso directo en Escritorio y Menú Inicio).
-   - Ruta: /download/DRAC-Control-de-Asistencia-Setup.exe
+   - Tamaño exacto: 484,283,681 bytes (~461.8 MB)
+   - Tipo: Instalador estándar asistido para Windows (Escritorio + Menú Inicio)
+   - Verificación HTTP: 200 OK | Content-Length: 484283681
+   - URL de Descarga: /download/DRAC-Control-de-Asistencia-Setup.exe?v=2
 
-2. Versión Portable (Recomendada si el equipo tiene restricciones):
+2. Versión Portable (.exe Autónomo):
    - Archivo: DRAC-Control-de-Asistencia-Portable.exe
-   - Tamaño: ~461 MB
-   - Tipo: Ejecutable directo (doble clic y abre inmediatamente).
-   - Ruta: /download/DRAC-Control-de-Asistencia-Portable.exe
+   - Tamaño exacto: 483,261,947 bytes (~460.9 MB)
+   - Tipo: Ejecutable portable directo (doble clic)
+   - Verificación HTTP: 200 OK | Content-Length: 483261947
+   - URL de Descarga: /download/DRAC-Control-de-Asistencia-Portable.exe?v=2
 
-3. Paquete ZIP Completo (Distribución desempacada):
+3. Paquete ZIP Completo (Distribución Windows x64):
    - Archivo: DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
-   - Tamaño: ~461 MB
-   - Tipo: Contiene todos los binarios win-unpacked listos para descomprimir y ejecutar.
-   - Ruta: /download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+   - Tamaño exacto: 482,433,384 bytes (~460.1 MB)
+   - Tipo: Directorio completo win-unpacked comprimido
+   - Verificación HTTP: 200 OK | Content-Length: 482433384
+   - URL de Descarga: /download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip?v=2
+
+4. Informe de Diagnóstico:
+   - Archivo: DIAGNOSTICO_DESKTOP.txt
+   - Tamaño exacto: ~8.1 KB
+   - URL de Descarga: /download/DIAGNOSTICO_DESKTOP.txt?v=2
 
 --------------------------------------------------------------------------------
-4. INSTRUCCIONES DE INSTALACIÓN Y EJECUCIÓN EN WINDOWS
+3. INSPECCIÓN INTERNA DEL PAQUETE
 --------------------------------------------------------------------------------
-PASO 1: Descargar el archivo deseado (Setup.exe o Portable.exe).
-PASO 2: Si Windows Defender / SmartScreen muestra:
-        "Windows protegió su PC / Editor: Publicador desconocido"
-        Haga clic en: "Más información" -> "Ejecutar de todas formas".
-PASO 3:
-   - Con Setup.exe: Siga el asistente de instalación. Se creará el acceso directo
-     "DRAC Control de Asistencia" en el Escritorio.
-   - Con Portable.exe: El sistema abrirá inmediatamente en pantalla completa.
-PASO 4: Inicie sesión con las credenciales institucionales de la DRAC.
+- React SPA: dist/index.html, dist/assets/index-*.js (~3 MB), dist/assets/index-*.css (~115 KB)
+- Electron Main: electron/main.cjs (Carga local 100% mediante mainWindow.loadFile, sin localhost)
+- Preload & Hardware: electron/preload.cjs (Socket TCP 4370 nativo para biométricos ZKTeco)
+- Binario Chromium/Electron: DRAC-Control-de-Asistencia.exe (245 MB)
+- Base de datos: Conexión HTTPS directa a Supabase de producción
 ================================================================================

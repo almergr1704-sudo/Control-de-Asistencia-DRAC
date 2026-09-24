@@ -10,7 +10,7 @@ if (!fs.existsSync(targetFile)) {
 
 let content = fs.readFileSync(targetFile, 'utf8');
 
-if (content.includes('UninstallerReader.exec(installerPath, uninstallerPath);') && !content.includes('isMacOsCatalina')) {
+if (content.includes('UninstallerReader.exec(installerPath, uninstallerPath);') && content.includes('falling back to wine')) {
   console.log('[patch-nsis] NsisTarget.js is already patched.');
   process.exit(0);
 }

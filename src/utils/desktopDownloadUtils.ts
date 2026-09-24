@@ -180,7 +180,7 @@ export async function initiateDesktopDownload(
       });
     }
 
-    const localUrl = `/download/${target.filename}`;
+    const localUrl = `/download/${target.filename}?v=2&t=${Date.now()}`;
     const link = document.createElement('a');
     link.href = localUrl;
     link.setAttribute('download', target.filename);
@@ -217,7 +217,7 @@ export async function initiateDesktopDownload(
  */
 export function downloadLocalDevelopmentArtifact(type: 'exe' | 'zip'): void {
   const filename = type === 'exe' ? DEFAULT_EXE_FILENAME : DEFAULT_ZIP_FILENAME;
-  const url = `/download/${filename}`;
+  const url = `/download/${filename}?v=2&t=${Date.now()}`;
   const link = document.createElement('a');
   link.href = url;
   link.setAttribute('download', filename);
