@@ -33,21 +33,37 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: 3. Instalar dependencias del proyecto
-        run: npm ci
+      - name: 3. Instalar dependencias del proyecto (incluyendo opcionales nativas)
+        run: npm ci --include=optional
 
-      - name: 4. Preparar recursos e icono institucional
+      - name: 4. Comprobación obligatoria de módulo nativo Rollup para Windows
+        shell: pwsh
+        run: |
+          Write-Host "Verificando disponibilidad de @rollup/rollup-win32-x64-msvc..."
+          $testModule = "try { require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK'); process.exit(0); } catch(e) { process.exit(1); }"
+          node -e $testModule
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "El modulo no se cargo en el primer intento. Instalando especificamente @rollup/rollup-win32-x64-msvc..."
+            npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4
+            node -e "require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK')"
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "ERROR CRÍTICO: No se pudo cargar el modulo nativo @rollup/rollup-win32-x64-msvc en el entorno Windows."
+            exit 1
+          }
+
+      - name: 5. Preparar recursos e icono institucional
         run: node scripts/prepare-build.cjs
 
-      - name: 5. Compilar aplicación Web SPA y servidor (Vite + esbuild)
+      - name: 6. Compilar aplicación Web SPA y servidor (Vite + esbuild)
         run: npm run build
 
-      - name: 6. Compilar y empaquetar versión Desktop con Electron Builder (NSIS, Portable, ZIP)
+      - name: 7. Compilar y empaquetar versión Desktop con Electron Builder (NSIS, Portable, ZIP)
         run: npx electron-builder --win nsis portable zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 7. Verificar y preparar artefactos de distribución
+      - name: 8. Verificar y preparar artefactos de distribución
         shell: pwsh
         run: |
           Write-Host "=== Artefactos generados en dist-desktop ==="
@@ -56,11 +72,11 @@ jobs:
           # Verificar existencia del instalador principal
           $setupExe = "dist-desktop/DRAC-Control-de-Asistencia-Setup.exe"
           if (-not (Test-Path $setupExe)) {
-            Write-Error "CRÍTICO: No se encontró el instalador principal en $setupExe"
+            Write-Error "CRÍTICO: No se encontró el instalador principal en $setupExe. Se cancela la publicación de Release."
             exit 1
           }
 
-          # Crear alias con nombres cortos estandarizados para facilitar la descarga
+          # Crear alias con nombres estandarizados para facilitar la descarga
           Copy-Item $setupExe -Destination "dist-desktop/DRAC-Asistencia-Setup.exe" -Force -Verbose
           
           $zipSource = Get-ChildItem -Path dist-desktop -Filter "*.zip" | Select-Object -First 1
@@ -81,7 +97,7 @@ jobs:
           
           Get-Content "dist-desktop/SHA256SUMS.txt"
 
-      - name: 8. Determinar etiqueta y título de la Release
+      - name: 9. Determinar etiqueta y título de la Release
         id: release_info
         shell: pwsh
         run: |
@@ -101,7 +117,7 @@ jobs:
           Write-Output "tag=$tag" >> $env:GITHUB_OUTPUT
           Write-Output "title=$title" >> $env:GITHUB_OUTPUT
 
-      - name: 9. Publicar en GitHub Releases con Assets Binarios
+      - name: 10. Publicar en GitHub Releases con Assets Binarios
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_info.outputs.tag }}

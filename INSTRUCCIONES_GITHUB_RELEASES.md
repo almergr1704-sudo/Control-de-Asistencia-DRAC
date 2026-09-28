@@ -30,7 +30,8 @@ Descarga Directa en Windows (DRAC-Control-de-Asistencia-Setup.exe ≈ 484 MB)
 1. **`.github/workflows/build-desktop.yml`**:
    - Se ejecuta sobre un entorno oficial **`windows-latest`**.
    - Descarga el código y configura Node.js 20.
-   - Instala dependencias con `npm ci` utilizando `package-lock.json`.
+   - Instala dependencias completas con `npm ci --include=optional`.
+   - Realiza la comprobación obligatoria del módulo nativo Windows `@rollup/rollup-win32-x64-msvc` con `node -e`.
    - Sincroniza el icono institucional con `scripts/prepare-build.cjs`.
    - Compila la aplicación Web SPA y el servidor con `npm run build`.
    - Empaqueta el instalador de Electron con `npx electron-builder --win nsis portable zip`.
