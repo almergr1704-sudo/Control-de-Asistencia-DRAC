@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Descargas Oficiales DRAC Cajamarca - Control de Asistencia</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 720px;
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .header {
+      border-bottom: 1px solid #334155;
+      padding-bottom: 24px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: #065f46;
+      color: #34d399;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 8px 0;
+      color: #ffffff;
+    }
+    p.subtitle {
+      color: #94a3b8;
+      font-size: 14px;
+      margin: 0;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin: 0 0 4px 0;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: #94a3b8;
+      margin: 0;
+    }
+    .file-size {
+      font-size: 13px;
+      font-weight: 700;
+      color: #38bdf8;
+      background: #0369a120;
+      padding: 4px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #2563eb;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      transition: all 0.15s ease-in-out;
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .btn-download:hover {
+      background: #1d4ed8;
+    }
+    .btn-download.secondary {
+      background: #334155;
+      color: #f1f5f9;
+    }
+    .btn-download.secondary:hover {
+      background: #475569;
+    }
+    .notice {
+      background: #451a03;
+      border: 1px solid #78350f;
+      color: #fde68a;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 24px;
+    }
+    .meta-table {
+      width: 100%;
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 8px;
+      border-collapse: collapse;
+    }
+    .meta-table td {
+      padding: 4px 0;
+    }
+    .meta-table td.val {
+      color: #cbd5e1;
+      font-family: monospace;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <span class="badge">Artefactos Oficiales Compilados</span>
+      <h1>DRAC Control de Asistencia - Windows x64</h1>
+      <p class="subtitle">Dirección Regional de Agricultura Cajamarca | Electron 44.1.1 + Chromium</p>
+    </div>
+
+    <!-- Instalador NSIS -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Instalador Oficial Asistido (Recomendado)</h2>
+          <p class="card-desc">Crea accesos directos en Escritorio y Menú Inicio, incluye desinstalador completo.</p>
+        </div>
+        <span class="file-size">484.28 MB</span>
+      </div>
+      <table class="meta-table">
+        <tr><td>Archivo:</td><td class="val">DRAC-Control-de-Asistencia-Setup.exe</td></tr>
+        <tr><td>Tamaño exacto:</td><td class="val">484,280,559 bytes</td></tr>
+        <tr><td>Arquitectura:</td><td class="val">Windows 10 / 11 (x64)</td></tr>
+      </table>
+      <a href="/download/DRAC-Control-de-Asistencia-Setup.exe?v=2" class="btn-download" download="DRAC-Control-de-Asistencia-Setup.exe">
+        Descargar Instalador Setup (484 MB)
+      </a>
+    </div>
+
+    <!-- ZIP Completo -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Paquete ZIP Completo de Distribución</h2>
+          <p class="card-desc">Directorio binario completo (win-unpacked) comprimido sin necesidad de instalación.</p>
+        </div>
+        <span class="file-size">482.43 MB</span>
+      </div>
+      <table class="meta-table">
+        <tr><td>Archivo:</td><td class="val">DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip</td></tr>
+        <tr><td>Tamaño exacto:</td><td class="val">482,430,262 bytes</td></tr>
+      </table>
+      <a href="/download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip?v=2" class="btn-download secondary" download="DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip">
+        Descargar Paquete ZIP (482 MB)
+      </a>
+    </div>
+
+    <!-- Portable -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">Ejecutable Portable (.exe Autónomo)</h2>
+          <p class="card-desc">Ejecutable único para correr directamente desde memoria USB o carpeta local.</p>
+        </div>
+        <span class="file-size">483.26 MB</span>
+      </div>
+      <table class="meta-table">
+        <tr><td>Archivo:</td><td class="val">DRAC-Control-de-Asistencia-Portable.exe</td></tr>
+        <tr><td>Tamaño exacto:</td><td class="val">483,258,825 bytes</td></tr>
+      </table>
+      <a href="/download/DRAC-Control-de-Asistencia-Portable.exe?v=2" class="btn-download secondary" download="DRAC-Control-de-Asistencia-Portable.exe">
+        Descargar Portable (483 MB)
+      </a>
+    </div>
+
+    <div class="notice">
+      <strong>Distribución Profesional (GitHub Releases):</strong> Para distribución externa permanente e institucional, el repositorio cuenta con el flujo de automatización <code>.github/workflows/build-desktop.yml</code> en GitHub Actions (ejecutado sobre <code>windows-latest</code>), el cual publica automáticamente los instaladores completos directamente en la pestaña <strong>Releases</strong> de GitHub.
+    </div>
+  </div>
+</body>
+</html>

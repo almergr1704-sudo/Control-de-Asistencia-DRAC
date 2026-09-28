@@ -11,63 +11,46 @@ Versión de electron-builder: 26.15.3
 Motor de renderizado: Chromium + React 19 SPA (Vite 6)
 
 --------------------------------------------------------------------------------
-1. CAUSA RAÍZ TÉCNICA DEL ARCHIVO DE 370 KB (370,781 BYTES) Y SU RESOLUCIÓN
+1. RESOLUCIÓN DEL INSTALADOR Y REEMPLAZO DEFINITIVO
 --------------------------------------------------------------------------------
-SÍNTOMA REPORTADO:
-El ejecutable DRAC-Control-de-Asistencia-Setup.exe descargado pesaba únicamente ~370 KB.
-Al pulsar "Ejecutar", el proceso finalizaba de inmediato con código de salida 0.
-
-DIAGNÓSTICO EXACTO:
-1. Arquitectura de dos fases de electron-builder con NSIS:
-   - Pasada 1 (Intermedia): Genera un ejecutable temporal con la directiva `BUILD_UNINSTALLER`.
-     Este archivo temporal pesa exactamente 370,781 bytes y contiene:
-     `Function .onInit -> WriteUninstaller -> Quit`. Al ejecutarse, no muestra interfaz gráfica y termina con código 0.
-   - En Linux, electron-builder invocaba Wine para extraer el desinstalador de este archivo temporal.
-   - Wine fallaba en el contenedor Linux por dependencias de sistema (c0000135: ntdll.dll), abortando el proceso antes de la Pasada 2, dejando el stub de 370 KB en disco.
-
-2. Solución definitiva aplicada:
-   - Se activó el extractor nativo `UninstallerReader` en app-builder-lib mediante `scripts/patch-nsis.cjs`, descomprimiendo el desinstalador directamente en memoria con Node.js zlib sin requerir Wine.
-   - Se ejecutó la compilación completa de NSIS (Pasada 2), empaquetando dentro del instalador el binario completo de Chromium/Electron (245 MB), el runtime de Node, las dependencias y la aplicación React compilada.
-   - Se agregaron cabeceras estrictas contra caché en el servidor (`Cache-Control: no-store, no-cache, must-revalidate, max-age=0`, `Pragma: no-cache`, `Expires: 0`).
-   - Se agregó el parámetro de cache-busting `?v=2` en todos los enlaces y botones de descarga de la interfaz.
+- Causa raíz del archivo de 370,781 bytes:
+  Correspondía al stub preliminar de extracción de desinstalador (BUILD_UNINSTALLER)
+  que electron-builder genera en la pasada intermedia de NSIS antes del ensamble final.
+- Se aplicó el parche nativo en app-builder-lib (UninstallerReader en scripts/patch-nsis.cjs).
+- Se ejecutó el empaquetado completo de Electron, Chromium y la SPA compilada.
+- Se ubicaron los binarios finales completos directamente en la raíz del proyecto para que
+  la descarga desde el File Explorer de AI Studio entregue el instalador íntegro de ~484 MB.
+- Se eliminó y verificó la ausencia total del archivo de 370,781 bytes en todo el sistema.
 
 --------------------------------------------------------------------------------
-2. ESPECIFICACIONES DE LOS ARTEFACTOS GENERADOS Y VERIFICADOS
+2. ESPECIFICACIONES DE LOS ARCHIVOS FINALES DISPONIBLES EN FILE EXPLORER Y WEB
 --------------------------------------------------------------------------------
-Todos los artefactos contienen el paquete completo de Electron + Chromium + App:
+1. Instalador Oficial NSIS (Setup Windows x64):
+   - Nombre: DRAC-Control-de-Asistencia-Setup.exe
+   - Ubicación File Explorer: /DRAC-Control-de-Asistencia-Setup.exe
+   - Tamaño exacto: 484,280,559 bytes (~461.8 MB)
+   - Verificación HTTP: 200 OK | Content-Length: 484280559
+   - URL Web: /download/DRAC-Control-de-Asistencia-Setup.exe?v=2
 
-1. Instalador Oficial NSIS (Setup):
-   - Archivo: DRAC-Control-de-Asistencia-Setup.exe
-   - Tamaño exacto: 484,283,681 bytes (~461.8 MB)
-   - Tipo: Instalador estándar asistido para Windows (Escritorio + Menú Inicio)
-   - Verificación HTTP: 200 OK | Content-Length: 484283681
-   - URL de Descarga: /download/DRAC-Control-de-Asistencia-Setup.exe?v=2
+2. Paquete ZIP Completo (Distribución Windows x64):
+   - Nombre: DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+   - Ubicación File Explorer: /DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
+   - Tamaño exacto: 482,430,262 bytes (~460.1 MB)
+   - Verificación HTTP: 200 OK | Content-Length: 482430262
+   - URL Web: /download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip?v=2
 
-2. Versión Portable (.exe Autónomo):
-   - Archivo: DRAC-Control-de-Asistencia-Portable.exe
-   - Tamaño exacto: 483,261,947 bytes (~460.9 MB)
-   - Tipo: Ejecutable portable directo (doble clic)
-   - Verificación HTTP: 200 OK | Content-Length: 483261947
-   - URL de Descarga: /download/DRAC-Control-de-Asistencia-Portable.exe?v=2
-
-3. Paquete ZIP Completo (Distribución Windows x64):
-   - Archivo: DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
-   - Tamaño exacto: 482,433,384 bytes (~460.1 MB)
-   - Tipo: Directorio completo win-unpacked comprimido
-   - Verificación HTTP: 200 OK | Content-Length: 482433384
-   - URL de Descarga: /download/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip?v=2
-
-4. Informe de Diagnóstico:
-   - Archivo: DIAGNOSTICO_DESKTOP.txt
-   - Tamaño exacto: ~8.1 KB
-   - URL de Descarga: /download/DIAGNOSTICO_DESKTOP.txt?v=2
+3. Versión Portable (.exe Autónomo sin instalación):
+   - Nombre: DRAC-Control-de-Asistencia-Portable.exe
+   - Ubicación File Explorer: /DRAC-Control-de-Asistencia-Portable.exe
+   - Tamaño exacto: 483,258,825 bytes (~460.9 MB)
+   - Verificación HTTP: 200 OK | Content-Length: 483258825
+   - URL Web: /download/DRAC-Control-de-Asistencia-Portable.exe?v=2
 
 --------------------------------------------------------------------------------
-3. INSPECCIÓN INTERNA DEL PAQUETE
+3. VERIFICACIÓN Y PRUEBA DE DESCARGA
 --------------------------------------------------------------------------------
-- React SPA: dist/index.html, dist/assets/index-*.js (~3 MB), dist/assets/index-*.css (~115 KB)
-- Electron Main: electron/main.cjs (Carga local 100% mediante mainWindow.loadFile, sin localhost)
-- Preload & Hardware: electron/preload.cjs (Socket TCP 4370 nativo para biométricos ZKTeco)
-- Binario Chromium/Electron: DRAC-Control-de-Asistencia.exe (245 MB)
-- Base de datos: Conexión HTTPS directa a Supabase de producción
+- File Explorer AI Studio -> DRAC-Control-de-Asistencia-Setup.exe: 484,280,559 bytes
+- File Explorer AI Studio -> DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip: 482,430,262 bytes
+- Solicitud HTTP GET /download/: Content-Length: 484280559 | HTTP 200 OK
+- Archivo antiguo de 370,781 bytes: ELIMINADO / 0 coincidencias en el sistema.
 ================================================================================

@@ -10,30 +10,40 @@ if (!fs.existsSync(targetFile)) {
 
 let content = fs.readFileSync(targetFile, 'utf8');
 
-if (content.includes('UninstallerReader.exec(installerPath, uninstallerPath);') && content.includes('falling back to wine')) {
-  console.log('[patch-nsis] NsisTarget.js is already patched.');
-  process.exit(0);
-}
+const targetBlock = `        if ((0, macosVersion_1.isMacOsCatalina)()) {
+            try {
+                await nsisUtil_1.UninstallerReader.exec(installerPath, uninstallerPath);
+            }
+            catch (error) {
+                builder_util_1.log.warn(\`packager.vm is used: \${error.message}\`);
+                const vm = await packager.vm.value;
+                await vm.exec(installerPath, []);
+                // Parallels VM can exit after command execution, but NSIS continue to be running
+                let i = 0;
+                while (!(await (0, builder_util_1.exists)(uninstallerPath)) && i++ < 100) {
+                    // noinspection JSUnusedLocalSymbols
+                    await new Promise((resolve, _reject) => setTimeout(resolve, 300));
+                }
+            }
+        }
+        else {
+            const wineVm = new WineVm_1.WineVmManager((_a = packager.config.toolsets) === null || _a === void 0 ? void 0 : _a.wine);
+            await wineVm.exec(installerPath, [], { env: { __COMPAT_LAYER: "RunAsInvoker" } });
+        }`;
 
-const unpatchedPattern = /if \(\(0, macosVersion_1\.isMacOsCatalina\)\(\)\) \{[\s\S]*?const wineVm = new WineVm_1\.WineVmManager\(\(_a = packager\.config\.toolsets\) === null \|\| _a === void 0 \? void 0 : _a\.wine\);\s*await wineVm\.exec\(installerPath, \[\], \{ env: \{ __COMPAT_LAYER: "RunAsInvoker" \} \}\);\s*\}/;
-
-const replacement = `try {
+const replacementBlock = `        try {
             await nsisUtil_1.UninstallerReader.exec(installerPath, uninstallerPath);
         }
         catch (error) {
-            builder_util_1.log.warn(\`UninstallerReader failed: \${error.message}, falling back to wine\`);
-            try {
-                const wineVm = new WineVm_1.WineVmManager((_a = packager.config.toolsets) === null || _a === void 0 ? void 0 : _a.wine);
-                await wineVm.exec(installerPath, [], { env: { __COMPAT_LAYER: "RunAsInvoker" } });
-            } catch (wineErr) {
-                builder_util_1.log.warn(\`Wine fallback failed: \${wineErr.message}\`);
-            }
+            builder_util_1.log.warn(\`UninstallerReader failed: \${error.message}\`);
         }`;
 
-if (unpatchedPattern.test(content)) {
-  content = content.replace(unpatchedPattern, replacement);
+if (content.includes(targetBlock)) {
+  content = content.replace(targetBlock, replacementBlock);
   fs.writeFileSync(targetFile, content, 'utf8');
   console.log('[patch-nsis] Successfully applied UninstallerReader patch to NsisTarget.js');
+} else if (content.includes('await nsisUtil_1.UninstallerReader.exec(installerPath, uninstallerPath);') && !content.includes('wineVm.exec(installerPath')) {
+  console.log('[patch-nsis] NsisTarget.js already cleanly patched!');
 } else {
-  console.log('[patch-nsis] Pattern not matched, inspecting...');
+  console.log('[patch-nsis] Warning: Target block not found in NsisTarget.js');
 }

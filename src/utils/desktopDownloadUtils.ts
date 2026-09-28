@@ -71,6 +71,19 @@ export async function fetchServerDownloadStatus(): Promise<{
   };
 }
 
+export function getGitHubReleasesInfo(): {
+  isConfigured: boolean;
+  url: string;
+} {
+  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+  const rawReleasesUrl = typeof metaEnv?.VITE_GITHUB_RELEASES_URL === 'string' ? metaEnv.VITE_GITHUB_RELEASES_URL.trim() : '';
+  const validUrl = isPublicProductionUrl(rawReleasesUrl) ? rawReleasesUrl : '';
+  return {
+    isConfigured: Boolean(validUrl),
+    url: validUrl,
+  };
+}
+
 export function getDesktopDownloadOptions(): { exe: DownloadOptionInfo; zip: DownloadOptionInfo } {
   const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
 

@@ -19,6 +19,7 @@ import {
 import {
   initiateDesktopDownload,
   getDesktopDownloadOptions,
+  getGitHubReleasesInfo,
   fetchServerDownloadStatus,
   downloadLocalDevelopmentArtifact,
   REAL_ARTIFACT_SIZE,
@@ -81,6 +82,7 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
   if (!isOpen) return null;
 
   const downloadOptions = getDesktopDownloadOptions();
+  const ghReleases = getGitHubReleasesInfo();
 
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -338,42 +340,65 @@ export const DownloadDesktopModal: React.FC<DownloadDesktopModalProps> = ({
             })()}
           </div>
 
-          {/* Local Development Physical Artifacts (AI Studio Box) */}
-          {serverStatus.exeAvailable && (
-            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+          {/* GitHub Releases Official Distribution Card */}
+          <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-3">
+            <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-2.5">
-                <CloudUpload className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <Server className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-xs font-bold text-white">
-                    Descargar archivos compilados en AI Studio (para publicar en Storage):
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    Distribución Oficial en GitHub Releases
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono">
+                      CI/CD Automático
+                    </span>
                   </h4>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Utilice estos botones en este entorno para descargar físicamente los archivos generados y subirlos a su almacenamiento público (Supabase Storage / CDN):
+                    El instalador completo de Windows (~484 MB) se compila de forma nativa en GitHub Actions (<code className="text-slate-300">windows-latest</code>) y se publica como artefacto permanente en la sección Releases del repositorio en GitHub, evitando límites de almacenamiento.
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <button
-                  type="button"
-                  id="btn-download-physical-exe"
-                  onClick={() => downloadLocalDevelopmentArtifact('exe')}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-700/60 hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              {ghReleases.isConfigured && (
+                <a
+                  href={ghReleases.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Obtener {downloadOptions.exe.filename} ({REAL_ARTIFACT_SIZE})</span>
-                </button>
-                <button
-                  type="button"
-                  id="btn-download-physical-zip"
-                  onClick={() => downloadLocalDevelopmentArtifact('zip')}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-700/60 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Obtener {downloadOptions.zip.filename} ({REAL_ARTIFACT_SIZE})</span>
-                </button>
-              </div>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Ver en GitHub Releases</span>
+                </a>
+              )}
             </div>
-          )}
+
+            {/* Direct local development download if available */}
+            {serverStatus.exeAvailable && (
+              <div className="pt-2 border-t border-slate-800/80">
+                <span className="text-[11px] text-slate-400 block mb-2">
+                  Descarga directa desde el servidor local en ejecución:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    id="btn-download-physical-exe"
+                    onClick={() => downloadLocalDevelopmentArtifact('exe')}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-700/60 hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Descargar {downloadOptions.exe.filename} ({REAL_ARTIFACT_SIZE})</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-download-physical-zip"
+                    onClick={() => downloadLocalDevelopmentArtifact('zip')}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-700/60 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Descargar {downloadOptions.zip.filename} ({REAL_ARTIFACT_SIZE})</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Quick Technical Specs */}
           <div className="p-4 rounded-xl bg-[#090C14] border border-slate-800 space-y-3">

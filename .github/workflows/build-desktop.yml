@@ -1,51 +1,139 @@
-name: Build Desktop Windows Release
+name: Compilar y Publicar DRAC Desktop Windows (GitHub Release)
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Etiqueta de versión (ej: v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      release_name:
+        description: 'Nombre de la Release'
+        required: false
+        default: 'DRAC Control de Asistencia Desktop v1.0.0'
 
 permissions:
   contents: write
 
 jobs:
   build-windows:
+    name: Compilar Instalador Windows x64
     runs-on: windows-latest
+
     steps:
-      - name: Checkout code
+      - name: 1. Descargar código fuente del repositorio
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: 2. Configurar entorno Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: 3. Instalar dependencias del proyecto
         run: npm ci
 
-      - name: Build Web & Server
+      - name: 4. Preparar recursos e icono institucional
+        run: node scripts/prepare-build.cjs
+
+      - name: 5. Compilar aplicación Web SPA y servidor (Vite + esbuild)
         run: npm run build
 
-      - name: Build Windows Desktop (Installer & Portable ZIP)
-        run: npx electron-builder --win nsis zip
+      - name: 6. Compilar y empaquetar versión Desktop con Electron Builder (NSIS, Portable, ZIP)
+        run: npx electron-builder --win nsis portable zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify compiled artifacts
+      - name: 7. Verificar y preparar artefactos de distribución
+        shell: pwsh
         run: |
-          Get-ChildItem -Path dist-desktop -Recurse -File | Select-Object Name, Length
+          Write-Host "=== Artefactos generados en dist-desktop ==="
+          Get-ChildItem -Path dist-desktop -File | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+          
+          # Verificar existencia del instalador principal
+          $setupExe = "dist-desktop/DRAC-Control-de-Asistencia-Setup.exe"
+          if (-not (Test-Path $setupExe)) {
+            Write-Error "CRÍTICO: No se encontró el instalador principal en $setupExe"
+            exit 1
+          }
 
-      - name: Create Release and Upload Artifacts
+          # Crear alias con nombres cortos estandarizados para facilitar la descarga
+          Copy-Item $setupExe -Destination "dist-desktop/DRAC-Asistencia-Setup.exe" -Force -Verbose
+          
+          $zipSource = Get-ChildItem -Path dist-desktop -Filter "*.zip" | Select-Object -First 1
+          if ($zipSource) {
+            Copy-Item $zipSource.FullName -Destination "dist-desktop/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip" -Force -Verbose
+            Copy-Item $zipSource.FullName -Destination "dist-desktop/DRAC-Asistencia-Windows.zip" -Force -Verbose
+          }
+
+          if (Test-Path "dist-desktop/DRAC-Control-de-Asistencia-Portable.exe") {
+            Copy-Item "dist-desktop/DRAC-Control-de-Asistencia-Portable.exe" -Destination "dist-desktop/DRAC-Asistencia-Portable.exe" -Force -Verbose
+          }
+
+          # Generar archivo de sumas de verificación SHA-256 para integridad de descarga
+          Write-Host "=== Generando SHA256SUMS.txt ==="
+          Get-FileHash -Path dist-desktop/*.exe, dist-desktop/*.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } |
+            Out-File -FilePath "dist-desktop/SHA256SUMS.txt" -Encoding utf8
+          
+          Get-Content "dist-desktop/SHA256SUMS.txt"
+
+      - name: 8. Determinar etiqueta y título de la Release
+        id: release_info
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+            $title = "DRAC Control de Asistencia Desktop $tag"
+          } else {
+            $inputTag = "${{ inputs.tag_name }}"
+            if (-not $inputTag) { $inputTag = "v1.0.0" }
+            $tag = $inputTag
+            $inputTitle = "${{ inputs.release_name }}"
+            if (-not $inputTitle) { $inputTitle = "DRAC Control de Asistencia Desktop $tag" }
+            $title = $inputTitle
+          }
+          Write-Host "Release Tag: $tag"
+          Write-Host "Release Title: $title"
+          Write-Output "tag=$tag" >> $env:GITHUB_OUTPUT
+          Write-Output "title=$title" >> $env:GITHUB_OUTPUT
+
+      - name: 9. Publicar en GitHub Releases con Assets Binarios
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: ${{ steps.release_info.outputs.title }}
+          body: |
+            ## Sistema de Control de Asistencia Institucional - DRAC Cajamarca
+            **Versión Desktop Oficial para Windows 10 y Windows 11 (x64)**
+
+            ### 📦 Archivos Disponibles para Descarga (Assets):
+            1. **`DRAC-Control-de-Asistencia-Setup.exe`** (Recomendado):
+               - Instalador estándar asistido con accesos directos en Escritorio y Menú Inicio.
+               - Incluye soporte nativo TCP/IP (puerto 4370) para biométricos ZKTeco en red LAN.
+            2. **`DRAC-Control-de-Asistencia-Portable.exe`**:
+               - Ejecutable directo sin necesidad de instalación previa.
+            3. **`DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip`**:
+               - Directorio completo empaquetado para distribución interna.
+            4. **`SHA256SUMS.txt`**:
+               - Firmas criptográficas para validar la integridad de cada archivo descargado.
+
+            ---
+            *Compilación automatizada en entorno nativo Windows (`windows-latest`) mediante GitHub Actions.*
           files: |
+            dist-desktop/DRAC-Control-de-Asistencia-Setup.exe
             dist-desktop/DRAC-Asistencia-Setup.exe
+            dist-desktop/DRAC-Control-de-Asistencia-Portable.exe
+            dist-desktop/DRAC-Asistencia-Portable.exe
+            dist-desktop/DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip
             dist-desktop/DRAC-Asistencia-Windows.zip
+            dist-desktop/SHA256SUMS.txt
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

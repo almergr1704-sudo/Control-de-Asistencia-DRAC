@@ -710,6 +710,10 @@ async function startServer() {
     }
   );
 
+  app.get(["/descargar", "/descarga"], (req, res) => {
+    res.sendFile(path.join(process.cwd(), "public", "descargar.html"));
+  });
+
   // RBAC Helper: Verify that caller has administrative permissions
   const checkAdminPermission = (req: express.Request, res: express.Response, moduleName: string = "este módulo"): boolean => {
     const callerRole = (req.headers["x-user-role"] as string) || (req.body?.auth_user_role as string) || "ADMIN_GENERAL";
