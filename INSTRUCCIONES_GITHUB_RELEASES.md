@@ -89,12 +89,10 @@ Una vez finalizado el workflow (tarda entre 3 y 5 minutos en GitHub):
 
 ---
 
-### 5. INTEGRACIÓN CON LA VERSIÓN WEB
+### 5. POLÍTICA DE DISTRIBUCIÓN EXCLUSIVA
 
-Para que el botón de descarga en la versión web (en producción o Vercel) apunte directamente a la Release de GitHub:
-1. En sus variables de entorno de producción (`.env` o Vercel):
-   ```env
-   VITE_GITHUB_RELEASES_URL="https://github.com/TU_USUARIO/TU_REPOSITORIO/releases"
-   VITE_DESKTOP_EXE_URL="https://github.com/TU_USUARIO/TU_REPOSITORIO/releases/download/v1.0.0/DRAC-Control-de-Asistencia-Setup.exe"
-   ```
-2. Al configurar estas variables, los usuarios que ingresen a la aplicación Web podrán descargar directamente el instalador oficial alojado en GitHub sin consumir ancho de banda de su servidor web ni depender de Supabase Storage.
+La distribución de los instaladores se realiza **exclusivamente** a través de GitHub Releases:
+- **Repositorio Oficial:** `https://github.com/almergr1704-sudo/Control-de-Asistencia-DRAC/releases`
+- **Release actual:** `v1.0.0`
+
+Las aplicaciones Web y Desktop no contienen botones ni rutas internas de descarga de instaladores. Los administradores y usuarios obtienen los ejecutables de instalación directamente de los Assets de GitHub Releases.

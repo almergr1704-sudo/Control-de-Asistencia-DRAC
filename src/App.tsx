@@ -53,7 +53,6 @@ import {
   saveEmployeeToSupabase,
   getNextDracCodeFromPostgres,
 } from './services/employeeService';
-import { initiateDesktopDownload } from './utils/desktopDownloadUtils';
 
 import {
   fetchTurnosFromSupabase,
@@ -1744,46 +1743,6 @@ export default function App() {
           onResetData={handleResetAllData}
           onToggleSidebarMobile={() => setIsOpenMobile(true)}
         />
-
-        {/* Quick Access Notification Banner: Windows Desktop Installer */}
-        <div id="banner-download-desktop-alert" className="bg-gradient-to-r from-emerald-950/70 via-[#0C121E] to-slate-900 border-b border-emerald-500/30 px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5 text-slate-200">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="font-semibold text-emerald-400">Instalador Desktop Windows:</span>
-            <span className="text-slate-300 hidden sm:inline">Haga clic para descargar el sistema nativo para su PC:</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              id="banner-btn-download-exe"
-              type="button"
-              onClick={() => initiateDesktopDownload('exe')}
-              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center gap-1.5 shadow-sm shadow-emerald-950/50 transition-colors cursor-pointer"
-              title="Descargar instalador ejecutable para Windows"
-            >
-              <span>Descargar .EXE</span>
-              <span className="text-[10px] text-emerald-200 font-mono">(Windows)</span>
-            </button>
-            <button
-              id="banner-btn-download-zip"
-              type="button"
-              onClick={() => initiateDesktopDownload('zip')}
-              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-colors cursor-pointer"
-              title="Descargar paquete comprimido ZIP"
-            >
-              Descargar .ZIP
-            </button>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-download-desktop'))}
-              className="text-[11px] text-emerald-400 underline hover:text-emerald-300 ml-1 cursor-pointer"
-            >
-              Ver Opciones y Guía
-            </button>
-          </div>
-        </div>
 
         {/* Content Workspace Area */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">

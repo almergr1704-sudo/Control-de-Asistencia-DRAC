@@ -3338,23 +3338,28 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   </div>
 
                   {!testResult.success && (
-                    <div className="bg-amber-950/30 border border-amber-500/30 rounded p-2 space-y-1.5">
+                    <div className="bg-amber-950/30 border border-amber-500/30 rounded p-2.5 space-y-2">
                       <div className="flex items-start gap-1.5 text-amber-300 text-[10px]">
-                        <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                         <div>
-                          <p className="font-bold">¿El marcador está en red local (LAN/Intranet)?</p>
-                          <p className="text-slate-300 text-[10px]">
-                            Puede validar el enlace local o guardar el marcador directamente.
+                          <p className="font-bold text-amber-200">¿El biométrico está en la red local de la oficina (IP Privada LAN)?</p>
+                          <p className="text-slate-300 text-[10px] mt-0.5 leading-relaxed">
+                            Al ejecutar la aplicación desde la <strong>versión Web en la nube</strong>, los servidores de internet no pueden enviar paquetes TCP directos a IPs privadas internas (<code className="text-amber-300">{ipAddress || '192.168.1.x'}</code>). Para conectar:
                           </p>
+                          <ul className="text-[10px] text-slate-300 list-disc list-inside mt-1 space-y-0.5">
+                            <li><strong>Opción 1:</strong> Pulse el botón inferior para <strong>Validar y Guardar</strong> el marcador en el sistema.</li>
+                            <li><strong>Opción 2:</strong> Use la aplicación <strong>Desktop (Windows)</strong> desde una PC conectada a la misma red/switch.</li>
+                            <li><strong>Opción 3:</strong> Configure el reloj en modo <strong>ADMS / Servidor Cloud</strong> para que envíe marcaciones a la web.</li>
+                          </ul>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={handleAuthorizeManualConnection}
-                        className="w-full py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded font-bold text-[10px] transition-colors flex items-center justify-center gap-1 font-mono"
+                        className="w-full py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded font-bold text-xs transition-colors flex items-center justify-center gap-1.5 font-mono cursor-pointer"
                       >
-                        <Check className="w-3 h-3" />
-                        <span>Validar Enlace de Red Local (LAN)</span>
+                        <Check className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Validar Enlace de Red Local (LAN) y Habilitar Guardado</span>
                       </button>
                     </div>
                   )}
