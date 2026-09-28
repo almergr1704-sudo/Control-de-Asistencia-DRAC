@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node scripts/ensure-windows-native.cjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "electron:dev": "cross-env NODE_ENV=development electron electron/main.cjs",
     "electron:build": "node scripts/prepare-build.cjs && npm run build && node scripts/patch-nsis.cjs && electron-builder --win",
@@ -44,6 +44,7 @@
     "vite": "^6.2.3"
   },
   "optionalDependencies": {
+    "@esbuild/win32-x64": "0.25.12",
     "@rollup/rollup-win32-x64-msvc": "4.62.4"
   }
 }

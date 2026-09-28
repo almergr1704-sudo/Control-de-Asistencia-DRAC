@@ -36,19 +36,23 @@ jobs:
       - name: 3. Instalar dependencias del proyecto (incluyendo opcionales nativas)
         run: npm ci --include=optional
 
-      - name: 4. Comprobación obligatoria de módulo nativo Rollup para Windows
+      - name: 4. Comprobación obligatoria de módulos nativos para Windows
         shell: pwsh
         run: |
-          Write-Host "Verificando disponibilidad de @rollup/rollup-win32-x64-msvc..."
-          $testModule = "try { require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK'); process.exit(0); } catch(e) { process.exit(1); }"
-          node -e $testModule
+          Write-Host "=== Asegurando modulos nativos para Windows x64 ==="
+          npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4 @esbuild/win32-x64@0.25.12
+          
+          Write-Host "Verificando modulo nativo @rollup/rollup-win32-x64-msvc..."
+          node -e "require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK')"
           if ($LASTEXITCODE -ne 0) {
-            Write-Warning "El modulo no se cargo en el primer intento. Instalando especificamente @rollup/rollup-win32-x64-msvc..."
-            npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4
-            node -e "require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK')"
+            Write-Error "ERROR CRÍTICO: No se pudo cargar el modulo nativo @rollup/rollup-win32-x64-msvc en Windows."
+            exit 1
           }
+          
+          Write-Host "Verificando modulo nativo @esbuild/win32-x64..."
+          node -e "require('@esbuild/win32-x64'); console.log('esbuild Windows native module OK')"
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "ERROR CRÍTICO: No se pudo cargar el modulo nativo @rollup/rollup-win32-x64-msvc en el entorno Windows."
+            Write-Error "ERROR CRÍTICO: No se pudo cargar el modulo nativo @esbuild/win32-x64 en Windows."
             exit 1
           }
 
