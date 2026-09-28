@@ -12,8 +12,8 @@ if (process.platform === 'win32') {
   }
 
   try {
-    require('@esbuild/win32-x64');
-    console.log('[ensure-windows-native] @esbuild/win32-x64 OK');
+    require('esbuild').buildSync({ stdin: { contents: '' }, write: false });
+    console.log('[ensure-windows-native] esbuild Windows native module OK');
   } catch (e) {
     missing.push('@esbuild/win32-x64@0.25.12');
   }

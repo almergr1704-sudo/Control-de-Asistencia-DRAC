@@ -30,7 +30,7 @@ jobs:
       - name: 2. Configurar entorno Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: 3. Instalar dependencias del proyecto (incluyendo opcionales nativas)
@@ -49,10 +49,10 @@ jobs:
             exit 1
           }
           
-          Write-Host "Verificando modulo nativo @esbuild/win32-x64..."
-          node -e "require('@esbuild/win32-x64'); console.log('esbuild Windows native module OK')"
+          Write-Host "Verificando ejecucion nativa de esbuild para Windows..."
+          node -e "require('esbuild').buildSync({ stdin: { contents: '' }, write: false }); console.log('esbuild Windows native module OK')"
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "ERROR CRÍTICO: No se pudo cargar el modulo nativo @esbuild/win32-x64 en Windows."
+            Write-Error "ERROR CRÍTICO: No se pudo ejecutar el binario nativo de esbuild en Windows."
             exit 1
           }
 
