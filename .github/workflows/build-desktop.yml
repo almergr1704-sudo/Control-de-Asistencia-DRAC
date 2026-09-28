@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "=== Asegurando modulos nativos para Windows x64 ==="
-          npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4 @esbuild/win32-x64@0.25.12
+          npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4 @esbuild/win32-x64@0.25.12 lightningcss-win32-x64-msvc@1.32.0 @tailwindcss/oxide-win32-x64-msvc@4.3.3
           
           Write-Host "Verificando modulo nativo @rollup/rollup-win32-x64-msvc..."
           node -e "require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK')"
@@ -53,6 +53,13 @@ jobs:
           node -e "require('esbuild').buildSync({ stdin: { contents: '' }, write: false }); console.log('esbuild Windows native module OK')"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "ERROR CRÍTICO: No se pudo ejecutar el binario nativo de esbuild en Windows."
+            exit 1
+          }
+
+          Write-Host "Verificando modulo nativo lightningcss para Windows..."
+          node -e "require('lightningcss'); console.log('LightningCSS Windows native module OK')"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "ERROR CRÍTICO: No se pudo cargar lightningcss en Windows."
             exit 1
           }
 

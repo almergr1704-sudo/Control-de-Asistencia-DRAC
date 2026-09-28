@@ -18,6 +18,20 @@ if (process.platform === 'win32') {
     missing.push('@esbuild/win32-x64@0.25.12');
   }
 
+  try {
+    require('lightningcss');
+    console.log('[ensure-windows-native] lightningcss Windows native module OK');
+  } catch (e) {
+    missing.push('lightningcss-win32-x64-msvc@1.32.0');
+  }
+
+  try {
+    require('@tailwindcss/oxide-win32-x64-msvc');
+    console.log('[ensure-windows-native] @tailwindcss/oxide-win32-x64-msvc OK');
+  } catch (e) {
+    missing.push('@tailwindcss/oxide-win32-x64-msvc@4.3.3');
+  }
+
   if (missing.length > 0) {
     console.log('[ensure-windows-native] Installing missing Windows native packages:', missing.join(' '));
     try {
