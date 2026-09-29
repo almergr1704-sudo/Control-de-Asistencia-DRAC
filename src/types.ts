@@ -956,4 +956,39 @@ export interface SecurityConfig {
 export type Papeleta = PapeletaSalida;
 export type RawPunch = MarcacionRaw;
 
+declare global {
+  interface Window {
+    electronAPI?: {
+      isDesktop: boolean;
+      platform: string;
+      pingZkDevice: (ip: string, port?: number, timeoutMs?: number) => Promise<{
+        success: boolean;
+        reachable: boolean;
+        ip: string;
+        port: number;
+        latencyMs?: number;
+        message: string;
+        error?: string;
+        timestamp: string;
+      }>;
+      getSystemInfo: () => Promise<{
+        platform: string;
+        arch: string;
+        hostname: string;
+        osRelease: string;
+        type: string;
+        appVersion: string;
+        nodeVersion: string;
+        electronVersion: string;
+        networkAddresses: { interface: string; ip: string }[];
+        localTime: string;
+      }>;
+      minimize: () => void;
+      maximize: () => void;
+      close: () => void;
+    };
+    __DRAC_DESKTOP_CLIENT__?: boolean;
+  }
+}
+
 

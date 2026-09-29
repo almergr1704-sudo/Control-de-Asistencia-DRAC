@@ -11,27 +11,31 @@ const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : 
 const procEnv = typeof process !== 'undefined' ? process.env : undefined;
 
 function cleanSupabaseUrl(rawUrl?: string): string {
-  if (!rawUrl || typeof rawUrl !== 'string') return 'https://drac-cajamarca.supabase.co';
+  if (!rawUrl || typeof rawUrl !== 'string') return 'https://rfqgmoremevypexrrsyf.supabase.co';
   return rawUrl.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
 }
 
 const rawUrl = 
   metaEnv?.VITE_SUPABASE_URL || 
   procEnv?.VITE_SUPABASE_URL || 
-  'https://drac-cajamarca.supabase.co';
+  'https://rfqgmoremevypexrrsyf.supabase.co';
 
 const SUPABASE_URL = cleanSupabaseUrl(rawUrl);
 
 const SUPABASE_ANON_KEY = 
   metaEnv?.VITE_SUPABASE_ANON_KEY || 
   procEnv?.VITE_SUPABASE_ANON_KEY || 
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.drac_anon_key_production_public';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I';
 
 
 // Detect whether running in Desktop (Electron / Node Webview / Localhost) or Web (Vercel / Cloud)
 export function getAppOrigin(): AppOrigin {
   if (typeof window !== 'undefined') {
-    const isElectron = !!(window as any).process?.type || !!(window as any).electron;
+    const isElectron =
+      !!(window as any).electronAPI?.isDesktop ||
+      !!(window as any).electronAPI ||
+      !!(window as any).process?.type ||
+      !!(window as any).electron;
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isElectron) return 'DESKTOP';
     if (isLocalhost && (window as any).__DRAC_DESKTOP_CLIENT__) return 'DESKTOP';
