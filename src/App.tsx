@@ -133,9 +133,17 @@ export default function App() {
     }
   };
 
+  const sanitizeEmployeesForStorage = (emps: Employee[]): any[] => {
+    return emps.map(({ password_hash, password_salt, password_change_required, primer_ingreso, ...clean }) => clean);
+  };
+
   const saveStored = <T,>(key: string, data: T): void => {
     try {
-      localStorage.setItem(`drac_data_${key}`, JSON.stringify(data));
+      if (key === 'employees' && Array.isArray(data)) {
+        localStorage.setItem(`drac_data_${key}`, JSON.stringify(sanitizeEmployeesForStorage(data as Employee[])));
+      } else {
+        localStorage.setItem(`drac_data_${key}`, JSON.stringify(data));
+      }
     } catch {}
   };
 
@@ -143,14 +151,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeRole, setActiveRole] = useState<RoleType>('ADMIN_GENERAL');
 
-  // State Entities - DRAC Structure
+  // State Entities - DRAC Structure (Personnel Directory)
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const stored = loadStored<Employee[]>('employees', INITIAL_EMPLOYEES);
     let list: Employee[] = [];
     if (!stored || stored.length === 0) {
       list = INITIAL_EMPLOYEES;
     } else {
-      // Preserve all existing real employees while ensuring the admin account exists
       const hasAdmin = stored.some(
         (e) =>
           e.username === 'admin' ||
@@ -161,35 +168,18 @@ export default function App() {
       if (!hasAdmin) {
         list = [INITIAL_EMPLOYEES[0], ...stored];
       } else {
-        list = stored.map((e) => {
-          if (
-            e.id === 'emp-admin' ||
-            e.id === 'emp-01' ||
-            e.username === 'admin' ||
-            (e.dni || '').trim() === '10000001'
-          ) {
-            return {
-              ...e,
-              id: 'emp-admin',
-              username: 'admin',
-              dni: '10000001',
-              role: 'ADMIN_GENERAL',
-              has_system_access: true,
-              account_status: 'ACTIVE',
-              active: true,
-              // NUNCA restablecer contraseñas ni estado si ya fueron cambiados
-              password_change_required: e.password_change_required ?? false,
-              primer_ingreso: e.primer_ingreso ?? (e.password_change_required ? 'PENDIENTE' : 'COMPLETADO'),
-              password_hash: e.password_hash || undefined,
-              password_salt: e.password_salt || undefined,
-            };
-          }
-          return e;
-        });
+        list = stored;
       }
     }
 
-    return list;
+    // Credential and password requirements are NEVER stored in the local catalog
+    return list.map((e) => ({
+      ...e,
+      password_hash: undefined,
+      password_salt: undefined,
+      password_change_required: false,
+      primer_ingreso: 'COMPLETADO',
+    }));
   });
 
   const [activeUserDni, setActiveUserDni] = useState<string>(() => {
@@ -236,7 +226,7 @@ export default function App() {
         if (matched) {
           const reqChange = userMeta.requiere_cambio_password !== undefined
             ? Boolean(userMeta.requiere_cambio_password)
-            : matched.password_change_required;
+            : false;
 
           setCurrentUser({
             ...matched,
@@ -267,7 +257,7 @@ export default function App() {
         if (matched) {
           const reqChange = userMeta.requiere_cambio_password !== undefined
             ? Boolean(userMeta.requiere_cambio_password)
-            : matched.password_change_required;
+            : false;
 
           setCurrentUser({
             ...matched,
@@ -339,28 +329,27 @@ export default function App() {
           // Invalidate session immediately via Supabase Auth
           setCurrentUser(null);
           signOutSupabaseAuth().catch(() => {});
-        } else {
-          // Guard against stale records reverting completed password changes
-          const hasCompletedPassword =
-            currentUser.password_change_required === false &&
-            currentUser.primer_ingreso === 'COMPLETADO';
-
-          if (hasCompletedPassword && (freshRecord.password_change_required || freshRecord.primer_ingreso === 'PENDIENTE')) {
-            // Keep completed password status and update employee list
-            setEmployees((prev) =>
-              prev.map((e) =>
-                e.id === currentUser.id || e.dni === currentUser.dni
-                  ? { ...e, password_change_required: false, primer_ingreso: 'COMPLETADO' }
-                  : e
-              )
-            );
-          } else if (
-            freshRecord.password_change_required !== currentUser.password_change_required ||
-            freshRecord.primer_ingreso !== currentUser.primer_ingreso ||
-            freshRecord.role !== currentUser.role
-          ) {
-            setCurrentUser(freshRecord);
-          }
+        } else if (
+          freshRecord.role !== currentUser.role ||
+          freshRecord.position !== currentUser.position ||
+          freshRecord.dependencia_id !== currentUser.dependencia_id
+        ) {
+          // Sync non-credential organizational attributes while strictly preserving Supabase Auth credential state
+          setCurrentUser((curr) => {
+            if (!curr) return null;
+            return {
+              ...curr,
+              role: freshRecord.role,
+              assigned_roles: freshRecord.assigned_roles,
+              position: freshRecord.position,
+              dependencia_id: freshRecord.dependencia_id,
+              dependencia_name: freshRecord.dependencia_name,
+              area_id: freshRecord.area_id,
+              area_name: freshRecord.area_name,
+              first_name: freshRecord.first_name,
+              last_name: freshRecord.last_name,
+            };
+          });
         }
       }
     }
@@ -479,18 +468,13 @@ export default function App() {
                     p.dni === incoming.dni ||
                     (p.username && incoming.username && p.username.toLowerCase() === incoming.username.toLowerCase())
                 );
-                // Si el usuario anterior ya tenía contraseña cambiada y el entrante no trae hash (ej. fallback), conservar credenciales
-                if (prev && prev.password_change_required === false && !incoming.password_hash && prev.password_hash) {
-                  return {
-                    ...incoming,
-                    password_hash: prev.password_hash,
-                    password_salt: prev.password_salt,
-                    password_change_required: false,
-                    primer_ingreso: 'COMPLETADO',
-                    last_password_change: prev.last_password_change || incoming.last_password_change,
-                  };
-                }
-                return incoming;
+                return {
+                  ...incoming,
+                  password_hash: undefined,
+                  password_salt: undefined,
+                  password_change_required: false,
+                  primer_ingreso: 'COMPLETADO',
+                };
               });
               saveStored('employees', merged);
               return merged;
@@ -627,7 +611,7 @@ export default function App() {
       localStorage.setItem('drac_data_areas', JSON.stringify(areas));
       localStorage.setItem('drac_data_cargos', JSON.stringify(cargos));
       localStorage.setItem('drac_data_responsables', JSON.stringify(responsables));
-      localStorage.setItem('drac_data_employees', JSON.stringify(employees));
+      localStorage.setItem('drac_data_employees', JSON.stringify(sanitizeEmployeesForStorage(employees)));
       localStorage.setItem('drac_data_assignmentHistory', JSON.stringify(assignmentHistory));
       localStorage.setItem('drac_data_turnos', JSON.stringify(turnos));
       localStorage.setItem('drac_data_horarios', JSON.stringify(horarios));
@@ -1709,36 +1693,26 @@ export default function App() {
     );
   }
 
-  // MANDATORY SECURITY GATE: If user has pending password change, NEVER render system dashboard/modules
-  const activeSessionEmp = currentUser
-    ? (employees.find((e) => e.id === currentUser.id || e.dni === currentUser.dni) || currentUser)
-    : null;
-
+  // MANDATORY SECURITY GATE: Governed EXCLUSIVELY by Supabase Auth JWT session state
   const requiresPasswordChange = Boolean(
     currentUser &&
     currentUser.has_system_access !== false &&
-    currentUser.password_change_required !== false &&
-    currentUser.primer_ingreso !== 'COMPLETADO' &&
-    activeSessionEmp &&
-    (Boolean(activeSessionEmp.password_change_required) || activeSessionEmp.primer_ingreso === 'PENDIENTE')
+    currentUser.password_change_required === true &&
+    currentUser.primer_ingreso === 'PENDIENTE'
   );
 
-  if (requiresPasswordChange && activeSessionEmp) {
+  if (requiresPasswordChange && currentUser) {
     return (
       <ForcePasswordChangeModal
-        employee={activeSessionEmp}
+        employee={currentUser}
         onCancelLogout={handleLogout}
         onPasswordChanged={(updatedEmp) => {
           handleEditEmployee(updatedEmp);
-          setCurrentUser(updatedEmp);
-          try {
-            const nextList = employees.map((e) =>
-              e.id === updatedEmp.id || e.dni === updatedEmp.dni || e.username === updatedEmp.username
-                ? updatedEmp
-                : e
-            );
-            saveStored('employees', nextList);
-          } catch {}
+          setCurrentUser({
+            ...updatedEmp,
+            password_change_required: false,
+            primer_ingreso: 'COMPLETADO',
+          });
         }}
       />
     );
