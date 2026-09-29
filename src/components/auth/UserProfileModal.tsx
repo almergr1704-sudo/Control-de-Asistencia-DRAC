@@ -6,6 +6,7 @@ import {
   verifyPassword,
   getEmployeeAssignedRoles,
 } from '../../utils/userAuthUtils';
+import { changePasswordPermanently } from '../../services/authService';
 import {
   X,
   User,
@@ -87,47 +88,25 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     setIsSubmitting(true);
 
     try {
-      // 1. Verify current password
-      let isCurrentValid = false;
-      if (employee.password_hash) {
-        isCurrentValid = await verifyPassword(
-          currentPassword,
-          employee.password_hash,
-          employee.password_salt
-        );
-      } else {
-        isCurrentValid =
-          currentPassword === employee.dni ||
-          currentPassword === '123456' ||
-          currentPassword === 'Drac2026!';
-      }
+      const result = await changePasswordPermanently(
+        employee,
+        currentPassword,
+        newPassword
+      );
 
-      if (!isCurrentValid) {
-        setFormError('La contraseña actual ingresada es incorrecta.');
+      if (!result.success || !result.employee) {
+        setFormError(result.message || 'Error al actualizar la contraseña.');
         setIsSubmitting(false);
         return;
       }
 
-      // 2. Hash new password
-      const { hash, salt } = await hashPassword(newPassword);
-
-      // 3. Update employee record
-      const updated: Employee = {
-        ...employee,
-        password_hash: hash,
-        password_salt: salt,
-        password_change_required: false,
-        primer_ingreso: 'COMPLETADO',
-        last_password_change: new Date().toISOString(),
-      };
-
-      onUpdateEmployee(updated);
+      onUpdateEmployee(result.employee);
       onRecordAudit(
         'CAMBIO_CONTRASENA_PROPIA',
-        `El usuario @${employee.username || employee.dni} actualizó su contraseña personal de forma segura.`
+        `El usuario @${employee.username || employee.dni} actualizó su contraseña personal de forma segura (Supabase Auth JWT).`
       );
 
-      setSuccessMessage('¡Su contraseña ha sido actualizada correctamente!');
+      setSuccessMessage('¡Su contraseña ha sido actualizada y delegada permanentemente al servidor de autenticación!');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');

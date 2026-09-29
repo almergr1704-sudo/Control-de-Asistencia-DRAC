@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Employee, RoleType } from '../../types';
-import { authenticateUser, getEmployeeAssignedRoles } from '../../utils/userAuthUtils';
+import { getEmployeeAssignedRoles } from '../../utils/userAuthUtils';
+import { loginUser } from '../../services/authService';
 import { Lock, User, Eye, EyeOff, ShieldCheck, AlertCircle, Building2, KeyRound, ChevronRight } from 'lucide-react';
 
 interface LoginPageProps {
@@ -33,53 +34,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Primary authoritative check: Server-side API (/api/auth/login)
-      let emp: Employee | null = null;
-      let requiresPasswordChange = false;
+      const authResult = await loginUser(cleanId, password, employees);
 
-      try {
-        const resp = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: cleanId, password }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.success && data.employee) {
-            emp = data.employee;
-            requiresPasswordChange = Boolean(data.requiresPasswordChange);
-          } else {
-            setErrorMessage(data.message || 'Credenciales incorrectas.');
-            onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${data.message}`, cleanId);
-            setIsLoading(false);
-            return;
-          }
-        } else if (resp.status === 401 || resp.status === 403) {
-          const data = await resp.json().catch(() => ({}));
-          setErrorMessage(data.message || 'Credenciales incorrectas.');
-          onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${data.message}`, cleanId);
-          setIsLoading(false);
-          return;
-        }
-      } catch (netErr) {
-        console.warn('Backend login API no disponible directamente, usando autenticación local:', netErr);
+      if (!authResult.success || !authResult.employee) {
+        setErrorMessage(authResult.message || 'Credenciales incorrectas.');
+        onRecordAudit(
+          'LOGIN_FALLIDO',
+          `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${authResult.message}`,
+          cleanId
+        );
+        setIsLoading(false);
+        return;
       }
 
-      // 2. Fallback to client-side verification only if server was completely unreachable
-      if (!emp) {
-        const result = await authenticateUser(cleanId, password, employees);
-
-        if (!result.success || !result.employee) {
-          setErrorMessage(result.message || 'Credenciales incorrectas.');
-          onRecordAudit('LOGIN_FALLIDO', `Intento fallido de inicio de sesión con identificador: "${cleanId}" - Razón: ${result.message}`, cleanId);
-          setIsLoading(false);
-          return;
-        }
-
-        emp = result.employee;
-        requiresPasswordChange = Boolean(result.requiresPasswordChange);
-      }
+      const emp = authResult.employee;
+      const requiresPasswordChange = authResult.requiresPasswordChange;
 
       // 3. Extra verification for inactive employee
       if (emp.active === false || emp.account_status === 'INACTIVE') {

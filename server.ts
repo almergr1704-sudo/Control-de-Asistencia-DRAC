@@ -4670,11 +4670,30 @@ pause
           const { createClient } = await import('@supabase/supabase-js');
           const sbClient = createClient(cleanUrl, rawKey);
 
+          // Ensure trabajador exists before usuarios to satisfy foreign key
+          await sbClient.from('trabajadores').upsert({
+            id: targetEmp.id,
+            codigo_drac: targetEmp.codigo_trabajador || 'DRAC-0001',
+            dni: targetEmp.dni || '10000001',
+            nombres: targetEmp.first_name || 'Administrador',
+            apellido_paterno: targetEmp.apellido_paterno || targetEmp.last_name || 'General',
+            apellido_materno: targetEmp.apellido_materno || '',
+            email: targetEmp.email || `${targetEmp.username}@drac.gob.pe`,
+            dependencia_id: targetEmp.dependencia_id || 'dep-01',
+            cargo_id: targetEmp.cargo_id || 'crg-01',
+            regimen_id: targetEmp.regimen_laboral || 'reg-01',
+            es_jefe: true,
+            estado: 'ACTIVO',
+            updated_at: nowIso,
+          }, { onConflict: 'dni' });
+
           // Update usuarios table
           await sbClient.from('usuarios').upsert(
             {
               username: targetEmp.username,
               trabajador_id: targetEmp.id,
+              email: targetEmp.email || `${targetEmp.username}@drac.gob.pe`,
+              roles: targetEmp.assigned_roles || [targetEmp.role || 'ADMIN_GENERAL'],
               requiere_cambio_password: false,
               password_hash: finalHash,
               activo: true,

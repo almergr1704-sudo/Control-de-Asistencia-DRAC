@@ -53,6 +53,12 @@ import {
   saveEmployeeToSupabase,
   getNextDracCodeFromPostgres,
 } from './services/employeeService';
+import {
+  ensureInitialAdminInSupabase,
+  getSupabaseAuthSession,
+  onSupabaseAuthStateChange,
+  signOutSupabaseAuth,
+} from './services/authService';
 
 import {
   fetchTurnosFromSupabase,
@@ -133,31 +139,9 @@ export default function App() {
     } catch {}
   };
 
-  // Cached session retrieval before entity initialization
-  const cachedAuthSession = (() => {
-    try {
-      const stored = localStorage.getItem('drac_auth_session');
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch {}
-    return null;
-  })();
-
-  // User Session Management
-  const [currentUser, setCurrentUser] = useState<Employee | null>(() => {
-    if (cachedAuthSession && cachedAuthSession.currentUser) {
-      return cachedAuthSession.currentUser;
-    }
-    return null;
-  });
-
-  const [activeRole, setActiveRole] = useState<RoleType>(() => {
-    if (cachedAuthSession && cachedAuthSession.activeRole) {
-      return cachedAuthSession.activeRole;
-    }
-    return 'ADMIN_GENERAL';
-  });
+  // User Session Management - Delegated to Supabase Auth JWT
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
+  const [activeRole, setActiveRole] = useState<RoleType>('ADMIN_GENERAL');
 
   // State Entities - DRAC Structure
   const [employees, setEmployees] = useState<Employee[]>(() => {
@@ -167,47 +151,42 @@ export default function App() {
       list = INITIAL_EMPLOYEES;
     } else {
       // Preserve all existing real employees while ensuring the admin account exists
-      const hasAdmin = stored.some((e) => e.username === 'admin' || e.id === 'emp-01');
+      const hasAdmin = stored.some(
+        (e) =>
+          e.username === 'admin' ||
+          e.id === 'emp-admin' ||
+          e.id === 'emp-01' ||
+          (e.dni || '').trim() === '10000001'
+      );
       if (!hasAdmin) {
         list = [INITIAL_EMPLOYEES[0], ...stored];
       } else {
         list = stored.map((e) => {
-          if (e.id === 'emp-01' || e.username === 'admin') {
+          if (
+            e.id === 'emp-admin' ||
+            e.id === 'emp-01' ||
+            e.username === 'admin' ||
+            (e.dni || '').trim() === '10000001'
+          ) {
             return {
               ...e,
+              id: 'emp-admin',
               username: 'admin',
+              dni: '10000001',
               role: 'ADMIN_GENERAL',
               has_system_access: true,
               account_status: 'ACTIVE',
               active: true,
+              // NUNCA restablecer contraseñas ni estado si ya fueron cambiados
+              password_change_required: e.password_change_required ?? false,
+              primer_ingreso: e.primer_ingreso ?? (e.password_change_required ? 'PENDIENTE' : 'COMPLETADO'),
+              password_hash: e.password_hash || undefined,
+              password_salt: e.password_salt || undefined,
             };
           }
           return e;
         });
       }
-    }
-
-    // CRITICAL: Synchronize authenticated session user state into initial employee list
-    // so stale local storage or templates never override completed password changes
-    if (cachedAuthSession?.currentUser) {
-      const sessionUser = cachedAuthSession.currentUser;
-      list = list.map((e) => {
-        if (
-          e.id === sessionUser.id ||
-          (e.dni && sessionUser.dni && e.dni === sessionUser.dni) ||
-          (e.username && sessionUser.username && e.username.toLowerCase() === sessionUser.username.toLowerCase())
-        ) {
-          return {
-            ...e,
-            ...sessionUser,
-            password_change_required: sessionUser.password_change_required ?? e.password_change_required,
-            primer_ingreso: sessionUser.primer_ingreso ?? e.primer_ingreso,
-            password_hash: sessionUser.password_hash ?? e.password_hash,
-            password_salt: sessionUser.password_salt ?? e.password_salt,
-          };
-        }
-        return e;
-      });
     }
 
     return list;
@@ -232,17 +211,85 @@ export default function App() {
     }
   };
 
+  // =========================================================================
+  // SUPABASE AUTH JWT SESSION LIFECYCLE
+  // Reemplaza el almacenamiento manual en localStorage por JWT oficial de Supabase
+  // =========================================================================
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Obtener la sesión JWT activa desde Supabase Auth
+    getSupabaseAuthSession().then(({ session, user }) => {
+      if (!isMounted) return;
+      if (session && user) {
+        const userEmail = (user.email || '').toLowerCase().trim();
+        const userMeta = user.user_metadata || {};
+        const metaUsername = (userMeta.username || '').toLowerCase().trim();
+
+        const matched = employees.find(
+          (e) =>
+            (e.email && e.email.toLowerCase() === userEmail) ||
+            (e.username && e.username.toLowerCase() === metaUsername) ||
+            (userEmail.startsWith('admin') && (e.username === 'admin' || e.role === 'ADMIN_GENERAL'))
+        );
+
+        if (matched) {
+          const reqChange = userMeta.requiere_cambio_password !== undefined
+            ? Boolean(userMeta.requiere_cambio_password)
+            : matched.password_change_required;
+
+          setCurrentUser({
+            ...matched,
+            password_change_required: reqChange,
+            primer_ingreso: reqChange ? 'PENDIENTE' : 'COMPLETADO',
+          });
+          setActiveRole(matched.role || 'ADMIN_GENERAL');
+          setActiveUserDni(matched.dni);
+        }
+      }
+    });
+
+    // 2. Suscribirse a cambios de estado de autenticación (login, logout, refresh JWT)
+    const subscription = onSupabaseAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+      if (session && session.user) {
+        const userEmail = (session.user.email || '').toLowerCase().trim();
+        const userMeta = session.user.user_metadata || {};
+        const metaUsername = (userMeta.username || '').toLowerCase().trim();
+
+        const matched = employees.find(
+          (e) =>
+            (e.email && e.email.toLowerCase() === userEmail) ||
+            (e.username && e.username.toLowerCase() === metaUsername) ||
+            (userEmail.startsWith('admin') && (e.username === 'admin' || e.role === 'ADMIN_GENERAL'))
+        );
+
+        if (matched) {
+          const reqChange = userMeta.requiere_cambio_password !== undefined
+            ? Boolean(userMeta.requiere_cambio_password)
+            : matched.password_change_required;
+
+          setCurrentUser({
+            ...matched,
+            password_change_required: reqChange,
+            primer_ingreso: reqChange ? 'PENDIENTE' : 'COMPLETADO',
+          });
+          setActiveRole(matched.role || 'ADMIN_GENERAL');
+          setActiveUserDni(matched.dni);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
+  }, [employees]);
+
   const handleRoleChange = (role: RoleType) => {
     setActiveRole(role);
-    if (currentUser) {
-      localStorage.setItem(
-        'drac_auth_session',
-        JSON.stringify({
-          currentUser,
-          activeRole: role,
-        })
-      );
-    }
     const allowedView = getViewFromHash(window.location.hash, role);
     setActiveView(allowedView);
     window.location.hash = VIEW_TO_HASH[allowedView] || '#/dashboard';
@@ -256,20 +303,12 @@ export default function App() {
     setCurrentUser(employee);
     setActiveRole(selectedRole);
     setActiveUserDni(employee.dni);
-    localStorage.setItem(
-      'drac_auth_session',
-      JSON.stringify({
-        currentUser: employee,
-        activeRole: selectedRole,
-        loginTime: new Date().toISOString(),
-      })
-    );
     const targetHash = VIEW_TO_HASH['dash_overview'] || '#/dashboard';
     window.location.hash = targetHash;
     setActiveView('dash_overview');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (currentUser) {
       const newLog: AuditLog = {
         id: `audlog-${Date.now()}`,
@@ -280,12 +319,12 @@ export default function App() {
         module: 'AUTENTICACION',
         action: 'LOGOUT',
         affected_record_id: currentUser.dni,
-        details: `Cierre de sesión de ${currentUser.first_name} ${currentUser.last_name} (@${currentUser.username || currentUser.dni})`,
+        details: `Cierre de sesión JWT de ${currentUser.first_name} ${currentUser.last_name} (@${currentUser.username || currentUser.dni})`,
       };
       setAuditLogs((prev) => [newLog, ...prev]);
     }
     setCurrentUser(null);
-    localStorage.removeItem('drac_auth_session');
+    await signOutSupabaseAuth();
     window.location.hash = '#/dashboard';
   };
 
@@ -297,9 +336,9 @@ export default function App() {
       );
       if (freshRecord) {
         if (freshRecord.active === false || freshRecord.account_status === 'INACTIVE') {
-          // Invalidate session immediately
+          // Invalidate session immediately via Supabase Auth
           setCurrentUser(null);
-          localStorage.removeItem('drac_auth_session');
+          signOutSupabaseAuth().catch(() => {});
         } else {
           // Guard against stale records reverting completed password changes
           const hasCompletedPassword =
@@ -321,16 +360,6 @@ export default function App() {
             freshRecord.role !== currentUser.role
           ) {
             setCurrentUser(freshRecord);
-            try {
-              const raw = localStorage.getItem('drac_auth_session');
-              if (raw) {
-                const parsed = JSON.parse(raw);
-                localStorage.setItem(
-                  'drac_auth_session',
-                  JSON.stringify({ ...parsed, currentUser: freshRecord })
-                );
-              }
-            } catch {}
           }
         }
       }
@@ -417,6 +446,9 @@ export default function App() {
     let isMounted = true;
     async function loadCentralData() {
       try {
+        // Ensure admin initial record exists in Supabase if not present
+        ensureInitialAdminInSupabase().catch(() => {});
+
         const [deps, dirs, ars, crgs, emps, turns, hors, encs, vacs, paps, devs, rawPs, atts, logs] = await Promise.all([
           fetchDependenciasFromSupabase(),
           fetchDireccionesFromSupabase(),
@@ -439,29 +471,30 @@ export default function App() {
           if (ars && ars.length > 0) setAreas(ars);
           if (crgs && crgs.length > 0) setCargos(crgs);
           if (emps && emps.length > 0) {
-            setEmployees(emps);
-            saveStored('employees', emps);
-            try {
-              const rawSession = localStorage.getItem('drac_auth_session');
-              if (rawSession) {
-                const parsed = JSON.parse(rawSession);
-                if (parsed?.currentUser) {
-                  const found = emps.find(
-                    (e: any) =>
-                      e.id === parsed.currentUser.id ||
-                      e.dni === parsed.currentUser.dni ||
-                      (e.username && parsed.currentUser.username && e.username.toLowerCase() === parsed.currentUser.username.toLowerCase())
-                  );
-                  if (found) {
-                    setCurrentUser(found);
-                    localStorage.setItem(
-                      'drac_auth_session',
-                      JSON.stringify({ ...parsed, currentUser: found })
-                    );
-                  }
+            setEmployees((prevEmployees) => {
+              const merged = emps.map((incoming) => {
+                const prev = prevEmployees.find(
+                  (p) =>
+                    p.id === incoming.id ||
+                    p.dni === incoming.dni ||
+                    (p.username && incoming.username && p.username.toLowerCase() === incoming.username.toLowerCase())
+                );
+                // Si el usuario anterior ya tenía contraseña cambiada y el entrante no trae hash (ej. fallback), conservar credenciales
+                if (prev && prev.password_change_required === false && !incoming.password_hash && prev.password_hash) {
+                  return {
+                    ...incoming,
+                    password_hash: prev.password_hash,
+                    password_salt: prev.password_salt,
+                    password_change_required: false,
+                    primer_ingreso: 'COMPLETADO',
+                    last_password_change: prev.last_password_change || incoming.last_password_change,
+                  };
                 }
-              }
-            } catch {}
+                return incoming;
+              });
+              saveStored('employees', merged);
+              return merged;
+            });
           }
           if (turns && turns.length > 0) setTurnos(turns);
           if (hors && hors.length > 0) setHorarios(hors);
@@ -1698,13 +1731,6 @@ export default function App() {
         onPasswordChanged={(updatedEmp) => {
           handleEditEmployee(updatedEmp);
           setCurrentUser(updatedEmp);
-          localStorage.setItem(
-            'drac_auth_session',
-            JSON.stringify({
-              currentUser: updatedEmp,
-              activeRole,
-            })
-          );
           try {
             const nextList = employees.map((e) =>
               e.id === updatedEmp.id || e.dni === updatedEmp.dni || e.username === updatedEmp.username
@@ -1982,13 +2008,6 @@ export default function App() {
           onUpdateEmployee={(updated) => {
             handleEditEmployee(updated);
             setCurrentUser(updated);
-            localStorage.setItem(
-              'drac_auth_session',
-              JSON.stringify({
-                currentUser: updated,
-                activeRole,
-              })
-            );
           }}
           onRecordAudit={(action, details) => {
             const newLog: AuditLog = {

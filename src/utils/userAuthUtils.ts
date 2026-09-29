@@ -263,18 +263,7 @@ export async function authenticateUser(
         active: true,
       };
     } else {
-      try {
-        const storedSession = localStorage.getItem('drac_auth_session');
-        if (storedSession) {
-          const parsed = JSON.parse(storedSession);
-          if (parsed?.currentUser && (parsed.currentUser.username === 'admin' || parsed.currentUser.dni === '10000001')) {
-            emp = parsed.currentUser;
-          }
-        }
-      } catch {}
-      if (!emp) {
-        emp = DEFAULT_ADMIN_USER;
-      }
+      emp = DEFAULT_ADMIN_USER;
     }
   }
 

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Employee, PasswordPolicy } from '../../types';
 import { supabase } from '../../lib/supabaseClient';
+import { changePasswordPermanently } from '../../services/authService';
 import {
   validatePasswordWithPolicy,
   hashPassword,
@@ -138,73 +139,24 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
     setIsProcessing(true);
 
     try {
-      // 1. Generate new cryptographic hash with fresh salt (NEVER plaintext)
-      const { hash: newHash, salt: newSalt, packed } = await hashPassword(newPassword);
+      const result = await changePasswordPermanently(
+        employee,
+        currentPassword,
+        newPassword,
+        policy
+      );
 
-      // 2. Call Backend API endpoint to register and persist password change permanently
-      let serverUpdatedEmp: Employee | null = null;
-      try {
-        const response = await fetch('/api/auth/change-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: employee.username || employee.dni,
-            dni: employee.dni,
-            id: employee.id,
-            currentPassword,
-            newPassword,
-            passwordHash: packed,
-            passwordSalt: newSalt,
-          }),
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => null);
-          if (errData?.message) {
-            setIsProcessing(false);
-            setErrorMessage(errData.message);
-            return;
-          }
-        } else {
-          const data = await response.json().catch(() => null);
-          if (data?.employee) {
-            serverUpdatedEmp = data.employee;
-          }
-        }
-      } catch (e) {
-        console.warn('Servidor local / offline, continuando con actualización de cliente:', e);
+      if (!result.success || !result.employee) {
+        setIsProcessing(false);
+        setErrorMessage(result.message || 'Error al procesar el cambio de contraseña.');
+        return;
       }
-
-      // 3. Persistir directamente en Supabase (tabla usuarios)
-      try {
-        const usernameOrDni = employee.username || employee.dni;
-        await supabase
-          .from('usuarios')
-          .update({
-            requiere_cambio_password: false,
-            password_hash: packed,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('username', usernameOrDni);
-      } catch (sbErr) {
-        console.warn('Nota sobre sincronización directa con Supabase usuarios:', sbErr);
-      }
-
-      const updatedEmp: Employee = {
-        ...employee,
-        ...(serverUpdatedEmp || {}),
-        password_hash: packed,
-        password_salt: newSalt,
-        password_change_required: false,
-        primer_ingreso: 'COMPLETADO',
-        last_password_change: new Date().toISOString(),
-      };
 
       setSuccessMessage('Contraseña actualizada correctamente. Requerimiento completado permanentemente.');
 
       setTimeout(() => {
         setIsProcessing(false);
-        onPasswordChanged(updatedEmp);
+        onPasswordChanged(result.employee!);
       }, 700);
     } catch (err: any) {
       setIsProcessing(false);
