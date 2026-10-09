@@ -470,6 +470,7 @@ export interface DispositivoZkTeco {
   model?: string; // e.g. G3-id, SilkBio-101TC, uFace 800, K40, MB20, iClock 880, SpeedFace-V5L
   ip_address: string;
   port: number;
+  comm_key?: number | string; // Clave de comunicación ZKTeco (por defecto 0)
   protocol: 'PUSH_ADMS' | 'UDP' | 'TCP';
   dependencia_tipo: DependenciaType; // SEDE_CENTRAL o AGENCIA_AGRARIA
   dependencia_id: string;
@@ -975,7 +976,8 @@ declare global {
         port?: number,
         timeoutMs?: number,
         model?: string,
-        serialNumber?: string
+        serialNumber?: string,
+        commKey?: number | string
       ) => Promise<{
         success: boolean;
         status: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR' | 'BUSY' | 'ERROR';
@@ -1003,7 +1005,8 @@ declare global {
       readZkDevicePunches: (
         ip: string,
         port?: number,
-        timeoutMs?: number
+        timeoutMs?: number,
+        commKey?: number | string
       ) => Promise<{
         success: boolean;
         message?: string;

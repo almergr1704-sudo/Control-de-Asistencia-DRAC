@@ -169,11 +169,11 @@ async function createWindow() {
 // IPC HANDLERS - SERVICIOS NATIVOS DE ESCRITORIO
 // ==========================================
 
-// 1. Diagnóstico Real en 6 Etapas para Marcadores ZKTeco (Protocolo Standalone TCP/UDP)
-ipcMain.handle('zk:diagnose-device', async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '' }) => {
-  log(`[ZK DIAGNOSTICO] Iniciando prueba por etapas contra marcador: ${ip}:${port} (${model})`);
+// 1. Diagnóstico Real en 10 Etapas para Marcadores ZKTeco (Protocolo Standalone TCP/UDP)
+ipcMain.handle('zk:diagnose-device', async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0 }) => {
+  log(`[ZK DIAGNOSTICO] Iniciando prueba por etapas contra marcador: ${ip}:${port} (${model}) | CommKey: ${commKey ? '***' : '0'}`);
   try {
-    const result = await diagnoseZkDevice(ip, port, timeoutMs, model, serialNumber);
+    const result = await diagnoseZkDevice(ip, port, timeoutMs, model, serialNumber, commKey);
     log(`[ZK DIAGNOSTICO RESULTADO] ${ip}:${port} -> Estado: ${result.status} | Mensaje: ${result.message}`);
     return result;
   } catch (err) {
@@ -197,10 +197,10 @@ ipcMain.handle('zk:diagnose-device', async (_event, { ip, port = 4370, timeoutMs
 });
 
 // 2. Lectura Física de Marcaciones Almacenadas en el Reloj ZKTeco
-ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 5000 }) => {
-  log(`[ZK LECTURA] Conectando y leyendo marcaciones físicas desde marcador: ${ip}:${port}`);
+ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 5000, commKey = 0 }) => {
+  log(`[ZK LECTURA] Conectando y leyendo marcaciones físicas desde marcador: ${ip}:${port} | CommKey: ${commKey ? '***' : '0'}`);
   try {
-    const result = await readZkDevicePunches(ip, port, timeoutMs);
+    const result = await readZkDevicePunches(ip, port, timeoutMs, commKey);
     log(`[ZK LECTURA OK] ${ip}:${port} -> Serial: ${result.serial_number} | Marcaciones leídas: ${result.total_clock_punches}`);
     return { success: true, ...result };
   } catch (err) {

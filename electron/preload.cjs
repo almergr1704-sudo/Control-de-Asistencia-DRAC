@@ -5,14 +5,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isDesktop: true,
   platform: process.platform,
 
-  // Diagnóstico real en 6 etapas de marcadores ZKTeco
-  diagnoseZkDevice: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '') => {
-    return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serialNumber });
+  // Diagnóstico real en 10 etapas de marcadores ZKTeco
+  diagnoseZkDevice: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0) => {
+    return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serialNumber, commKey });
   },
 
   // Lectura física de marcaciones desde el reloj
-  readZkDevicePunches: (ip, port = 4370, timeoutMs = 5000) => {
-    return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs });
+  readZkDevicePunches: (ip, port = 4370, timeoutMs = 5000, commKey = 0) => {
+    return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs, commKey });
   },
 
   // Verificación física TCP de marcadores ZKTeco (Ping rápido)

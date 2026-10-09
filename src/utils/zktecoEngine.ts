@@ -231,26 +231,29 @@ export async function testZkTecoConnection(
   model: string = 'G3-id',
   timeoutMs: number = 4000,
   serial_number?: string,
-  deviceId?: string
+  deviceId?: string,
+  commKey: number | string = 0
 ): Promise<DeviceTestResponse> {
   const cleanIp = (ip || '').trim();
-  const targetPort = Number(port);
+  const targetPort = Number(port) || 4370;
+  const numericCommKey = Number(commKey) || 0;
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
   const finalSerial = (serial_number || (model === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim();
 
-  if (!cleanIp || !targetPort) {
-    const errorOutput = [
-      'CONEXIÓN TCP: ERROR',
-      'AUTENTICACIÓN: PENDIENTE',
-      `DISPOSITIVO: ${model}`,
-      `SERIAL: ${finalSerial}`,
-      'USUARIOS: 0',
-      'MARCACIONES EN EL RELOJ: 0',
-      'MARCACIONES NUEVAS: 0',
-      'MARCACIONES GUARDADAS: 0',
-      'ERRORES: 1',
-    ].join('\n');
+  const emptyStages: DeviceStageDetail[] = [
+    { stage: 1, name: 'Validación de dirección IP y puerto', status: 'FAILED', message: 'Dirección IP o puerto no especificados.' },
+    { stage: 2, name: 'Alcance de red y conectividad host desde Windows', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 3, name: 'Apertura de conexión y socket TCP (puerto 4370)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 4, name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 5, name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 6, name: 'Lectura de usuarios registrados en el biométrico', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 7, name: 'Lectura y extracción de marcaciones en el reloj', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 8, name: 'Procesamiento y deduplicación de marcaciones', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 9, name: 'Sincronización y persistencia en Supabase', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 10, name: 'Verificación de registros guardados en base de datos', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+  ];
 
+  if (!cleanIp || !targetPort) {
     return {
       success: false,
       status: 'OFFLINE',
@@ -265,7 +268,8 @@ export async function testZkTecoConnection(
       new_punches_count: 0,
       saved_punches_count: 0,
       error_count: 1,
-      formatted_output: errorOutput,
+      formatted_output: 'ERROR: Dirección IP o puerto TCP no especificados.',
+      step_details: emptyStages,
       timestamp: nowStr,
     };
   }
@@ -277,23 +281,75 @@ export async function testZkTecoConnection(
     cleanIp === 'localhost' ||
     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp);
 
-  // 1. APLICACIÓN DE ESCRITORIO WINDOWS (ELECTRON): Ejecutar diagnóstico real de 6 etapas
+  // 1. APLICACIÓN DE ESCRITORIO WINDOWS (ELECTRON): Ejecutar diagnóstico real de 10 etapas
   const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
   if (electronAPI?.isDesktop && typeof electronAPI.diagnoseZkDevice === 'function') {
     try {
-      const realDiagnosis = await electronAPI.diagnoseZkDevice(cleanIp, targetPort, timeoutMs, model, finalSerial);
+      const realDiagnosis = await electronAPI.diagnoseZkDevice(cleanIp, targetPort, timeoutMs, model, finalSerial, numericCommKey);
+
+      // Si la conexión al biométrico fue exitosa y trajo marcaciones, sincronizarlas a Supabase
+      let savedCount = 0;
+      let newCount = 0;
+
+      if (realDiagnosis.success && typeof electronAPI.readZkDevicePunches === 'function') {
+        try {
+          const punchesRead = await electronAPI.readZkDevicePunches(cleanIp, targetPort, 5000, numericCommKey);
+          if (punchesRead.success && Array.isArray(punchesRead.punches) && punchesRead.punches.length > 0) {
+            const { supabase } = await import('../lib/supabaseClient');
+            const { data: existingRows } = await supabase
+              .from('marcaciones_raw')
+              .select('id, employee_dni, timestamp')
+              .eq('device_sn', finalSerial);
+
+            const existingKeys = new Set((existingRows || []).map((r: any) => `${r.employee_dni}_${r.timestamp}`));
+            const toInsert = punchesRead.punches.filter((p: any) => !existingKeys.has(`${p.employee_dni}_${p.timestamp}`));
+
+            newCount = toInsert.length;
+
+            if (toInsert.length > 0) {
+              const rowsToSave = toInsert.map((p: any) => ({
+                device_id: deviceId || 'zk-dev-01',
+                device_sn: finalSerial,
+                device_name: model,
+                employee_dni: p.employee_dni,
+                timestamp: p.timestamp,
+                punch_type: p.punch_type || 'AUTO',
+                verify_mode: p.verify_mode || 'FINGERPRINT',
+                processed: false,
+                validation_status: 'VALIDA',
+                raw_payload: p.raw_record,
+              }));
+
+              const { error: insertErr } = await supabase.from('marcaciones_raw').insert(rowsToSave);
+              if (!insertErr) {
+                savedCount = rowsToSave.length;
+              }
+            }
+          }
+        } catch (_) {
+          // Si falla la inserción en Supabase, no romper el diagnóstico del marcador
+        }
+      }
+
       return {
         ...realDiagnosis,
+        new_punches_count: newCount,
+        saved_punches_count: savedCount,
         is_private_ip: isPrivate,
       };
     } catch (e: any) {
-      const errorOutput = [
-        'DIAGNÓSTICO DESKTOP NATIVO: ERROR',
-        `DISPOSITIVO: ${model}`,
-        `SERIAL: ${finalSerial}`,
-        `IP: ${cleanIp}:${targetPort}`,
-        `DETALLE: ${e?.message || 'Fallo de ejecución IPC'}`,
-      ].join('\n');
+      const failedStages: DeviceStageDetail[] = [
+        { stage: 1, name: 'Validación de dirección IP y puerto', status: 'PASSED', message: `IP ${cleanIp}:${targetPort} válida.` },
+        { stage: 2, name: 'Alcance de red y conectividad host desde Windows', status: 'FAILED', message: `Fallo IPC al invocar driver nativo: ${e?.message || 'Error de proceso'}.` },
+        { stage: 3, name: 'Apertura de conexión y socket TCP (puerto 4370)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 4, name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 5, name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 6, name: 'Lectura de usuarios registrados en el biométrico', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 7, name: 'Lectura y extracción de marcaciones en el reloj', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 8, name: 'Procesamiento y deduplicación de marcaciones', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 9, name: 'Sincronización y persistencia en Supabase', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 10, name: 'Verificación de registros guardados en base de datos', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+      ];
 
       return {
         success: false,
@@ -309,7 +365,8 @@ export async function testZkTecoConnection(
         new_punches_count: 0,
         saved_punches_count: 0,
         error_count: 1,
-        formatted_output: errorOutput,
+        formatted_output: `DIAGNÓSTICO DESKTOP NATIVO: ERROR\nDETALLE: ${e?.message || 'Fallo IPC'}`,
+        step_details: failedStages,
         is_private_ip: isPrivate,
         timestamp: nowStr,
       };
@@ -317,14 +374,68 @@ export async function testZkTecoConnection(
   }
 
   // 2. APLICACIÓN WEB (VERCEL / NAVEGADOR): Separación estricta de responsabilidades
-  // La versión web no intenta conexiones físicas a IPs privadas de LAN
-  const stages = [
-    { stage: 1, name: 'Validación de dirección IP y puerto', status: 'PASSED' as const, message: `IP ${cleanIp}:${targetPort} válida en inventario.` },
-    { stage: 2, name: 'Alcanzabilidad en la red (Ping/Ruta IP)', status: 'WARNING' as const, message: 'La versión Web opera en la nube pública y no tiene alcance directo a IPs privadas de la intranet local.' },
-    { stage: 3, name: 'Conectividad de puerto y transporte', status: 'SKIPPED' as const, message: 'Gestión delegada exclusivamente a la aplicación de escritorio Windows conectada a la LAN.' },
-    { stage: 4, name: 'Establecimiento de sesión (Protocolo ZKTeco)', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
-    { stage: 5, name: 'Verificación de telemetría e identificación', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
-    { stage: 6, name: 'Capacidad y disponibilidad de lectura de marcaciones', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
+  // La versión web opera en internet público y no tiene socket TCP a IPs privadas de LAN
+  const stages: DeviceStageDetail[] = [
+    {
+      stage: 1,
+      name: 'Validación de dirección IP y puerto',
+      status: 'PASSED',
+      message: `IP ${cleanIp}:${targetPort} válida en inventario institucional (CommKey: ${numericCommKey}).`,
+    },
+    {
+      stage: 2,
+      name: 'Alcance de red y conectividad host desde Windows',
+      status: 'WARNING',
+      message: `Entorno Web en la nube (Vercel). Las aplicaciones web públicas no pueden abrir sockets directos a redes locales privadas (${cleanIp}).`,
+    },
+    {
+      stage: 3,
+      name: 'Apertura de conexión y socket TCP (puerto 4370)',
+      status: 'SKIPPED',
+      message: 'Omitido: la conexión física a sockets de red local corresponde a la aplicación de escritorio Windows instalada en la institución.',
+    },
+    {
+      stage: 4,
+      name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 5,
+      name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 6,
+      name: 'Lectura de usuarios registrados en el biométrico',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 7,
+      name: 'Lectura y extracción de marcaciones en el reloj',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 8,
+      name: 'Procesamiento y deduplicación de marcaciones',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 9,
+      name: 'Sincronización y persistencia en Supabase',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
+    {
+      stage: 10,
+      name: 'Verificación de registros guardados en base de datos',
+      status: 'SKIPPED',
+      message: 'Omitido: reservado para la aplicación de escritorio Windows.',
+    },
   ];
 
   const webOutput = [
@@ -332,6 +443,7 @@ export async function testZkTecoConnection(
     `DISPOSITIVO: ${model}`,
     `SERIAL: ${finalSerial}`,
     `IP LAN REGISTRADA: ${cleanIp}:${targetPort}`,
+    `CLAVE COMMKEY: ${numericCommKey}`,
     'ESTADO: LA PRUEBA FÍSICA Y SINCRONIZACIÓN DIRECTA CORRESPONDE A LA VERSIÓN ESCRITORIO',
     'DETALLE: Para ejecutar pruebas de socket físico con el marcador, use la aplicación de escritorio Windows en la red local de la DRAC.',
   ].join('\n');
@@ -340,7 +452,7 @@ export async function testZkTecoConnection(
     success: false,
     status: 'OFFLINE',
     message: 'La prueba de conexión física debe ejecutarse desde la aplicación de escritorio Windows.',
-    cause: `El marcador ZKTeco se encuentra en la red local privada (${cleanIp}). Por seguridad y arquitectura, la versión Web no establece conexiones directas de red local. Ejecute la prueba desde la aplicación de escritorio Windows instalada en la red de la institución.`,
+    cause: `El marcador ZKTeco se encuentra en la red local privada (${cleanIp}). Por seguridad y arquitectura, la versión Web no establece conexiones directas de red local. Ejecute la prueba desde la aplicación de escritorio Windows instalada en la institución.`,
     ip: cleanIp,
     port: targetPort,
     model,
@@ -349,7 +461,7 @@ export async function testZkTecoConnection(
     clock_punches_count: 0,
     new_punches_count: 0,
     saved_punches_count: 0,
-    error_count: 1,
+    error_count: 0,
     formatted_output: webOutput,
     step_details: stages,
     is_private_ip: isPrivate,

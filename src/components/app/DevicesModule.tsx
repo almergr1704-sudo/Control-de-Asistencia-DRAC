@@ -52,6 +52,8 @@ import {
   Radio,
   Server,
   Laptop,
+  MinusCircle,
+  Key,
 } from 'lucide-react';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
@@ -395,6 +397,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [customModel, setCustomModel] = useState('');
   const [ipAddress, setIpAddress] = useState('');
   const [port, setPort] = useState(4370);
+  const [commKey, setCommKey] = useState('0');
   const [connectionType, setConnectionType] = useState<'PUSH_ADMS' | 'TCP' | 'UDP'>('PUSH_ADMS');
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('CONFIGURED');
   const [location, setLocation] = useState('');
@@ -445,6 +448,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setCustomModel('');
     setIpAddress('');
     setPort(4370);
+    setCommKey('0');
     setConnectionType('PUSH_ADMS');
     setDeviceStatus('CONFIGURED');
     setLocation('');
@@ -484,6 +488,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
     setIpAddress(device.ip_address || '');
     setPort(device.port || 4370);
+    setCommKey(String(device.comm_key !== undefined ? device.comm_key : '0'));
     setConnectionType((device.protocol as any) || 'PUSH_ADMS');
     setDeviceStatus(device.status || 'CONFIGURED');
     setLocation(device.location_detail || '');
@@ -585,7 +590,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         finalModel,
         4000,
         finalSn,
-        editingDevice?.id
+        editingDevice?.id,
+        Number(commKey) || 0
       );
       setTestResult(result);
       setHasPassedTest(result.success);
@@ -594,18 +600,6 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         await onRefreshPunches();
       }
     } catch (err: any) {
-      const errorOutput = [
-        'CONEXIÓN TCP: ERROR',
-        'AUTENTICACIÓN: PENDIENTE',
-        `DISPOSITIVO: ${finalModel}`,
-        `SERIAL: ${finalSn}`,
-        'USUARIOS: 0',
-        'MARCACIONES EN EL RELOJ: 0',
-        'MARCACIONES NUEVAS: 0',
-        'MARCACIONES GUARDADAS: 0',
-        'ERRORES: 1',
-      ].join('\n');
-
       setTestResult({
         success: false,
         status: 'OFFLINE',
@@ -620,7 +614,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         new_punches_count: 0,
         saved_punches_count: 0,
         error_count: 1,
-        formatted_output: errorOutput,
+        formatted_output: `DIAGNÓSTICO ZKTECO: ERROR\nDETALLE: ${err?.message || 'Fallo de red'}`,
         timestamp: new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' }),
       });
       setHasPassedTest(false);
@@ -629,48 +623,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     }
   };
 
-  // Allow manual override for LAN
-  const handleAuthorizeManualConnection = () => {
-    const finalModel = model === 'otro' ? customModel.trim() || 'Modelo Custom' : model;
-    const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim().toUpperCase();
-    const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
-    const formattedOutput = [
-      'CONEXIÓN TCP: OK',
-      'AUTENTICACIÓN: OK',
-      `DISPOSITIVO: ${finalModel}`,
-      `SERIAL: ${finalSn}`,
-      'USUARIOS: 14',
-      'MARCACIONES EN EL RELOJ: 36',
-      'MARCACIONES NUEVAS: 0',
-      'MARCACIONES GUARDADAS: 0',
-      'ERRORES: 0',
-    ].join('\n');
-
-    setTestResult({
-      success: true,
-      status: 'ONLINE',
-      message: 'Conexión validada manualmente por el administrador para entorno local (LAN).',
-      ip: ipAddress,
-      port,
-      model: finalModel,
-      serial_number: finalSn,
-      user_count: 14,
-      clock_punches_count: 36,
-      new_punches_count: 0,
-      saved_punches_count: 0,
-      error_count: 0,
-      formatted_output: formattedOutput,
-      latency_ms: 5,
-      timestamp: nowStr,
-    });
-    setHasPassedTest(true);
-  };
-
   // Inline connection testing from device cards
   const handleTestConnectionList = async (dev: DispositivoZkTeco) => {
     setTestingDeviceId(dev.id);
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
-    const result = await testZkTecoConnection(dev.ip_address, dev.port, dev.model, 4000, dev.serial_number, dev.id);
+    const result = await testZkTecoConnection(
+      dev.ip_address,
+      dev.port,
+      dev.model,
+      4000,
+      dev.serial_number,
+      dev.id,
+      dev.comm_key !== undefined ? dev.comm_key : 0
+    );
     setTestingDeviceId(null);
 
     if (result.saved_punches_count && result.saved_punches_count > 0 && onRefreshPunches) {
@@ -856,6 +821,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           model: finalModel,
           ip_address: cleanIp,
           port: cleanPort,
+          comm_key: Number(commKey) || 0,
           protocol: connectionType,
           location_detail: cleanLocation,
           dependencia_tipo: depTipo,
@@ -873,6 +839,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           model: finalModel,
           ip_address: cleanIp,
           port: cleanPort,
+          comm_key: Number(commKey) || 0,
           protocol: connectionType,
           dependencia_tipo: depTipo,
           dependencia_id: selectedDepId,
@@ -3064,13 +3031,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </div>
               </div>
 
-              {/* IP Address and Port */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* IP Address, Port and CommKey */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-300 mb-1 font-medium">Dirección IP (IPv4) *</label>
                   <input
                     type="text"
-                    placeholder="192.168.1.201"
+                    placeholder="192.168.1.230"
                     value={ipAddress}
                     onChange={(e) => {
                       setIpAddress(e.target.value);
@@ -3079,12 +3046,12 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       if (formError) setFormError(null);
                     }}
                     disabled={isSubmitting}
-                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-500 focus:outline-none disabled:opacity-50 text-xs"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 mb-1 font-medium">Puerto de Comunicación *</label>
+                  <label className="block text-slate-300 mb-1 font-medium">Puerto TCP *</label>
                   <input
                     type="number"
                     value={port}
@@ -3095,8 +3062,27 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       if (formError) setFormError(null);
                     }}
                     disabled={isSubmitting}
-                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-500 focus:outline-none disabled:opacity-50 text-xs"
                     required
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 mb-1 font-medium flex items-center justify-between">
+                    <span>Clave CommKey</span>
+                    <span className="text-[10px] text-slate-500 font-normal">Menú PC</span>
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="0 (por defecto)"
+                    value={commKey}
+                    onChange={(e) => {
+                      setCommKey(e.target.value);
+                      setTestResult(null);
+                      setHasPassedTest(false);
+                      if (formError) setFormError(null);
+                    }}
+                    disabled={isSubmitting}
+                    className="w-full px-3 py-1.5 bg-[#090A0D] text-white border border-slate-800 rounded font-mono focus:border-indigo-500 focus:outline-none disabled:opacity-50 text-xs"
                   />
                 </div>
               </div>
@@ -3252,115 +3238,117 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                     </div>
                   )}
 
-                  {/* 10-STEP VERIFICATION BREAKDOWN */}
-                  <div className="bg-[#0b0f19]/70 p-2.5 rounded border border-slate-800 space-y-1.5 font-mono text-[10px] text-slate-300">
-                    <span className="text-[10px] text-slate-400 block font-sans font-bold uppercase tracking-wider">
-                      Detalle de Comprobación (10 Pasos):
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px]">
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
-                        </span>
-                        <span>1. Socket TCP {testResult.ip}:{testResult.port}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
-                        </span>
-                        <span>2. Autenticación de sesión</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
-                        </span>
-                        <span>3. Info de hardware ({testResult.model || model})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? '✓' : '✕'}
-                        </span>
-                        <span>4. Consulta usuarios ({testResult.user_count || 0})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>5. Consulta registros asistencia</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>6. Extracción marcaciones reloj</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>7. Marcaciones en reloj: {testResult.clock_punches_count || 0}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>8. Marcaciones nuevas: {testResult.new_punches_count || 0}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>9. Guardado en DB ({testResult.saved_punches_count || 0})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={testResult.success ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
-                          {testResult.success ? '✓' : '✕'}
-                        </span>
-                        <span>10. Verificación en API: OK</span>
-                      </div>
+                  {/* DETALLE REAL DE LAS 10 ETAPAS DE COMPROBACIÓN */}
+                  <div className="bg-[#0b0f19]/90 p-3 rounded border border-slate-800 space-y-2 font-mono text-[11px] text-slate-300">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
+                      <span className="text-[11px] text-slate-300 font-sans font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                        Diagnóstico Real por Etapas (10 Fases):
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {testResult.success
+                          ? 'Conexión Establecida'
+                          : testResult.status === 'ONLINE_ATT_ERROR'
+                          ? 'Conectado (Marcaciones Error)'
+                          : 'Enlace No Completado'}
+                      </span>
                     </div>
 
-                    {testResult.latency_ms !== undefined && (
+                    <div className="space-y-1.5">
+                      {Array.isArray(testResult.step_details) ? (
+                        testResult.step_details.map((st: any) => {
+                          const isPassed = st.status === 'PASSED';
+                          const isWarning = st.status === 'WARNING';
+                          const isFailed = st.status === 'FAILED';
+
+                          let badgeColor = 'bg-slate-900 border-slate-800 text-slate-400';
+                          let icon = <MinusCircle className="w-3.5 h-3.5 text-slate-500 shrink-0" />;
+                          let statusLabel = 'OMITIDA';
+
+                          if (isPassed) {
+                            badgeColor = 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300';
+                            icon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+                            statusLabel = 'CORRECTA';
+                          } else if (isWarning) {
+                            badgeColor = 'bg-amber-950/40 border-amber-500/30 text-amber-300';
+                            icon = <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
+                            statusLabel = 'ADVERTENCIA';
+                          } else if (isFailed) {
+                            badgeColor = 'bg-rose-950/40 border-rose-500/30 text-rose-300';
+                            icon = <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />;
+                            statusLabel = 'FALLIDA';
+                          }
+
+                          return (
+                            <div
+                              key={st.stage}
+                              className={`p-2 rounded border text-[11px] flex flex-col gap-0.5 ${badgeColor}`}
+                            >
+                              <div className="flex items-center justify-between font-semibold">
+                                <div className="flex items-center gap-2">
+                                  {icon}
+                                  <span>
+                                    {st.stage}. {st.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {st.latencyMs !== undefined && st.latencyMs > 0 && (
+                                    <span className="text-[10px] font-mono text-slate-400 font-normal">
+                                      {st.latencyMs} ms
+                                    </span>
+                                  )}
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider bg-black/40 border border-white/10">
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                              </div>
+                              {st.message && (
+                                <p className="text-[10px] pl-5.5 text-slate-300/90 leading-relaxed font-sans">
+                                  {st.message}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-2 text-slate-400 text-[11px]">
+                          {testResult.message || 'Sin detalle de etapas.'}
+                        </div>
+                      )}
+                    </div>
+
+                    {testResult.latency_ms !== undefined && testResult.latency_ms > 0 && (
                       <div className="pt-1.5 border-t border-slate-800/80 flex justify-between text-[10px]">
-                        <span className="text-slate-400">Latencia de Red (RTT):</span>
+                        <span className="text-slate-400">Latencia total de Red (RTT):</span>
                         <span className="text-emerald-400 font-bold">{testResult.latency_ms} ms</span>
                       </div>
                     )}
 
                     {!testResult.success && testResult.cause && (
-                      <div className="pt-1 border-t border-slate-800/60 text-rose-300">
-                        <span className="text-slate-400 block font-sans text-[9px] font-bold uppercase tracking-wider mb-0.5">
-                          Causa del fallo:
+                      <div className="pt-1.5 border-t border-slate-800/60 text-rose-300">
+                        <span className="text-slate-400 block font-sans text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                          Diagnóstico de causa raíz:
                         </span>
-                        <span className="font-normal text-rose-200">{testResult.cause}</span>
+                        <p className="font-sans text-[11px] text-rose-200 leading-relaxed">
+                          {testResult.cause}
+                        </p>
                       </div>
                     )}
                   </div>
 
                   {!testResult.success && (
                     <div className="bg-amber-950/30 border border-amber-500/30 rounded p-2.5 space-y-2">
-                      <div className="flex items-start gap-1.5 text-amber-300 text-[10px]">
+                      <div className="flex items-start gap-1.5 text-amber-300 text-[11px]">
                         <Info className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                         <div>
-                          <p className="font-bold text-amber-200">¿El biométrico está en la red local de la oficina (IP Privada LAN)?</p>
-                          <p className="text-slate-300 text-[10px] mt-0.5 leading-relaxed">
-                            Al ejecutar la aplicación desde la <strong>versión Web en la nube</strong>, los servidores de internet no pueden enviar paquetes TCP directos a IPs privadas internas (<code className="text-amber-300">{ipAddress || '192.168.1.x'}</code>). Para conectar:
-                          </p>
-                          <ul className="text-[10px] text-slate-300 list-disc list-inside mt-1 space-y-0.5">
-                            <li><strong>Opción 1:</strong> Pulse el botón inferior para <strong>Validar y Guardar</strong> el marcador en el sistema.</li>
-                            <li><strong>Opción 2:</strong> Use la aplicación <strong>Desktop (Windows)</strong> desde una PC conectada a la misma red/switch.</li>
-                            <li><strong>Opción 3:</strong> Configure el reloj en modo <strong>ADMS / Servidor Cloud</strong> para que envíe marcaciones a la web.</li>
+                          <p className="font-bold text-amber-200">Recomendaciones para comprobar el biométrico:</p>
+                          <ul className="text-[11px] text-slate-300 list-disc list-inside mt-1 space-y-0.5 font-sans leading-relaxed">
+                            <li><strong>Red local:</strong> Si ejecuta la versión Web, recuerde que los navegadores en la nube no alcanzan IPs privadas (192.168.1.x). Ejecute la aplicación de escritorio Windows conectada a la misma red/switch.</li>
+                            <li><strong>Encendido e IP:</strong> Verifique físicamente en el marcador que esté encendido y que en <em>Menú &gt; Comunicaciones &gt; Red</em> la IP asignada sea <code className="text-amber-300 font-mono font-bold">{ipAddress || '192.168.1.230'}</code>.</li>
+                            <li><strong>Puerto TCP y Clave:</strong> Confirme que el puerto sea <code className="text-amber-300 font-mono font-bold">{port || 4370}</code> y que la <em>Clave de comunicación (CommKey)</em> coincida (actual: <code className="text-amber-300 font-mono font-bold">{commKey || '0'}</code>).</li>
                           </ul>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleAuthorizeManualConnection}
-                        className="w-full py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded font-bold text-xs transition-colors flex items-center justify-center gap-1.5 font-mono cursor-pointer"
-                      >
-                        <Check className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Validar Enlace de Red Local (LAN) y Habilitar Guardado</span>
-                      </button>
                     </div>
                   )}
                 </div>
