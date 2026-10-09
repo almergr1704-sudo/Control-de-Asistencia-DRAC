@@ -26,7 +26,8 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zklib-32ble": "^2.0.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",

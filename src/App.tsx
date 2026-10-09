@@ -59,6 +59,7 @@ import {
   onSupabaseAuthStateChange,
   signOutSupabaseAuth,
 } from './services/authService';
+import { supabase } from './lib/supabaseClient';
 
 import {
   fetchTurnosFromSupabase,
@@ -430,73 +431,72 @@ export default function App() {
     loadStored('devices', INITIAL_DEVICES)
   );
 
-  // Sync All Phases (1-5) directly from Supabase PostgreSQL (Single Source of Truth)
-  useEffect(() => {
-    let isMounted = true;
-    async function loadCentralData() {
-      try {
-        // Ensure admin initial record exists in Supabase if not present
-        ensureInitialAdminInSupabase().catch(() => {});
+  // Central Data Loading & Sincronización Bidireccional Web <-> Desktop
+  const loadCentralData = useCallback(async () => {
+    try {
+      // Ensure admin initial record exists in Supabase if not present
+      ensureInitialAdminInSupabase().catch(() => {});
 
-        const [deps, dirs, ars, crgs, emps, turns, hors, encs, vacs, paps, devs, rawPs, atts, logs] = await Promise.all([
-          fetchDependenciasFromSupabase(),
-          fetchDireccionesFromSupabase(),
-          fetchAreasFromSupabase(),
-          fetchCargosFromSupabase(),
-          fetchEmployeesFromSupabase(),
-          fetchTurnosFromSupabase(),
-          fetchHorariosFromSupabase(),
-          fetchEncargaturasFromSupabase(),
-          fetchVacacionesFromSupabase(),
-          fetchPapeletasFromSupabase(),
-          fetchDevicesFromSupabase(),
-          fetchRawPunchesFromSupabase(),
-          fetchAttendanceFromSupabase(),
-          fetchAuditLogsFromSupabase(),
-        ]);
-        if (isMounted) {
-          if (deps && deps.length > 0) setDependencias(deps);
-          if (dirs && dirs.length > 0) setDireccionesOrganos(dirs);
-          if (ars && ars.length > 0) setAreas(ars);
-          if (crgs && crgs.length > 0) setCargos(crgs);
-          if (emps && emps.length > 0) {
-            setEmployees((prevEmployees) => {
-              const merged = emps.map((incoming) => {
-                const prev = prevEmployees.find(
-                  (p) =>
-                    p.id === incoming.id ||
-                    p.dni === incoming.dni ||
-                    (p.username && incoming.username && p.username.toLowerCase() === incoming.username.toLowerCase())
-                );
-                return {
-                  ...incoming,
-                  password_hash: undefined,
-                  password_salt: undefined,
-                  password_change_required: false,
-                  primer_ingreso: 'COMPLETADO',
-                };
-              });
-              saveStored('employees', merged);
-              return merged;
-            });
-          }
-          if (turns && turns.length > 0) setTurnos(turns);
-          if (hors && hors.length > 0) setHorarios(hors);
-          if (encs && encs.length > 0) setEncargaturas(encs);
-          if (vacs && vacs.length > 0) setVacaciones(vacs);
-          if (paps && paps.length > 0) setPapeletas(paps);
-          if (devs && devs.length > 0) setDevices(devs);
-          if (rawPs && rawPs.length > 0) setRawPunches(rawPs);
-          if (atts && atts.length > 0) setAttendance(atts);
-          if (logs && logs.length > 0) setAuditLogs(logs);
-        }
-      } catch (e) {
-        console.warn('Conexión inicial de DRAC Cajamarca desde Supabase:', e);
+      const [deps, dirs, ars, crgs, emps, turns, hors, encs, vacs, paps, devs, rawPs, atts, logs] = await Promise.all([
+        fetchDependenciasFromSupabase(),
+        fetchDireccionesFromSupabase(),
+        fetchAreasFromSupabase(),
+        fetchCargosFromSupabase(),
+        fetchEmployeesFromSupabase(),
+        fetchTurnosFromSupabase(),
+        fetchHorariosFromSupabase(),
+        fetchEncargaturasFromSupabase(),
+        fetchVacacionesFromSupabase(),
+        fetchPapeletasFromSupabase(),
+        fetchDevicesFromSupabase(),
+        fetchRawPunchesFromSupabase(),
+        fetchAttendanceFromSupabase(),
+        fetchAuditLogsFromSupabase(),
+      ]);
+
+      if (deps && deps.length > 0) setDependencias(deps);
+      if (dirs && dirs.length > 0) setDireccionesOrganos(dirs);
+      if (ars && ars.length > 0) setAreas(ars);
+      if (crgs && crgs.length > 0) setCargos(crgs);
+      if (emps && emps.length > 0) {
+        setEmployees((prevEmployees) => {
+          const merged = emps.map((incoming) => {
+            const prev = prevEmployees.find(
+              (p) =>
+                p.id === incoming.id ||
+                p.dni === incoming.dni ||
+                (p.username && incoming.username && p.username.toLowerCase() === incoming.username.toLowerCase())
+            );
+            return {
+              ...incoming,
+              password_hash: undefined,
+              password_salt: undefined,
+              password_change_required: false,
+              primer_ingreso: 'COMPLETADO',
+            };
+          });
+          saveStored('employees', merged);
+          return merged;
+        });
       }
+      if (turns && turns.length > 0) setTurnos(turns);
+      if (hors && hors.length > 0) setHorarios(hors);
+      if (encs && encs.length > 0) setEncargaturas(encs);
+      if (vacs && vacs.length > 0) setVacaciones(vacs);
+      if (paps && paps.length > 0) setPapeletas(paps);
+      if (devs && devs.length > 0) setDevices(devs);
+      if (rawPs && rawPs.length > 0) setRawPunches(rawPs);
+      if (atts && atts.length > 0) setAttendance(atts);
+      if (logs && logs.length > 0) setAuditLogs(logs);
+    } catch (e) {
+      console.warn('Conexión inicial de DRAC Cajamarca desde Supabase:', e);
     }
-    loadCentralData();
-    return () => { isMounted = false; };
   }, []);
+
+  // Initial mount load
+  useEffect(() => {
+    loadCentralData();
+  }, [loadCentralData]);
 
   const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() =>
     loadStored('rawPunches', INITIAL_RAW_PUNCHES)
@@ -524,17 +524,64 @@ export default function App() {
     } catch (err) {}
   }, []);
 
+  // Real-Time Subscriptions a Supabase PostgreSQL para reflejar cambios instantáneos entre Web y Desktop
   useEffect(() => {
     syncPunchesFromServer();
     syncAttendanceFromServer();
 
-    // Background polling every 3.5 seconds to catch real-time incoming ZKTeco punches
-    const interval = setInterval(() => {
+    // 1. Canal Realtime para eventos instantáneos
+    const realtimeChannel = supabase
+      .channel('drac-cross-platform-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'papeletas' }, async () => {
+        const p = await fetchPapeletasFromSupabase();
+        if (p && p.length > 0) setPapeletas(p);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vacaciones' }, async () => {
+        const v = await fetchVacacionesFromSupabase();
+        if (v && v.length > 0) setVacaciones(v);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'encargaturas' }, async () => {
+        const e = await fetchEncargaturasFromSupabase();
+        if (e && e.length > 0) setEncargaturas(e);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trabajadores' }, async () => {
+        const emps = await fetchEmployeesFromSupabase();
+        if (emps && emps.length > 0) {
+          setEmployees(emps.map((emp) => ({
+            ...emp,
+            password_hash: undefined,
+            password_salt: undefined,
+            password_change_required: false,
+            primer_ingreso: 'COMPLETADO',
+          })));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dependencias' }, async () => {
+        const d = await fetchDependenciasFromSupabase();
+        if (d && d.length > 0) setDependencias(d);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'horarios' }, async () => {
+        const h = await fetchHorariosFromSupabase();
+        if (h && h.length > 0) setHorarios(h);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marcaciones_raw' }, () => {
+        syncPunchesFromServer();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'asistencias' }, () => {
+        syncAttendanceFromServer();
+      })
+      .subscribe();
+
+    // 2. Intervalo periódico en segundo plano para garantizar consistencia eventual (30s)
+    const periodicInterval = setInterval(() => {
       syncPunchesFromServer();
       syncAttendanceFromServer();
-    }, 3500);
+    }, 25000);
 
-    return () => clearInterval(interval);
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+      clearInterval(periodicInterval);
+    };
   }, [syncPunchesFromServer, syncAttendanceFromServer]);
 
   const [punchAuthorizations, setPunchAuthorizations] = useState<AutorizacionMarcacionTemporal[]>(() =>

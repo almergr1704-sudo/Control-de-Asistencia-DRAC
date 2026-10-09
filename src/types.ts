@@ -344,10 +344,18 @@ export interface AsistenciaCorrectionLog {
 
 export type DeviceStatus = 'ONLINE' | 'OFFLINE' | 'CONFIGURED' | 'ERROR' | 'INACTIVE';
 
+export interface DeviceStageDetail {
+  stage: number;
+  name: string;
+  status: 'PENDING' | 'PASSED' | 'WARNING' | 'FAILED' | 'SKIPPED';
+  message: string;
+  latencyMs?: number;
+}
+
 export interface DeviceTestRecord {
   date: string;
   result: 'SUCCESS' | 'FAILED';
-  status?: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR';
+  status?: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR' | 'BUSY' | 'ERROR';
   message: string;
   cause?: string;
   user: string;
@@ -363,14 +371,15 @@ export interface DeviceTestRecord {
   error_count?: number;
   formatted_output?: string;
   step_details?: {
-    tcp_ok: boolean;
-    auth_ok: boolean;
-    device_info_ok: boolean;
-    users_ok: boolean;
-    punches_ok: boolean;
-    saved_ok: boolean;
-    api_verified_ok: boolean;
-  };
+    tcp_ok?: boolean;
+    auth_ok?: boolean;
+    device_info_ok?: boolean;
+    users_ok?: boolean;
+    punches_ok?: boolean;
+    saved_ok?: boolean;
+    api_verified_ok?: boolean;
+    [key: string]: any;
+  } | DeviceStageDetail[];
 }
 
 export interface DeviceCapabilities {
@@ -961,6 +970,59 @@ declare global {
     electronAPI?: {
       isDesktop: boolean;
       platform: string;
+      diagnoseZkDevice: (
+        ip: string,
+        port?: number,
+        timeoutMs?: number,
+        model?: string,
+        serialNumber?: string
+      ) => Promise<{
+        success: boolean;
+        status: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR' | 'BUSY' | 'ERROR';
+        message: string;
+        cause?: string;
+        ip: string;
+        port: number;
+        model: string;
+        serial_number: string;
+        user_count: number;
+        clock_punches_count: number | string;
+        saved_punches_count?: number;
+        new_punches_count?: number;
+        error_count: number;
+        formatted_output: string;
+        step_details?: Array<{
+          stage: number;
+          name: string;
+          status: 'PENDING' | 'PASSED' | 'WARNING' | 'FAILED' | 'SKIPPED';
+          message: string;
+          latencyMs?: number;
+        }>;
+        timestamp: string;
+      }>;
+      readZkDevicePunches: (
+        ip: string,
+        port?: number,
+        timeoutMs?: number
+      ) => Promise<{
+        success: boolean;
+        message?: string;
+        serial_number?: string;
+        ip?: string;
+        port?: number;
+        total_clock_punches?: number;
+        punches?: Array<{
+          punch_id: string;
+          device_sn: string;
+          device_ip: string;
+          employee_dni: string;
+          timestamp: string;
+          verify_mode: 'FINGERPRINT' | 'FACE' | 'PASSWORD';
+          punch_type: string;
+          raw_record?: string;
+        }>;
+        timestamp?: string;
+      }>;
       pingZkDevice: (ip: string, port?: number, timeoutMs?: number) => Promise<{
         success: boolean;
         reachable: boolean;
@@ -986,6 +1048,7 @@ declare global {
       minimize: () => void;
       maximize: () => void;
       close: () => void;
+      isMaximized?: () => Promise<boolean>;
     };
     __DRAC_DESKTOP_CLIENT__?: boolean;
   }

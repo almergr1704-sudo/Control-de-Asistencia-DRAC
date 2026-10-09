@@ -3,6 +3,7 @@ const path = require('path');
 const net = require('net');
 const os = require('os');
 const fs = require('fs');
+const { diagnoseZkDevice, readZkDevicePunches, probeTcpPort } = require('./zktecoDriver.cjs');
 
 // Bloqueo de instancia única para evitar que se abran múltiples procesos en Windows
 const gotTheLock = app.requestSingleInstanceLock();
@@ -86,7 +87,6 @@ function resolveIndexPath() {
 async function createWindow() {
   initLogger();
   log('Iniciando ventana principal de DRAC Control de Asistencia...');
-  log(`Modo: ${isDev ? 'DESARROLLO' : 'PRODUCCIÓN (EMPAQUETADO)'}`);
   log(`AppPath: ${app.getAppPath()}`);
 
   const icon = resolveIconPath();
@@ -117,6 +117,20 @@ async function createWindow() {
     log('Ventana principal lista y mostrada al usuario.');
   });
 
+  // Prevenir que la app abra navegadores externos (Chrome, Edge)
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    log(`[VENTANA EXTERNA] Petición bloqueada: ${url} (manteniendo app en su propia ventana)`);
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    // Si intenta navegar fuera del archivo local, cancelar navegación
+    if (!navigationUrl.startsWith('file:') && !navigationUrl.includes('localhost')) {
+      event.preventDefault();
+      log(`[NAVEGACIÓN EXTERNA] Bloqueada para mantener aplicación en ventana local: ${navigationUrl}`);
+    }
+  });
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     log(`[ERROR] Fallo al cargar URL (${errorCode}: ${errorDescription}) en: ${validatedURL}`);
   });
@@ -125,19 +139,24 @@ async function createWindow() {
     log(`[CRITICAL] Proceso de renderizado terminado: ${details.reason} (código de salida: ${details.exitCode})`);
   });
 
-  if (isDev) {
+  const targetHtml = resolveIndexPath();
+  const hasLocalBuild = fs.existsSync(targetHtml);
+  const forceDevServer = process.env.ELECTRON_DEV === 'true' && !hasLocalBuild;
+
+  if (forceDevServer) {
     const devUrl = `http://localhost:${DESKTOP_PORT}`;
-    log(`Modo Desarrollo: conectando a ${devUrl}`);
+    log(`Modo Desarrollo explícito activado: conectando a ${devUrl}`);
     mainWindow.loadURL(devUrl).catch((err) => {
-      log(`Error conectando a devUrl: ${err.message}. Reintentando...`);
-      setTimeout(() => mainWindow.loadURL(devUrl), 2000);
+      log(`Error conectando a devUrl: ${err.message}. Intentando cargar build local...`);
+      if (hasLocalBuild) {
+        mainWindow.loadFile(targetHtml);
+      }
     });
   } else {
-    // Cargar directamente el index.html local compilado
-    const targetHtml = resolveIndexPath();
-    log(`Cargando archivo principal: ${targetHtml}`);
+    // Modo de producción nativo: Cargar directamente el index.html local compilado sin depender de localhost ni abrir navegadores
+    log(`Cargando interfaz de producción independiente de escritorio: ${targetHtml}`);
     mainWindow.loadFile(targetHtml).catch((err) => {
-      log(`Error al cargar ${targetHtml}: ${err.message}`);
+      log(`[ERROR CRÍTICO] Error al cargar ${targetHtml}: ${err.message}`);
     });
   }
 
@@ -150,68 +169,68 @@ async function createWindow() {
 // IPC HANDLERS - SERVICIOS NATIVOS DE ESCRITORIO
 // ==========================================
 
-// 1. Verificación Real TCP Socket para Marcadores ZKTeco
-ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3000 }) => {
-  log(`Verificando conectividad física con marcador ZKTeco: ${ip}:${port}`);
+// 1. Diagnóstico Real en 6 Etapas para Marcadores ZKTeco (Protocolo Standalone TCP/UDP)
+ipcMain.handle('zk:diagnose-device', async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '' }) => {
+  log(`[ZK DIAGNOSTICO] Iniciando prueba por etapas contra marcador: ${ip}:${port} (${model})`);
+  try {
+    const result = await diagnoseZkDevice(ip, port, timeoutMs, model, serialNumber);
+    log(`[ZK DIAGNOSTICO RESULTADO] ${ip}:${port} -> Estado: ${result.status} | Mensaje: ${result.message}`);
+    return result;
+  } catch (err) {
+    log(`[ZK DIAGNOSTICO ERROR] ${ip}:${port} -> Excepción: ${err.message}`);
+    return {
+      success: false,
+      status: 'ERROR',
+      message: 'Error inesperado durante el diagnóstico del biométrico.',
+      cause: err.message || String(err),
+      ip,
+      port,
+      model,
+      serial_number: serialNumber,
+      user_count: 0,
+      clock_punches_count: 0,
+      error_count: 1,
+      step_details: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
+});
 
-  return new Promise((resolve) => {
-    const startTime = Date.now();
-    const socket = new net.Socket();
-    let isResolved = false;
+// 2. Lectura Física de Marcaciones Almacenadas en el Reloj ZKTeco
+ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 5000 }) => {
+  log(`[ZK LECTURA] Conectando y leyendo marcaciones físicas desde marcador: ${ip}:${port}`);
+  try {
+    const result = await readZkDevicePunches(ip, port, timeoutMs);
+    log(`[ZK LECTURA OK] ${ip}:${port} -> Serial: ${result.serial_number} | Marcaciones leídas: ${result.total_clock_punches}`);
+    return { success: true, ...result };
+  } catch (err) {
+    log(`[ZK LECTURA ERROR] ${ip}:${port} -> ${err.message}`);
+    return {
+      success: false,
+      message: err.message || 'Error al leer marcaciones del marcador.',
+      punches: [],
+      total_clock_punches: 0,
+      ip,
+      port,
+      timestamp: new Date().toISOString(),
+    };
+  }
+});
 
-    socket.setTimeout(timeoutMs);
-
-    socket.on('connect', () => {
-      const latency = Date.now() - startTime;
-      isResolved = true;
-      socket.destroy();
-      log(`Conexión TCP exitosa con ${ip}:${port} en ${latency}ms`);
-      resolve({
-        success: true,
-        reachable: true,
-        ip,
-        port,
-        latencyMs: latency,
-        message: `Marcador respondiendo en ${ip}:${port} (${latency}ms)`,
-        timestamp: new Date().toISOString(),
-      });
-    });
-
-    socket.on('timeout', () => {
-      if (!isResolved) {
-        isResolved = true;
-        socket.destroy();
-        log(`Timeout de conexión con marcador ${ip}:${port}`);
-        resolve({
-          success: false,
-          reachable: false,
-          ip,
-          port,
-          message: `Tiempo de espera agotado (${timeoutMs}ms) al conectar con ${ip}:${port}`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
-
-    socket.on('error', (err) => {
-      if (!isResolved) {
-        isResolved = true;
-        socket.destroy();
-        log(`Error conectando con marcador ${ip}:${port}: ${err.message}`);
-        resolve({
-          success: false,
-          reachable: false,
-          ip,
-          port,
-          error: err.code || err.message,
-          message: `No se pudo establecer conexión con ${ip}:${port} (${err.code || 'UNREACHABLE'})`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    });
-
-    socket.connect(port, ip);
-  });
+// 3. Verificación Rápida de Socket TCP (Compatibilidad)
+ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 2000 }) => {
+  log(`[ZK PING] Verificando conectividad física con marcador ZKTeco: ${ip}:${port}`);
+  const probe = await probeTcpPort(ip, port, timeoutMs);
+  return {
+    success: probe.ok,
+    reachable: probe.ok,
+    ip,
+    port,
+    latencyMs: probe.latency,
+    message: probe.ok ? `Marcador respondiendo en ${ip}:${port} (${probe.latency}ms)` : probe.error,
+    error: probe.error,
+    timestamp: new Date().toISOString(),
+  };
 });
 
 // 2. Información del Sistema Local y Hardware
@@ -258,6 +277,10 @@ ipcMain.on('window:maximize', () => {
 
 ipcMain.on('window:close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+ipcMain.handle('window:is-maximized', () => {
+  return mainWindow ? mainWindow.isMaximized() : false;
 });
 
 // Ciclo de vida de la aplicación

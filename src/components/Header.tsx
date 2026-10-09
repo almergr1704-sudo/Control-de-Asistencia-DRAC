@@ -12,6 +12,9 @@ import {
   KeyRound,
   Sparkles,
   Database,
+  Minus,
+  Square,
+  X,
 } from 'lucide-react';
 import { Employee, RoleType } from '../types';
 import { getEmployeeAssignedRoles } from '../utils/userAuthUtils';
@@ -55,6 +58,26 @@ export const Header: React.FC<HeaderProps> = ({
 
   const userRoles = currentUser ? getEmployeeAssignedRoles(currentUser) : [activeRole];
   const activeConf = roleLabels[activeRole] || roleLabels.TRABAJADOR;
+
+  // Detección de entorno Electron nativo para controles de ventana
+  const isDesktop = typeof window !== 'undefined' && Boolean(window.electronAPI?.isDesktop);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+
+  const handleMinimize = () => {
+    window.electronAPI?.minimize();
+  };
+
+  const handleMaximize = async () => {
+    window.electronAPI?.maximize();
+    if (window.electronAPI?.isMaximized) {
+      const max = await window.electronAPI.isMaximized().catch(() => false);
+      setIsWindowMaximized(max);
+    }
+  };
+
+  const handleClose = () => {
+    window.electronAPI?.close();
+  };
 
   return (
     <header className="bg-[#090A0D] border-b border-slate-800 text-slate-300 sticky top-0 z-30 shadow-md">
@@ -187,6 +210,36 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
+          )}
+
+          {/* Native Desktop Window Controls (Only visible in Electron) */}
+          {isDesktop && (
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800 ml-1">
+              <button
+                type="button"
+                onClick={handleMinimize}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                title="Minimizar ventana"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleMaximize}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                title={isWindowMaximized ? 'Restaurar ventana' : 'Maximizar ventana'}
+              >
+                <Square className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                title="Cerrar ventana"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
         </div>
       </div>

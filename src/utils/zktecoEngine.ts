@@ -170,19 +170,28 @@ export function calculateAttendanceForDate(
   };
 }
 
+export interface DeviceStageDetail {
+  stage: number;
+  name: string;
+  status: 'PENDING' | 'PASSED' | 'WARNING' | 'FAILED' | 'SKIPPED';
+  message: string;
+  latencyMs?: number;
+}
+
 export interface DeviceTestStepDetails {
-  tcp_ok: boolean;
-  auth_ok: boolean;
-  device_info_ok: boolean;
-  users_ok: boolean;
-  punches_ok: boolean;
-  saved_ok: boolean;
-  api_verified_ok: boolean;
+  tcp_ok?: boolean;
+  auth_ok?: boolean;
+  device_info_ok?: boolean;
+  users_ok?: boolean;
+  punches_ok?: boolean;
+  saved_ok?: boolean;
+  api_verified_ok?: boolean;
+  [key: string]: any;
 }
 
 export interface DeviceTestResponse {
   success: boolean;
-  status: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR';
+  status: 'ONLINE' | 'OFFLINE' | 'ONLINE_ATT_ERROR' | 'BUSY' | 'ERROR';
   message: string;
   cause?: string;
   latency_ms?: number;
@@ -196,7 +205,7 @@ export interface DeviceTestResponse {
   saved_punches_count?: number;
   error_count?: number;
   formatted_output?: string;
-  step_details?: DeviceTestStepDetails;
+  step_details?: DeviceTestStepDetails | DeviceStageDetail[];
   is_private_ip?: boolean;
   timestamp: string;
   data?: any;
@@ -268,100 +277,29 @@ export async function testZkTecoConnection(
     cleanIp === 'localhost' ||
     /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp);
 
-  // Si estamos en la aplicación de escritorio Windows (Electron), usar socket TCP nativo
+  // 1. APLICACIÓN DE ESCRITORIO WINDOWS (ELECTRON): Ejecutar diagnóstico real de 6 etapas
   const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
-  if (electronAPI?.isDesktop && typeof electronAPI.pingZkDevice === 'function') {
+  if (electronAPI?.isDesktop && typeof electronAPI.diagnoseZkDevice === 'function') {
     try {
-      const nativePing = await electronAPI.pingZkDevice(cleanIp, targetPort, timeoutMs);
-      if (!nativePing.reachable) {
-        const errorOutput = [
-          'CONEXIÓN TCP (DESKTOP NATIVO): ERROR',
-          'AUTENTICACIÓN: NO DISPONIBLE',
-          `DISPOSITIVO: ${model}`,
-          `SERIAL: ${finalSerial}`,
-          'USUARIOS: 0',
-          'MARCACIONES EN EL RELOJ: 0',
-          'MARCACIONES NUEVAS: 0',
-          'MARCACIONES GUARDADAS: 0',
-          'ERRORES: 1',
-        ].join('\n');
-
-        return {
-          success: false,
-          status: 'OFFLINE',
-          message: nativePing.message || `No se pudo conectar con el marcador ${cleanIp}:${targetPort}`,
-          cause: `Verifique que el biométrico ZKTeco ${model} esté encendido, conectado al switch/red LAN y con la IP ${cleanIp} configurada.`,
-          ip: cleanIp,
-          port: targetPort,
-          model,
-          serial_number: finalSerial,
-          user_count: 0,
-          clock_punches_count: 0,
-          new_punches_count: 0,
-          saved_punches_count: 0,
-          error_count: 1,
-          formatted_output: errorOutput,
-          is_private_ip: isPrivate,
-          timestamp: nowStr,
-        };
-      }
-    } catch (e) {
-      console.warn('Fallo en test nativo Electron, continuando con API REST:', e);
-    }
-  }
-
-  try {
-    const response = await fetch('/api/zkteco/test-connection', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        ip: cleanIp,
-        ip_address: cleanIp,
-        port: targetPort,
-        model,
-        serial_number: finalSerial,
-        deviceId,
-        timeoutMs,
-      }),
-    });
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const resultData = await response.json();
-      const payload = resultData?.data || resultData;
+      const realDiagnosis = await electronAPI.diagnoseZkDevice(cleanIp, targetPort, timeoutMs, model, finalSerial);
       return {
-        ...payload,
-        success: resultData.success !== undefined ? resultData.success : payload.success,
-        is_private_ip: payload.is_private_ip ?? isPrivate,
-        serial_number: payload.serial_number || finalSerial,
-        model: payload.model || model,
+        ...realDiagnosis,
+        is_private_ip: isPrivate,
       };
-    } else {
-      let causeText = `Respuesta no estándar del servidor (${response.status}).`;
-      if (isPrivate) {
-        causeText = `IP Privada LAN (${cleanIp}): Los servidores en la nube no pueden alcanzar directamente una dirección IP local sin VPN o port forwarding.`;
-      }
-
+    } catch (e: any) {
       const errorOutput = [
-        'CONEXIÓN TCP: ERROR',
-        'AUTENTICACIÓN: PENDIENTE',
+        'DIAGNÓSTICO DESKTOP NATIVO: ERROR',
         `DISPOSITIVO: ${model}`,
         `SERIAL: ${finalSerial}`,
-        'USUARIOS: 0',
-        'MARCACIONES EN EL RELOJ: 0',
-        'MARCACIONES NUEVAS: 0',
-        'MARCACIONES GUARDADAS: 0',
-        'ERRORES: 1',
+        `IP: ${cleanIp}:${targetPort}`,
+        `DETALLE: ${e?.message || 'Fallo de ejecución IPC'}`,
       ].join('\n');
 
       return {
         success: false,
         status: 'OFFLINE',
-        message: 'No se pudo conectar directamente por TCP socket',
-        cause: causeText,
+        message: 'Error al ejecutar el servicio nativo de diagnóstico ZKTeco.',
+        cause: e?.message || 'Error de comunicación interna de escritorio.',
         ip: cleanIp,
         port: targetPort,
         model,
@@ -376,43 +314,47 @@ export async function testZkTecoConnection(
         timestamp: nowStr,
       };
     }
-  } catch (err: any) {
-    let causeText = err?.message || 'Error de conexión de red.';
-    if (isPrivate) {
-      causeText = `IP Privada LAN (${cleanIp}): Verifique que el ZKTeco ${model} esté encendido en ${cleanIp}:${targetPort}.`;
-    }
-
-    const errorOutput = [
-      'CONEXIÓN TCP: ERROR',
-      'AUTENTICACIÓN: PENDIENTE',
-      `DISPOSITIVO: ${model}`,
-      `SERIAL: ${finalSerial}`,
-      'USUARIOS: 0',
-      'MARCACIONES EN EL RELOJ: 0',
-      'MARCACIONES NUEVAS: 0',
-      'MARCACIONES GUARDADAS: 0',
-      'ERRORES: 1',
-    ].join('\n');
-
-    return {
-      success: false,
-      status: 'OFFLINE',
-      message: 'Conexión fallida',
-      cause: causeText,
-      ip: cleanIp,
-      port: targetPort,
-      model,
-      serial_number: finalSerial,
-      user_count: 0,
-      clock_punches_count: 0,
-      new_punches_count: 0,
-      saved_punches_count: 0,
-      error_count: 1,
-      formatted_output: errorOutput,
-      is_private_ip: isPrivate,
-      timestamp: nowStr,
-    };
   }
+
+  // 2. APLICACIÓN WEB (VERCEL / NAVEGADOR): Separación estricta de responsabilidades
+  // La versión web no intenta conexiones físicas a IPs privadas de LAN
+  const stages = [
+    { stage: 1, name: 'Validación de dirección IP y puerto', status: 'PASSED' as const, message: `IP ${cleanIp}:${targetPort} válida en inventario.` },
+    { stage: 2, name: 'Alcanzabilidad en la red (Ping/Ruta IP)', status: 'WARNING' as const, message: 'La versión Web opera en la nube pública y no tiene alcance directo a IPs privadas de la intranet local.' },
+    { stage: 3, name: 'Conectividad de puerto y transporte', status: 'SKIPPED' as const, message: 'Gestión delegada exclusivamente a la aplicación de escritorio Windows conectada a la LAN.' },
+    { stage: 4, name: 'Establecimiento de sesión (Protocolo ZKTeco)', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
+    { stage: 5, name: 'Verificación de telemetría e identificación', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
+    { stage: 6, name: 'Capacidad y disponibilidad de lectura de marcaciones', status: 'SKIPPED' as const, message: 'Gestionado exclusivamente por la versión Desktop.' },
+  ];
+
+  const webOutput = [
+    'ENTORNO: APLICACIÓN WEB (VERCEL / CLOUD)',
+    `DISPOSITIVO: ${model}`,
+    `SERIAL: ${finalSerial}`,
+    `IP LAN REGISTRADA: ${cleanIp}:${targetPort}`,
+    'ESTADO: LA PRUEBA FÍSICA Y SINCRONIZACIÓN DIRECTA CORRESPONDE A LA VERSIÓN ESCRITORIO',
+    'DETALLE: Para ejecutar pruebas de socket físico con el marcador, use la aplicación de escritorio Windows en la red local de la DRAC.',
+  ].join('\n');
+
+  return {
+    success: false,
+    status: 'OFFLINE',
+    message: 'La prueba de conexión física debe ejecutarse desde la aplicación de escritorio Windows.',
+    cause: `El marcador ZKTeco se encuentra en la red local privada (${cleanIp}). Por seguridad y arquitectura, la versión Web no establece conexiones directas de red local. Ejecute la prueba desde la aplicación de escritorio Windows instalada en la red de la institución.`,
+    ip: cleanIp,
+    port: targetPort,
+    model,
+    serial_number: finalSerial,
+    user_count: 0,
+    clock_punches_count: 0,
+    new_punches_count: 0,
+    saved_punches_count: 0,
+    error_count: 1,
+    formatted_output: webOutput,
+    step_details: stages,
+    is_private_ip: isPrivate,
+    timestamp: nowStr,
+  };
 }
 
 /**
