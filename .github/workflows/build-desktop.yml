@@ -2,6 +2,8 @@ name: Compilar y Publicar DRAC Desktop Windows (GitHub Release)
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
