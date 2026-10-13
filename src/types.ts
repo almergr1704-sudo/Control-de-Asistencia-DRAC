@@ -380,6 +380,14 @@ export interface DeviceTestRecord {
     api_verified_ok?: boolean;
     [key: string]: any;
   } | DeviceStageDetail[];
+  independent_tests?: Array<{
+    id: string;
+    name: string;
+    status: 'Correcto' | 'Fallido' | 'Pendiente';
+    detail: string;
+    error?: string | null;
+    latencyMs?: number;
+  }>;
 }
 
 export interface DeviceCapabilities {
@@ -1036,6 +1044,52 @@ declare global {
         error?: string;
         timestamp: string;
       }>;
+      checkFirewallStatus: () => Promise<{
+        isWindows: boolean;
+        configured: boolean;
+        status: 'OK' | 'REQUIERE CONFIGURACIÓN';
+        statusText: string;
+        isAdmin: boolean;
+        rules: string[];
+        missingRules: string[];
+        inboundPort4370: boolean;
+        outboundPort4370: boolean;
+        appInbound: boolean;
+        appOutbound: boolean;
+        details: string;
+        timestamp: string;
+      }>;
+      repairNetworkConfig: () => Promise<{
+        success: boolean;
+        message: string;
+        rulesCreated?: string[];
+        errors?: string[];
+        firewallStatus?: any;
+        timestamp: string;
+      }>;
+      runIndependentDiagnostics: (
+        ip: string,
+        port?: number,
+        timeoutMs?: number,
+        model?: string,
+        serialNumber?: string,
+        commKey?: number | string
+      ) => Promise<{
+        success: boolean;
+        overallStatus: 'Correcto' | 'Fallido' | 'Pendiente';
+        ip: string;
+        port: number;
+        tests: Array<{
+          id: string;
+          name: string;
+          status: 'Correcto' | 'Fallido' | 'Pendiente';
+          detail: string;
+          error?: string | null;
+          latencyMs?: number;
+        }>;
+        totalDurationMs: number;
+        timestamp: string;
+      }>;
       getSystemInfo: () => Promise<{
         platform: string;
         arch: string;
@@ -1046,6 +1100,9 @@ declare global {
         nodeVersion: string;
         electronVersion: string;
         networkAddresses: { interface: string; ip: string }[];
+        firewallConfigured?: boolean;
+        firewallStatus?: string;
+        isAdmin?: boolean;
         localTime: string;
       }>;
       minimize: () => void;
