@@ -1,0 +1,11 @@
+[
+  {
+    "id": "dep-01",
+    "code": "01",
+    "name": "SEDE CENTRAL",
+    "type": "SEDE_CENTRAL",
+    "address": "Carretera Baños del Inka KM 3.5",
+    "active": true,
+    "created_at": "2026-01-01T00:00:00.000Z"
+  }
+]

@@ -1,0 +1,37 @@
+================================================================================
+SISTEMA DE CONTROL DE ASISTENCIA INSTITUCIONAL (DRAC)
+INFORMACIÓN DE VERSIÓN Y COMPILACIÓN
+================================================================================
+
+Sistema:
+Sistema de Control de Asistencia Institucional
+
+Institución:
+Dirección Regional de Agricultura Cajamarca - DRAC
+
+Plataforma:
+Windows (x64)
+
+Tecnología:
+Electron + React + TypeScript + Vite + Tailwind CSS + Node.js
+
+Fecha de compilación:
+2026-09-08
+
+Versión:
+1.0.0
+
+Identificador de Aplicación:
+pe.gob.drac.controlasistencia
+
+Nombre de Producto:
+DRAC Control de Asistencia
+
+Arquitectura Soportada:
+Windows 10 / 11 (64 bits)
+
+Integraciones:
+- Base de datos institucional Supabase / PostgreSQL
+- Relojes y Marcadores Biométricos ZKTeco (Protocolo TCP/IP Puerto 4370)
+- Exportación de Asistencias a formato Excel (.xlsx) y PDF
+================================================================================

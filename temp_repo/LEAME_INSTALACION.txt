@@ -1,0 +1,25 @@
+===================================================================
+DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA (DRAC)
+SISTEMA DE CONTROL DE ASISTENCIA INSTITUCIONAL - WINDOWS DESKTOP
+===================================================================
+
+INSTRUCCIONES DE INSTALACIÓN EN WINDOWS 10 / WINDOWS 11:
+
+1. Ejecute con doble clic el instalador oficial:
+   DRAC-Asistencia-Setup.exe
+
+2. Siga las instrucciones del Asistente de Instalación en pantalla.
+   Puede elegir el directorio de instalación o utilizar el sugerido.
+
+3. El instalador creará automáticamente:
+   - Acceso directo en el Escritorio ("DRAC Control de Asistencia")
+   - Acceso directo en el Menú Inicio de Windows
+   - Desinstalador en el Panel de Control / Configuración de Windows
+
+4. Al iniciar la aplicación, ingrese sus credenciales institucionales.
+   La aplicación se conectará en tiempo real con la base institucional Supabase.
+
+REQUISITOS DEL SISTEMA:
+- Windows 10 o Windows 11 (64 bits).
+- Conexión a red institucional o Internet para sincronización.
+===================================================================

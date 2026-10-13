@@ -142,18 +142,39 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [selectedDeviceForDetail, setSelectedDeviceForDetail] = useState<DispositivoZkTeco | null>(null);
   const [isSyncingSingleDevice, setIsSyncingSingleDevice] = useState<string | null>(null);
 
-  // Success Notification Toast
-  const [successToast, setSuccessToast] = useState<string | null>(null);
+  // Notification Toast (Success / Error / Info)
+  const [notificationToast, setNotificationToast] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    subtitle?: string;
+  } | null>(null);
 
-  // Auto-dismiss success toast after 4.5s
+  // Helper setter functions
+  const setSuccessToast = (message: string, subtitle?: string) => {
+    setNotificationToast({
+      message,
+      type: 'success',
+      subtitle: subtitle || 'La operación ha sido persistida y sincronizada correctamente con la base de datos institucional.',
+    });
+  };
+
+  const setErrorToast = (message: string, subtitle?: string) => {
+    setNotificationToast({
+      message,
+      type: 'error',
+      subtitle: subtitle || 'La operación no se pudo completar. Verifique la conectividad de red o el estado del servicio.',
+    });
+  };
+
+  // Auto-dismiss notification toast after 5s
   React.useEffect(() => {
-    if (successToast) {
+    if (notificationToast) {
       const timer = setTimeout(() => {
-        setSuccessToast(null);
-      }, 4500);
+        setNotificationToast(null);
+      }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [successToast]);
+  }, [notificationToast]);
 
   // DEVICES TAB SEARCH, FILTER, SORT & PAGINATION
   const [devSearchTerm, setDevSearchTerm] = useState('');
@@ -539,15 +560,25 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       });
       const data = await res.json().catch(() => null);
       if (onRefreshPunches) {
-        await onRefreshPunches();
+        await onRefreshPunches().catch(() => {});
       }
-      if (data && data.message) {
-        setSuccessToast(data.message);
+      if (res.ok) {
+        if (data && data.message) {
+          setSuccessToast(data.message, '✓ Sincronización completada y verificada.');
+        } else {
+          setSuccessToast(`Conexión exitosa con ${dev.name}. Marcaciones verificadas.`, '✓ Confirmado por base central.');
+        }
       } else {
-        setSuccessToast(`Conexión exitosa con ${dev.name}. Marcaciones verificadas.`);
+        setErrorToast(
+          `Error al sincronizar ${dev.name}: ${data?.message || 'Fallo de respuesta del servidor'}`,
+          '✗ Error de sincronización'
+        );
       }
     } catch (err: any) {
-      setSuccessToast(`Error al sincronizar ${dev.name}: ${err?.message || 'Error de red'}`);
+      setErrorToast(
+        `Error al sincronizar ${dev.name}: ${err?.message || 'Error de red'}`,
+        '✗ Error de red / comunicación'
+      );
     } finally {
       setIsSyncingSingleDevice(null);
     }
@@ -675,11 +706,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     await onEditDevice(updatedDevice);
 
     if (result.status === 'ONLINE_ATT_ERROR') {
-      setSuccessToast('TCP conectado, pero no se pudo obtener el historial de marcaciones.');
+      setSuccessToast('TCP conectado, pero no se pudo obtener el historial de marcaciones.', '✓ Handshake OK | Advertencia en extracción de marcaciones');
     } else if (result.success) {
-      setSuccessToast(`Diagnóstico TCP en "${dev.name}": Marcaciones reloj: ${result.clock_punches_count} | Nuevas guardadas: ${result.saved_punches_count} | Errores: 0`);
+      setSuccessToast(`Diagnóstico TCP en "${dev.name}": Marcaciones reloj: ${result.clock_punches_count} | Nuevas guardadas: ${result.saved_punches_count} | Errores: 0`, '✓ Verificación completada exitosamente');
     } else {
-      setSuccessToast(`Prueba TCP fallida en "${dev.name}": ${result.message}`);
+      setErrorToast(`Prueba TCP fallida en "${dev.name}": ${result.message}`, '✗ Fallo en comunicación TCP / Dispositivo fuera de línea');
     }
   };
 
@@ -1040,22 +1071,62 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* SUCCESS TOAST BANNER */}
-      {successToast && (
-        <div className="bg-emerald-950/90 border border-emerald-500/80 text-emerald-100 px-4 py-3 rounded-xl flex items-center justify-between shadow-xl animate-in fade-in duration-200">
+      {/* NOTIFICATION TOAST BANNER (SUCCESS / ERROR / INFO) */}
+      {notificationToast && (
+        <div
+          className={`${
+            notificationToast.type === 'error'
+              ? 'bg-rose-950/95 border-rose-500/80 text-rose-100'
+              : notificationToast.type === 'info'
+              ? 'bg-sky-950/95 border-sky-500/80 text-sky-100'
+              : 'bg-emerald-950/95 border-emerald-500/80 text-emerald-100'
+          } border px-4 py-3 rounded-xl flex items-center justify-between shadow-xl animate-in fade-in duration-200`}
+        >
           <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            {notificationToast.type === 'error' ? (
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            ) : notificationToast.type === 'info' ? (
+              <Activity className="w-5 h-5 text-sky-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            )}
             <div>
-              <p className="font-bold text-sm text-emerald-300">{successToast}</p>
-              <p className="text-[11px] text-emerald-400/90">
-                La operación ha sido persistida y sincronizada correctamente con la base de datos institucional.
+              <p
+                className={`font-bold text-sm ${
+                  notificationToast.type === 'error'
+                    ? 'text-rose-200'
+                    : notificationToast.type === 'info'
+                    ? 'text-sky-200'
+                    : 'text-emerald-300'
+                }`}
+              >
+                {notificationToast.message}
               </p>
+              {notificationToast.subtitle && (
+                <p
+                  className={`text-[11px] ${
+                    notificationToast.type === 'error'
+                      ? 'text-rose-300/90'
+                      : notificationToast.type === 'info'
+                      ? 'text-sky-300/90'
+                      : 'text-emerald-400/90'
+                  }`}
+                >
+                  {notificationToast.subtitle}
+                </p>
+              )}
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setSuccessToast(null)}
-            className="text-emerald-400 hover:text-white p-1 rounded transition-colors"
+            onClick={() => setNotificationToast(null)}
+            className={`${
+              notificationToast.type === 'error'
+                ? 'text-rose-400 hover:text-white'
+                : notificationToast.type === 'info'
+                ? 'text-sky-400 hover:text-white'
+                : 'text-emerald-400 hover:text-white'
+            } p-1 rounded transition-colors`}
             title="Cerrar notificación"
           >
             <X className="w-4 h-4" />
@@ -1536,15 +1607,26 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                                       model: d.model,
                                     }),
                                   });
-                                  const contentType = res.headers.get('content-type') || '';
+                                  let testData: any = null;
                                   if (contentType.includes('application/json')) {
-                                    await res.json().catch(() => null);
+                                    testData = await res.json().catch(() => null);
                                   }
-                                  setSuccessToast(
-                                    `Prueba de conexión exitosa con ${d.name} (${d.ip_address}:${d.port}) - Latencia: 28ms.`
+                                  if (res.ok && testData && testData.success) {
+                                    setSuccessToast(
+                                      testData.message || `Prueba de conexión exitosa con ${d.name} (${d.ip_address}:${d.port})`,
+                                      '✓ Dispositivo ZKTeco en línea y verificado'
+                                    );
+                                  } else {
+                                    setErrorToast(
+                                      testData?.message || `Fallo al conectar con ${d.name} (${d.ip_address}:${d.port})`,
+                                      '✗ Error TCP / Dispositivo no respondió'
+                                    );
+                                  }
+                                } catch (err: any) {
+                                  setErrorToast(
+                                    `Error de comunicación con ${d.name}: ${err?.message || 'Error de red'}`,
+                                    '✗ Error de red / tiempo de espera agotado'
                                   );
-                                } catch {
-                                  setSuccessToast(`Conexión verificada con ${d.name}.`);
                                 } finally {
                                   setTestingDeviceId(null);
                                 }
