@@ -11,6 +11,7 @@ let mainWindow = null;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const DESKTOP_PORT = process.env.PORT || 3000;
 
+// Configurar logging seguro y descriptivo
 function log(msg) {
   console.log(`[DRAC-DESKTOP] ${new Date().toISOString()} - ${msg}`);
 }
@@ -37,19 +38,23 @@ async function createWindow() {
     autoHideMenuBar: true,
   });
 
+  // Mostrar cuando esté listo para evitar flash blanco
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     log('Ventana principal cargada y visible.');
   });
 
+  // Cargar frontend
   if (isDev) {
     const devUrl = `http://localhost:${DESKTOP_PORT}`;
     log(`Modo Desarrollo: cargando ${devUrl}`);
     mainWindow.loadURL(devUrl).catch((err) => {
       log(`Error cargando URL dev: ${err.message}. Reintentando en 2s...`);
-      setTimeout(() => mainWindow.loadURL(devUrl), 2000);
+      setTimeout(() => mainWindow && mainWindow.loadURL(devUrl), 2000);
     });
   } else {
+    // En producción empaquetada:
+    // 1. Iniciamos el backend local si existe
     try {
       const serverPath = path.join(__dirname, '..', 'dist', 'server.cjs');
       log(`Iniciando backend integrado en ${serverPath}...`);
@@ -58,6 +63,7 @@ async function createWindow() {
       log(`Aviso al iniciar backend integrado: ${err.message}`);
     }
 
+    // 2. Cargamos el archivo HTML
     const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
     mainWindow.loadFile(indexPath).catch((err) => {
       log(`Fallback cargando archivo estático: ${err.message}`);
@@ -71,71 +77,226 @@ async function createWindow() {
 }
 
 // =========================================================================
-// IPC HANDLERS - SERVICIOS NATIVOS DE ESCRITORIO
+// IPC HANDLERS - GESTIÓN DE FIREWALL DE WINDOWS & RED
 // =========================================================================
 
-// 1. Verificación y Reparación del Firewall de Windows
+// Consultar estado de las reglas del Firewall de Windows para TCP 4370
 ipcMain.handle('firewall:check-status', async () => {
-  log('IPC: Consultando estado del Firewall de Windows...');
-  return await firewallManager.checkFirewallStatus();
+  log('IPC firewall:check-status invocado.');
+  try {
+    return await firewallManager.checkFirewallStatus();
+  } catch (err) {
+    log(`Error en firewall:check-status: ${err.message}`);
+    return {
+      isWindows: process.platform === 'win32',
+      configured: false,
+      status: 'REQUIERE CONFIGURACIÓN',
+      statusText: 'Firewall Windows: REQUIERE CONFIGURACIÓN',
+      isAdmin: false,
+      error: err.message,
+      rules: [],
+      missingRules: ['DRAC Control Asistencia - ZKTeco TCP 4370'],
+      details: `Fallo al auditar Firewall: ${err.message}`,
+      timestamp: new Date().toISOString(),
+    };
+  }
 });
 
+// Acción administrativa: "Reparar Configuración de Red"
 ipcMain.handle('firewall:repair-network', async () => {
-  log('IPC: Ejecutando acción administrativa: Reparar Configuración de Red...');
-  return await firewallManager.repairNetworkConfig();
+  log('IPC firewall:repair-network invocado.');
+  try {
+    return await firewallManager.repairNetworkConfig();
+  } catch (err) {
+    log(`Error en firewall:repair-network: ${err.message}`);
+    return {
+      success: false,
+      message: `Error al reparar configuración de red: ${err.message}`,
+      error: err.message,
+      timestamp: new Date().toISOString(),
+    };
+  }
 });
 
-// 2. Diagnóstico de Marcadores ZKTeco
-ipcMain.handle('zk:diagnose-device', async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0 }) => {
-  log(`IPC: Diagnóstico completo ZKTeco hacia ${ip}:${port} (Modelo: ${model}, CommKey: ${commKey})`);
-  return await zktecoDriver.diagnoseZkDevice(ip, port, timeoutMs, model, serialNumber, commKey);
-});
+// =========================================================================
+// IPC HANDLERS - COMUNICACIÓN BIOMÉTRICA ZKTECO (TCP 4370 NATIVO)
+// =========================================================================
 
-ipcMain.handle('zk:independent-diagnostics', async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0 }) => {
-  log(`IPC: Ejecutando 6 comprobaciones independientes ZKTeco hacia ${ip}:${port}`);
-  return await zktecoDriver.runIndependentDiagnostics(ip, port, timeoutMs, model, serialNumber, commKey);
-});
+// Diagnóstico exhaustivo de 10 etapas
+ipcMain.handle(
+  'zk:diagnose-device',
+  async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
+    log(`IPC zk:diagnose-device -> ${ip}:${port} (${model}, S/N: ${serial}, CommKey: ${commKey})`);
+    try {
+      return await zktecoDriver.diagnoseZkDevice(ip, port, timeoutMs, model, serial, commKey);
+    } catch (err) {
+      log(`Error en diagnoseZkDevice: ${err.message}`);
+      return {
+        success: false,
+        status: 'OFFLINE',
+        message: `Error interno al ejecutar diagnóstico: ${err.message}`,
+        cause: err.message,
+        ip,
+        port,
+        model,
+        serial_number: serial,
+        user_count: 0,
+        clock_punches_count: 0,
+        error_count: 1,
+        step_details: [],
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+);
 
+// Lectura directa de marcaciones mediante socket TCP
 ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 5000, commKey = 0 }) => {
-  log(`IPC: Lectura física de marcaciones ZKTeco hacia ${ip}:${port}`);
-  return await zktecoDriver.readZkDevicePunches(ip, port, timeoutMs, commKey);
+  log(`IPC zk:read-punches -> ${ip}:${port} (CommKey: ${commKey})`);
+  try {
+    return await zktecoDriver.readZkDevicePunches(ip, port, timeoutMs, commKey);
+  } catch (err) {
+    log(`Error en readZkDevicePunches: ${err.message}`);
+    return {
+      success: false,
+      message: `Error al descargar marcaciones: ${err.message}`,
+      punches: [],
+      timestamp: new Date().toISOString(),
+    };
+  }
 });
 
-ipcMain.handle('zk:probe-tcp', async (_event, { ip, port = 4370, timeoutMs = 2500 }) => {
-  return await zktecoDriver.probeTcpPort(ip, port, timeoutMs);
-});
+// Comprobaciones independientes (Ping, TCP 4370, Firewall Windows, Socket TCP, ZKTeco, Info)
+ipcMain.handle(
+  'zk:run-independent-diagnostics',
+  async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
+    log(`IPC zk:run-independent-diagnostics -> ${ip}:${port}`);
+    try {
+      return await zktecoDriver.runIndependentDiagnostics(ip, port, timeoutMs, model, serial, commKey);
+    } catch (err) {
+      log(`Error en runIndependentDiagnostics: ${err.message}`);
+      return {
+        success: false,
+        status: 'Fallido',
+        ip,
+        port,
+        model,
+        serial_number: serial,
+        tests: [
+          { id: 'general', name: 'Diagnóstico Independiente', status: 'Fallido', message: err.message, error: err.message },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+);
 
+// Verificación Real TCP Socket para Marcadores ZKTeco con discriminación de errores precisa
 ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3000 }) => {
-  log(`IPC: Ping físico TCP a marcador ${ip}:${port}`);
-  const probe = await zktecoDriver.probeTcpPort(ip, port, timeoutMs);
-  return {
-    success: probe.ok,
-    reachable: probe.ok,
-    ip,
-    port,
-    latencyMs: probe.latency,
-    error: probe.code || probe.error,
-    message: probe.ok
-      ? `Marcador respondiendo en ${ip}:${port} (${probe.latency}ms)`
-      : `No se pudo conectar a ${ip}:${port} (${probe.code || probe.error || 'UNREACHABLE'})`,
-    timestamp: new Date().toISOString(),
-  };
+  log(`Verificando conectividad física con marcador ZKTeco: ${ip}:${port} (timeout=${timeoutMs}ms)`);
+
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    const socket = new net.Socket();
+    let isResolved = false;
+
+    socket.setTimeout(timeoutMs);
+
+    socket.on('connect', () => {
+      const latency = Date.now() - startTime;
+      isResolved = true;
+      socket.destroy();
+      log(`Conexión TCP exitosa con ${ip}:${port} en ${latency}ms`);
+      resolve({
+        success: true,
+        reachable: true,
+        ip,
+        port,
+        latencyMs: latency,
+        message: `Marcador respondiendo en ${ip}:${port} (${latency}ms). Puerto TCP 4370 abierto.`,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    socket.on('timeout', () => {
+      if (!isResolved) {
+        isResolved = true;
+        socket.destroy();
+        log(`Timeout de conexión con marcador ${ip}:${port} (${timeoutMs}ms)`);
+        resolve({
+          success: false,
+          reachable: false,
+          ip,
+          port,
+          error: 'ETIMEDOUT',
+          message: `Timeout agotado (${timeoutMs}ms). El marcador en ${ip}:${port} no respondió. Verifique si el equipo está encendido o si hay bloqueo en Firewall.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+
+    socket.on('error', (err) => {
+      if (!isResolved) {
+        isResolved = true;
+        socket.destroy();
+        const code = err.code || 'UNKNOWN';
+        log(`Error conectando con marcador ${ip}:${port} [${code}]: ${err.message}`);
+
+        let userFriendlyMsg = `Error TCP (${code}): ${err.message}`;
+        if (code === 'ECONNREFUSED') {
+          userFriendlyMsg = `Conexión rechazada por puerto cerrado (ECONNREFUSED). El host ${ip} respondió pero el puerto TCP ${port} no escucha o el biométrico está configurado en modo PUSH / ADMS (Servidor Cloud) en lugar de Standalone / SDK local.`;
+        } else if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH') {
+          userFriendlyMsg = `Dispositivo no alcanzable o equipo apagado (${code}). No existe ruta física de red hacia ${ip}.`;
+        } else if (code === 'ECONNRESET' || code === 'EPIPE') {
+          userFriendlyMsg = `Conexión reseteada por el dispositivo o firewall (${code}). La sesión fue cerrada abruptamente.`;
+        }
+
+        resolve({
+          success: false,
+          reachable: false,
+          ip,
+          port,
+          error: code,
+          message: userFriendlyMsg,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+
+    try {
+      socket.connect(port, ip);
+    } catch (e) {
+      if (!isResolved) {
+        isResolved = true;
+        resolve({
+          success: false,
+          reachable: false,
+          ip,
+          port,
+          error: 'EINIT',
+          message: `Error al inicializar socket TCP: ${e.message}`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  });
 });
 
-// 3. Información del Sistema Local y Hardware
+// =========================================================================
+// IPC HANDLERS - INFORMACIÓN DEL SISTEMA LOCAL Y HARDWARE
+// =========================================================================
+
 ipcMain.handle('system:get-info', async () => {
   const networkInterfaces = os.networkInterfaces();
   const addresses = [];
 
   for (const name of Object.keys(networkInterfaces)) {
-    for (const net of networkInterfaces[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        addresses.push({ interface: name, ip: net.address });
+    for (const netIf of networkInterfaces[name] || []) {
+      if (netIf.family === 'IPv4' && !netIf.internal) {
+        addresses.push({ interface: name, ip: netIf.address });
       }
     }
   }
-
-  const fw = await firewallManager.checkFirewallStatus();
 
   return {
     platform: process.platform,
@@ -147,14 +308,14 @@ ipcMain.handle('system:get-info', async () => {
     nodeVersion: process.versions.node,
     electronVersion: process.versions.electron,
     networkAddresses: addresses,
-    firewallConfigured: fw.configured,
-    firewallStatus: fw.status,
-    isAdmin: fw.isAdmin,
     localTime: new Date().toISOString(),
   };
 });
 
-// 4. Control de Ventana
+// =========================================================================
+// CONTROL DE VENTANA
+// =========================================================================
+
 ipcMain.on('window:minimize', () => {
   if (mainWindow) mainWindow.minimize();
 });
@@ -169,22 +330,27 @@ ipcMain.on('window:maximize', () => {
   }
 });
 
-ipcMain.handle('window:is-maximized', () => {
-  return mainWindow ? mainWindow.isMaximized() : false;
-});
-
 ipcMain.on('window:close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+ipcMain.handle('window:is-maximized', () => {
+  return mainWindow ? mainWindow.isMaximized() : false;
 });
 
 // =========================================================================
 // CICLO DE VIDA DE LA APLICACIÓN
 // =========================================================================
+
 app.whenReady().then(async () => {
-  log('Electron App Ready. Verificando requerimientos de red...');
-  // Verificación y activación automática de reglas de Firewall de Windows en primer inicio
-  await firewallManager.ensureFirewallOnStartup();
-  createWindow();
+  await createWindow();
+
+  // En Windows, verificar reglas del Firewall de Windows en segundo plano
+  if (process.platform === 'win32') {
+    firewallManager.ensureFirewallOnStartup().catch((err) => {
+      log(`Aviso en ensureFirewallOnStartup: ${err.message}`);
+    });
+  }
 });
 
 app.on('window-all-closed', () => {

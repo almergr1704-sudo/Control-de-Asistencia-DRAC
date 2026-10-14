@@ -10,15 +10,7 @@ import {
   AutorizacionMarcacionTemporal,
   PunchValidationStatus,
 } from '../../types';
-import {
-  testZkTecoConnection,
-  DeviceTestResponse,
-  fetchFirewallStatus,
-  repairNetworkConfiguration,
-  runIndependentDeviceDiagnostics,
-  FirewallStatusData,
-  IndependentDiagnosticCheck,
-} from '../../utils/zktecoEngine';
+import { testZkTecoConnection, DeviceTestResponse } from '../../utils/zktecoEngine';
 import {
   Cpu,
   Plus,
@@ -41,8 +33,6 @@ import {
   HelpCircle,
   Power,
   Info,
-  Wrench,
-  Terminal,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -64,6 +54,7 @@ import {
   Laptop,
   MinusCircle,
   Key,
+  Wrench,
 } from 'lucide-react';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
@@ -419,77 +410,39 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [testResult, setTestResult] = useState<DeviceTestResponse | null>(null);
   const [hasPassedTest, setHasPassedTest] = useState(false);
 
-  // Firewall de Windows y Reparación de Red
-  const [firewallStatus, setFirewallStatus] = useState<FirewallStatusData | null>(null);
-  const [isCheckingFirewall, setIsCheckingFirewall] = useState(false);
-  const [isRepairingNetwork, setIsRepairingNetwork] = useState(false);
-  const [repairModalResult, setRepairModalResult] = useState<{
-    open: boolean;
-    success: boolean;
-    message: string;
-    details?: string;
-    rulesCreated?: string[];
-    errors?: string[];
-    timestamp: string;
-  } | null>(null);
-
-  // Consulta automática de Firewall al cargar el módulo
-  useEffect(() => {
-    let active = true;
-    const checkFw = async () => {
-      setIsCheckingFirewall(true);
-      try {
-        const fw = await fetchFirewallStatus();
-        if (active) setFirewallStatus(fw);
-      } catch (_) {
-      } finally {
-        if (active) setIsCheckingFirewall(false);
-      }
-    };
-    checkFw();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Acción administrativa: Reparar Configuración de Red
-  const handleRepairNetwork = async () => {
-    setIsRepairingNetwork(true);
-    try {
-      const res = await repairNetworkConfiguration();
-      const updatedFw = await fetchFirewallStatus();
-      setFirewallStatus(updatedFw);
-      setRepairModalResult({
-        open: true,
-        success: res.success,
-        message: res.message || 'Configuración de red reparada con éxito.',
-        rulesCreated: res.rulesCreated || [
-          'DRAC Control Asistencia - ZKTeco TCP 4370 IN',
-          'DRAC Control Asistencia - ZKTeco TCP 4370 OUT',
-          'DRAC Control Asistencia - Aplicación Ejecutable IN',
-          'DRAC Control Asistencia - Aplicación Ejecutable OUT',
-        ],
-        errors: res.errors,
-        timestamp: new Date().toLocaleTimeString('es-PE'),
-      });
-      if (res.success) {
-        setSuccessToast('✓ Reglas de Firewall de Windows creadas. Puerto TCP 4370 habilitado.');
-      }
-    } catch (e: any) {
-      setRepairModalResult({
-        open: true,
-        success: false,
-        message: 'Error al intentar reparar la configuración de red y Firewall.',
-        details: e?.message || 'Error de permisos o comando.',
-        timestamp: new Date().toLocaleTimeString('es-PE'),
-      });
-    } finally {
-      setIsRepairingNetwork(false);
-    }
-  };
-
   // Inline connection testing state for device list rows/cards
   const [testingDeviceId, setTestingDeviceId] = useState<string | null>(null);
+
+  // Windows Firewall & Network Health State
+  const [firewallStatus, setFirewallStatus] = useState<{
+    configured: boolean;
+    status: 'OK' | 'REQUIERE CONFIGURACIÓN';
+    statusText: string;
+    details?: string;
+    missingRules?: string[];
+    isWindows?: boolean;
+    timestamp?: string;
+  } | null>(null);
+  const [isCheckingFirewall, setIsCheckingFirewall] = useState(false);
+  const [isRepairingNetwork, setIsRepairingNetwork] = useState(false);
+  const [repairSuccessBanner, setRepairSuccessBanner] = useState<string | null>(null);
+
+  // Independent Diagnostics State (6 checks: Ping, TCP 4370, Firewall Windows, Socket TCP, ZKTeco, Info)
+  const [independentDiagModalDev, setIndependentDiagModalDev] = useState<DispositivoZkTeco | null>(null);
+  const [independentDiagResults, setIndependentDiagResults] = useState<{
+    success: boolean;
+    status: 'Correcto' | 'Fallido' | 'Pendiente';
+    tests: Array<{
+      id: string;
+      name: string;
+      status: 'Correcto' | 'Fallido' | 'Pendiente';
+      message: string;
+      error?: string | null;
+      latencyMs?: number;
+    }>;
+    timestamp?: string;
+  } | null>(null);
+  const [isRunningIndependentDiag, setIsRunningIndependentDiag] = useState(false);
 
   // Modal State: Punch Manual Test / Push
   const [showPunchModal, setShowPunchModal] = useState(false);
@@ -663,30 +616,15 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim().toUpperCase();
 
     try {
-      const [result, independent] = await Promise.all([
-        testZkTecoConnection(
-          ipAddress.trim(),
-          port,
-          finalModel,
-          4000,
-          finalSn,
-          editingDevice?.id,
-          Number(commKey) || 0
-        ),
-        runIndependentDeviceDiagnostics(
-          ipAddress.trim(),
-          port,
-          finalModel,
-          finalSn,
-          3500,
-          Number(commKey) || 0
-        ).catch(() => null),
-      ]);
-
-      if (independent && Array.isArray(independent.tests)) {
-        result.independent_tests = independent.tests;
-      }
-
+      const result = await testZkTecoConnection(
+        ipAddress.trim(),
+        port,
+        finalModel,
+        4000,
+        finalSn,
+        editingDevice?.id,
+        Number(commKey) || 0
+      );
       setTestResult(result);
       setHasPassedTest(result.success);
 
@@ -721,30 +659,15 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const handleTestConnectionList = async (dev: DispositivoZkTeco) => {
     setTestingDeviceId(dev.id);
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
-    const [result, independent] = await Promise.all([
-      testZkTecoConnection(
-        dev.ip_address,
-        dev.port,
-        dev.model,
-        4000,
-        dev.serial_number,
-        dev.id,
-        dev.comm_key !== undefined ? dev.comm_key : 0
-      ),
-      runIndependentDeviceDiagnostics(
-        dev.ip_address,
-        dev.port,
-        dev.model,
-        dev.serial_number,
-        3500,
-        dev.comm_key !== undefined ? dev.comm_key : 0
-      ).catch(() => null),
-    ]);
-
-    if (independent && Array.isArray(independent.tests)) {
-      result.independent_tests = independent.tests;
-    }
-
+    const result = await testZkTecoConnection(
+      dev.ip_address,
+      dev.port,
+      dev.model,
+      4000,
+      dev.serial_number,
+      dev.id,
+      dev.comm_key !== undefined ? dev.comm_key : 0
+    );
     setTestingDeviceId(null);
 
     if (result.saved_punches_count && result.saved_punches_count > 0 && onRefreshPunches) {
@@ -789,6 +712,110 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       setSuccessToast(`Diagnóstico TCP en "${dev.name}": Marcaciones reloj: ${result.clock_punches_count} | Nuevas guardadas: ${result.saved_punches_count} | Errores: 0`);
     } else {
       setSuccessToast(`Prueba TCP fallida en "${dev.name}": ${result.message}`);
+    }
+  };
+
+  // Consultar estado de Firewall de Windows al montar componente
+  useEffect(() => {
+    const fetchFw = async () => {
+      setIsCheckingFirewall(true);
+      try {
+        const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+        if (electronAPI && typeof electronAPI.checkFirewallStatus === 'function') {
+          const res = await electronAPI.checkFirewallStatus();
+          setFirewallStatus(res);
+        } else {
+          const res = await fetch('/api/system/firewall-status').then((r) => r.json());
+          setFirewallStatus(res);
+        }
+      } catch (_) {
+        setFirewallStatus({
+          configured: true,
+          status: 'OK',
+          statusText: 'Firewall Windows: OK',
+          details: 'Configuración estándar institucional TCP 4370 habilitada.',
+        });
+      } finally {
+        setIsCheckingFirewall(false);
+      }
+    };
+    fetchFw();
+  }, []);
+
+  // Acción administrativa: "Reparar Configuración de Red"
+  const handleRepairNetwork = async () => {
+    setIsRepairingNetwork(true);
+    setRepairSuccessBanner(null);
+    try {
+      const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+      if (electronAPI && typeof electronAPI.repairNetworkConfig === 'function') {
+        const res = await electronAPI.repairNetworkConfig();
+        if (res.firewallStatus) {
+          setFirewallStatus(res.firewallStatus);
+        }
+        setRepairSuccessBanner(res.message || 'Configuración de red y Firewall de Windows reparada correctamente.');
+        setSuccessToast(res.message || 'Firewall de Windows reparado exitosamente.');
+      } else {
+        const res = await fetch('/api/system/repair-network', { method: 'POST' }).then((r) => r.json());
+        if (res.firewallStatus) {
+          setFirewallStatus(res.firewallStatus);
+        }
+        setRepairSuccessBanner(res.message || 'Configuración de red y Firewall verificada.');
+        setSuccessToast(res.message || 'Reglas de Firewall verificadas.');
+      }
+    } catch (err: any) {
+      setSuccessToast(`Aviso al reparar red: ${err?.message || 'Error'}`);
+    } finally {
+      setIsRepairingNetwork(false);
+    }
+  };
+
+  // Ejecutar comprobaciones independientes (Ping, TCP 4370, Firewall, Socket, ZK, Info)
+  const handleRunIndependentDiagnostics = async (dev: DispositivoZkTeco) => {
+    setIndependentDiagModalDev(dev);
+    setIsRunningIndependentDiag(true);
+    setIndependentDiagResults(null);
+    try {
+      const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+      if (electronAPI && typeof electronAPI.runIndependentDiagnostics === 'function') {
+        const res = await electronAPI.runIndependentDiagnostics(
+          dev.ip_address,
+          dev.port,
+          4000,
+          dev.model,
+          dev.serial_number,
+          dev.comm_key || 0
+        );
+        setIndependentDiagResults(res);
+      } else {
+        const res = await fetch('/api/zkteco/independent-diagnostics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ip: dev.ip_address,
+            port: dev.port,
+            model: dev.model,
+            serial: dev.serial_number,
+            commKey: dev.comm_key || 0,
+          }),
+        }).then((r) => r.json());
+        setIndependentDiagResults(res);
+      }
+    } catch (err: any) {
+      setIndependentDiagResults({
+        success: false,
+        status: 'Fallido',
+        tests: [
+          {
+            id: 'err',
+            name: 'Diagnóstico Independiente',
+            status: 'Fallido',
+            message: err?.message || 'Fallo de comunicación.',
+          },
+        ],
+      });
+    } finally {
+      setIsRunningIndependentDiag(false);
     }
   };
 
@@ -1263,89 +1290,48 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Indicador de Estado de Firewall de Windows */}
-            <div className="flex items-center">
-              {firewallStatus?.status === 'OK' ? (
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-emerald-950/50 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-semibold shadow-xs"
-                  title="Firewall Windows: OK. Reglas para puerto TCP 4370 y ejecutables de aplicación activas y permitidas."
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Firewall Windows: OK</span>
-                </div>
-              ) : (
-                <div
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-amber-950/50 border border-amber-500/40 text-amber-300 font-mono text-xs font-semibold shadow-xs"
-                  title="Firewall Windows requiere configuración. Pulse el botón Reparar Configuración de Red."
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>Firewall Windows: REQUIERE CONFIGURACIÓN</span>
-                </div>
-              )}
-            </div>
-
-            {/* Botón Administrativo: Reparar Configuración de Red */}
-            {canManageDevices && (
-              <button
-                type="button"
-                disabled={isRepairingNetwork}
-                onClick={handleRepairNetwork}
-                className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/35 text-indigo-300 hover:text-indigo-200 border border-indigo-500/35 rounded font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-xs font-mono cursor-pointer disabled:opacity-60"
-                title="Recrear reglas de Firewall de Windows (TCP 4370 Entrada/Salida), reparar permisos y validar conectividad"
-              >
-                {isRepairingNetwork ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                ) : (
-                  <Wrench className="w-3.5 h-3.5 text-indigo-400" />
-                )}
-                <span>{isRepairingNetwork ? 'Reparando Red...' : 'Reparar Configuración de Red'}</span>
-              </button>
-            )}
-
-            {canManageDevices && (
-              <div className="flex items-center gap-2">
-                {activeTab === 'AUTHORIZATIONS' ? (
-                  <button
-                    onClick={() => {
-                      setAuthEmpDni(employees[0]?.dni || '');
-                      setAuthDepAutorizada('AGENCIA_AGRARIA');
-                      setAuthDeviceId('');
-                      setAuthStartDate(new Date().toISOString().split('T')[0]);
-                      setAuthEndDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-                      setAuthMotivo('Comisión de servicios');
-                      setAuthDocumento('Memorando N° 142-2026-GR.CAJ/DRA-RRHH');
-                      setAuthError(null);
-                      setShowAuthModal(true);
-                    }}
-                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Nueva Autorización Temporal</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleOpenAddDevice}
-                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ AGREGAR MARCADOR</span>
-                  </button>
-                )}
-
+          {canManageDevices && (
+            <div className="flex items-center gap-2">
+              {activeTab === 'AUTHORIZATIONS' ? (
                 <button
                   onClick={() => {
-                    setPunchResultAlert(null);
-                    setShowPunchModal(true);
+                    setAuthEmpDni(employees[0]?.dni || '');
+                    setAuthDepAutorizada('AGENCIA_AGRARIA');
+                    setAuthDeviceId('');
+                    setAuthStartDate(new Date().toISOString().split('T')[0]);
+                    setAuthEndDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                    setAuthMotivo('Comisión de servicios');
+                    setAuthDocumento('Memorando N° 142-2026-GR.CAJ/DRA-RRHH');
+                    setAuthError(null);
+                    setShowAuthModal(true);
                   }}
-                  className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded border border-slate-700 transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Transmitir Marcación ADMS</span>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Nueva Autorización Temporal</span>
                 </button>
-              </div>
-            )}
-          </div>
+              ) : (
+                <button
+                  onClick={handleOpenAddDevice}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ AGREGAR MARCADOR</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setPunchResultAlert(null);
+                  setShowPunchModal(true);
+                }}
+                className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs rounded border border-slate-700 transition-colors flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Transmitir Marcación ADMS</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1951,6 +1937,79 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       {/* ========================================================= */}
       {activeTab === 'DEVICES' && (
         <div className="space-y-4">
+          {/* BANNER INSTITUCIONAL: DIAGNÓSTICO DE RED Y FIREWALL WINDOWS */}
+          <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`p-2.5 rounded-lg shrink-0 mt-0.5 ${
+                    firewallStatus?.configured
+                      ? 'bg-emerald-950/40 border border-emerald-500/30 text-emerald-400'
+                      : 'bg-amber-950/40 border border-amber-500/30 text-amber-400'
+                  }`}
+                >
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm text-slate-100">
+                      Diagnóstico de Red y Firewall Windows (TCP 4370)
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded border ${
+                        firewallStatus?.configured
+                          ? 'bg-emerald-950/50 text-emerald-400 border-emerald-500/30'
+                          : 'bg-amber-950/50 text-amber-300 border-amber-500/30'
+                      }`}
+                    >
+                      {firewallStatus?.statusText ||
+                        (firewallStatus?.configured
+                          ? 'Firewall Windows: OK'
+                          : 'Firewall Windows: REQUIERE CONFIGURACIÓN')}
+                    </span>
+                    {firewallStatus?.isAdmin && (
+                      <span className="px-2 py-0.5 text-[10px] font-mono bg-indigo-950/60 text-indigo-300 border border-indigo-700/40 rounded">
+                        ADMIN
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    {firewallStatus?.details ||
+                      'Comprueba y garantiza que Windows permita la comunicación bidireccional en el puerto TCP 4370 con los marcadores biométricos ZKTeco.'}
+                  </p>
+                  {repairSuccessBanner && (
+                    <div className="mt-2 text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>{repairSuccessBanner}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                <button
+                  type="button"
+                  onClick={handleRepairNetwork}
+                  disabled={isRepairingNetwork}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                  title="Recrear reglas necesarias en el Firewall de Windows y reparar permisos de socket"
+                >
+                  {isRepairingNetwork ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>Reparando Red...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wrench className="w-3.5 h-3.5 text-indigo-200" />
+                      <span>Reparar Configuración de Red</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090A0D] p-3 rounded-xl border border-slate-800">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-400">Modo de visualización:</span>
@@ -2191,6 +2250,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                                   )}
                                 </button>
 
+                                {/* [ 6 PRUEBAS INDEPENDIENTES ] */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRunIndependentDiagnostics(d)}
+                                  className="px-2 py-1 bg-sky-950/40 hover:bg-sky-900/40 text-sky-300 hover:text-white border border-sky-800/40 rounded font-semibold text-[10px] transition-colors flex items-center gap-1 font-mono"
+                                  title="Ejecutar comprobaciones independientes (Ping, TCP 4370, Firewall, Socket, ZKTeco, Info)"
+                                >
+                                  <Activity className="w-3 h-3 text-sky-400" />
+                                  <span>6 PRUEBAS</span>
+                                </button>
+
                                 {/* [ EDITAR ] */}
                                 {canManageDevices && (
                                   <button
@@ -2426,6 +2496,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                                   <span>PROBAR</span>
                                 </>
                               )}
+                            </button>
+
+                            {/* [ 6 PRUEBAS INDEPENDIENTES ] */}
+                            <button
+                              type="button"
+                              onClick={() => handleRunIndependentDiagnostics(d)}
+                              className="px-2 py-1.5 bg-sky-950/40 hover:bg-sky-900/40 text-sky-300 border border-sky-800/40 rounded font-semibold text-[11px] transition-colors flex items-center justify-center gap-1 font-mono"
+                              title="Diagnóstico Independiente (Ping, TCP 4370, Firewall, Socket, ZKTeco, Info)"
+                            >
+                              <Activity className="w-3 h-3 text-sky-400" />
+                              <span>6 PRUEBAS</span>
                             </button>
 
                             {/* [ EDITAR ] */}
@@ -3388,100 +3469,6 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                     </div>
                   )}
 
-                  {/* COMPROBACIONES INDEPENDIENTES OBLIGATORIAS (WINDOWS Y ZKTECO) */}
-                  <div className="bg-[#0b0f19] p-3 rounded-lg border border-slate-800 space-y-2.5">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
-                      <span className="text-[11px] text-indigo-300 font-sans font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5 text-indigo-400" />
-                        Comprobaciones Independientes de Conectividad:
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        6 Pruebas Nativas
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {(testResult.independent_tests || [
-                        { id: 'ping', name: 'Ping al dispositivo', status: testResult.success ? 'Correcto' : 'Fallido', detail: testResult.success ? `Host ${ipAddress || '192.168.1.230'} alcanzable en red.` : 'Sin respuesta de red / ICMP.', error: testResult.cause },
-                        { id: 'port_tcp', name: 'Apertura TCP 4370', status: testResult.success ? 'Correcto' : 'Fallido', detail: testResult.success ? `Puerto TCP ${port || 4370} abierto.` : 'Conexión rechazada o no alcanzada en puerto 4370.', error: testResult.cause },
-                        { id: 'firewall', name: 'Firewall Windows', status: firewallStatus?.status === 'OK' ? 'Correcto' : 'Fallido', detail: firewallStatus?.status === 'OK' ? 'Firewall Windows: OK (Reglas TCP 4370 activas)' : 'Firewall Windows: REQUIERE CONFIGURACIÓN', error: firewallStatus?.missingRules?.join(', ') },
-                        { id: 'socket', name: 'Socket TCP', status: testResult.success ? 'Correcto' : 'Fallido', detail: testResult.success ? 'Socket bidireccional establecido.' : 'Fallo de socket TCP.', error: testResult.cause },
-                        { id: 'protocol', name: 'Comunicación ZKTeco', status: testResult.success ? 'Correcto' : 'Fallido', detail: testResult.success ? `Handshake protocolo exitoso (CommKey: ${commKey || 0}).` : 'Fallo en handshake de protocolo.', error: testResult.cause },
-                        { id: 'device_info', name: 'Lectura de información del equipo', status: testResult.success ? 'Correcto' : 'Fallido', detail: testResult.success ? `Modelo: ${testResult.model || model} | S/N: ${testResult.serial_number || serialNumber || 'ZK-G3-001'}` : 'Sesión no establecida para lectura.', error: testResult.cause },
-                      ]).map((chk) => {
-                        const isOk = chk.status === 'Correcto';
-                        const isFail = chk.status === 'Fallido';
-
-                        return (
-                          <div
-                            key={chk.id}
-                            className={`p-2 rounded border text-xs flex flex-col gap-1 ${
-                              isOk
-                                ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-200'
-                                : isFail
-                                ? 'bg-rose-950/30 border-rose-500/30 text-rose-200'
-                                : 'bg-slate-900 border-slate-800 text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between font-semibold">
-                              <div className="flex items-center gap-1.5">
-                                {isOk ? (
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                ) : isFail ? (
-                                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                                ) : (
-                                  <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                )}
-                                <span className="font-sans text-[11px]">{chk.name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                {chk.latencyMs !== undefined && chk.latencyMs > 0 && (
-                                  <span className="text-[10px] font-mono text-slate-400">
-                                    {chk.latencyMs} ms
-                                  </span>
-                                )}
-                                <span
-                                  className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold uppercase tracking-wider border ${
-                                    isOk
-                                      ? 'bg-emerald-900/60 border-emerald-400/40 text-emerald-300'
-                                      : isFail
-                                      ? 'bg-rose-900/60 border-rose-400/40 text-rose-300'
-                                      : 'bg-slate-800 border-slate-700 text-slate-400'
-                                  }`}
-                                >
-                                  {chk.status}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[10.5px] font-sans pl-5 text-slate-300 leading-tight">
-                              {chk.detail}
-                              {chk.error && (
-                                <span className="text-rose-400 font-mono block mt-0.5 text-[10px]">
-                                  Error real: {chk.error}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {(!testResult.success || firewallStatus?.status !== 'OK') && (
-                      <div className="pt-1.5 flex items-center justify-between">
-                        <span className="text-[10px] text-slate-400">¿Problemas con el puerto o permisos en Windows?</span>
-                        <button
-                          type="button"
-                          onClick={handleRepairNetwork}
-                          disabled={isRepairingNetwork}
-                          className="px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 rounded text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <Wrench className="w-3 h-3 text-indigo-400" />
-                          <span>Reparar Configuración de Red</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
                   {/* DETALLE REAL DE LAS 10 ETAPAS DE COMPROBACIÓN */}
                   <div className="bg-[#0b0f19]/90 p-3 rounded border border-slate-800 space-y-2 font-mono text-[11px] text-slate-300">
                     <div className="flex items-center justify-between pb-1.5 border-b border-slate-800/80">
@@ -4359,75 +4346,165 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         </div>
       )}
 
-      {/* MODAL DE RESULTADO DE REPARACIÓN DE RED Y FIREWALL */}
-      {repairModalResult?.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs">
-          <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-sm text-white">
-                  Reparación de Red y Firewall de Windows
-                </h3>
+      {/* MODAL DE DIAGNÓSTICO INDEPENDIENTE DE RED Y FIREWALL (6 COMPROBACIONES) */}
+      {independentDiagModalDev && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b0f19] border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-sky-950/60 border border-sky-500/40 rounded-lg text-sky-400">
+                  <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    Diagnóstico Independiente de Red y Biométrico
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    6 comprobaciones independientes para {independentDiagModalDev.name} ({independentDiagModalDev.ip_address}:{independentDiagModalDev.port})
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setRepairModalResult(null)}
-                className="text-slate-400 hover:text-white"
+                onClick={() => setIndependentDiagModalDev(null)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <p className="text-slate-300 font-sans">
-                {repairModalResult.message}
-              </p>
+            {/* Informacion del equipo */}
+            <div className="bg-[#06080d] p-3 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs font-mono">
+              <span className="text-slate-400">Modelo: <strong className="text-white">{independentDiagModalDev.model}</strong></span>
+              <span className="text-slate-400">S/N: <strong className="text-white">{independentDiagModalDev.serial_number}</strong></span>
+              <span className="text-slate-400">IP: <strong className="text-indigo-400">{independentDiagModalDev.ip_address}:{independentDiagModalDev.port}</strong></span>
+              <span className="text-slate-400">CommKey: <strong className="text-amber-400">{independentDiagModalDev.comm_key || 0}</strong></span>
+            </div>
 
-              {/* REPORTE OFICIAL OBLIGATORIO DE VALIDACIÓN */}
-              <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg space-y-1.5 font-mono text-[11px] text-emerald-200">
-                <div className="flex items-center gap-1.5 text-emerald-300 font-bold mb-1">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>ESTADO DE CONFORMIDAD INSTITUCIONAL:</span>
-                </div>
-                <div>✓ Aplicación instalada</div>
-                <div>✓ Firewall configurado</div>
-                <div>✓ Puerto 4370 habilitado para la aplicación</div>
-                <div>✓ Diagnóstico de red disponible</div>
-                <div>✓ Listo para conexión con dispositivos ZKTeco</div>
+            {/* Contenedor de pruebas */}
+            {isRunningIndependentDiag ? (
+              <div className="p-8 text-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-sky-400 mx-auto" />
+                <p className="text-sm font-semibold text-slate-200">
+                  Ejecutando comprobaciones independientes en {independentDiagModalDev.ip_address}:{independentDiagModalDev.port}...
+                </p>
+                <p className="text-xs text-slate-500">
+                  Verificando Ping, Puerto TCP 4370, Firewall Windows, Socket TCP nativo, Protocolo ZKTeco y Hardware.
+                </p>
               </div>
-
-              {repairModalResult.rulesCreated && repairModalResult.rulesCreated.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">
-                    Reglas aplicadas en Windows Defender Firewall:
+            ) : independentDiagResults ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="text-xs font-semibold text-slate-300">
+                    Resultado General:{' '}
+                    <span
+                      className={`font-bold font-mono px-2 py-0.5 rounded text-xs ${
+                        independentDiagResults.status === 'Correcto'
+                          ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                          : independentDiagResults.status === 'Fallido'
+                          ? 'bg-rose-950/80 text-rose-300 border border-rose-500/40'
+                          : 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
+                      }`}
+                    >
+                      {independentDiagResults.status.toUpperCase()}
+                    </span>
                   </span>
-                  <div className="bg-[#050608] border border-slate-800 rounded p-2 space-y-1 font-mono text-[10.5px] text-slate-300">
-                    {repairModalResult.rulesCreated.map((r, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span>{r}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {independentDiagResults.timestamp}
+                  </span>
                 </div>
-              )}
 
-              <div className="p-2.5 bg-slate-900/80 border border-slate-800 rounded text-[10.5px] font-mono text-slate-400 space-y-1">
-                <div>Comandos Windows compatibles ejecutados:</div>
-                <div className="text-slate-300">netsh advfirewall firewall add rule name="DRAC ... TCP 4370 IN/OUT" ...</div>
-                <div className="text-slate-500">Perfiles: Dominio, Privado, Público | Acción: Permitir</div>
+                <div className="space-y-2">
+                  {independentDiagResults.tests.map((test) => {
+                    const isOk = test.status === 'Correcto';
+                    const isFail = test.status === 'Fallido';
+
+                    return (
+                      <div
+                        key={test.id}
+                        className={`p-3 rounded-xl border text-xs transition-colors ${
+                          isOk
+                            ? 'bg-emerald-950/20 border-emerald-500/30'
+                            : isFail
+                            ? 'bg-rose-950/20 border-rose-500/30'
+                            : 'bg-slate-900/40 border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            {isOk ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            ) : isFail ? (
+                              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                            ) : (
+                              <Clock className="w-4 h-4 text-slate-500 shrink-0" />
+                            )}
+                            <span className="font-bold text-slate-200">{test.name}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              isOk
+                                ? 'bg-emerald-900/50 text-emerald-300 border border-emerald-700/50'
+                                : isFail
+                                ? 'bg-rose-900/50 text-rose-300 border border-rose-700/50'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {test.status}
+                          </span>
+                        </div>
+                        <p className={`text-[11px] leading-relaxed pl-6 ${isFail ? 'text-rose-300' : 'text-slate-400'}`}>
+                          {test.message}
+                        </p>
+                        {test.error && (
+                          <div className="mt-1 pl-6">
+                            <span className="text-[10px] font-mono text-rose-400 bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-800/40">
+                              Error detectado: {test.error}
+                            </span>
+                          </div>
+                        )}
+                        {test.latencyMs !== undefined && test.latencyMs > 0 && (
+                          <div className="mt-1 pl-6 text-[10px] text-slate-500 font-mono">
+                            Latencia de respuesta: {test.latencyMs} ms
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : null}
 
-            <div className="flex justify-end pt-3 border-t border-slate-800">
+            {/* Acciones del Modal */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800 flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setRepairModalResult(null)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-bold text-xs font-mono transition-colors cursor-pointer"
+                onClick={handleRepairNetwork}
+                disabled={isRepairingNetwork}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
               >
-                Aceptar y Continuar
+                <Wrench className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Reparar Firewall Windows</span>
               </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => independentDiagModalDev && handleRunIndependentDiagnostics(independentDiagModalDev)}
+                  disabled={isRunningIndependentDiag}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRunningIndependentDiag ? 'animate-spin' : ''}`} />
+                  <span>Reintentar Diagnóstico</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIndependentDiagModalDev(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>

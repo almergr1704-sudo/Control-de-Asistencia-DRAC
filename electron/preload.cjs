@@ -5,28 +5,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isDesktop: true,
   platform: process.platform,
 
-  // Firewall de Windows y Configuración de Red
-  checkFirewallStatus: () => ipcRenderer.invoke('firewall:check-status'),
-  repairNetworkConfig: () => ipcRenderer.invoke('firewall:repair-network'),
-
-  // Diagnóstico completo y 6 comprobaciones independientes ZKTeco
-  diagnoseZkDevice: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0) => {
-    return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serialNumber, commKey });
+  // Firewall de Windows y Reparación de Red Institucional
+  checkFirewallStatus: () => {
+    return ipcRenderer.invoke('firewall:check-status');
   },
-  runIndependentDiagnostics: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serialNumber = '', commKey = 0) => {
-    return ipcRenderer.invoke('zk:independent-diagnostics', { ip, port, timeoutMs, model, serialNumber, commKey });
+  repairNetworkConfig: () => {
+    return ipcRenderer.invoke('firewall:repair-network');
+  },
+
+  // Comunicación y Diagnóstico ZKTeco Standalone (TCP 4370)
+  diagnoseZkDevice: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
+    return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serial, commKey });
   },
   readZkDevicePunches: (ip, port = 4370, timeoutMs = 5000, commKey = 0) => {
     return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs, commKey });
   },
+  runIndependentDiagnostics: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
+    return ipcRenderer.invoke('zk:run-independent-diagnostics', { ip, port, timeoutMs, model, serial, commKey });
+  },
   pingZkDevice: (ip, port = 4370, timeoutMs = 3000) => {
     return ipcRenderer.invoke('zk:ping-device', { ip, port, timeoutMs });
   },
-  probeTcpPort: (ip, port = 4370, timeoutMs = 2500) => {
-    return ipcRenderer.invoke('zk:probe-tcp', { ip, port, timeoutMs });
-  },
 
-  // Obtener información del hardware y SO
+  // Hardware y Sistema Operativo
   getSystemInfo: () => {
     return ipcRenderer.invoke('system:get-info');
   },

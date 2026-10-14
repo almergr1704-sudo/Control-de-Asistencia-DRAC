@@ -41,14 +41,14 @@
     "oneClick": false,
     "perMachine": false,
     "allowElevation": true,
+    "include": "scripts/installer.nsh",
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
     "shortcutName": "DRAC Control de Asistencia",
     "uninstallDisplayName": "DRAC Control de Asistencia - Desinstalar",
     "differentialPackage": false,
-    "artifactName": "DRAC-Control-de-Asistencia-Setup.exe",
-    "include": "scripts/installer.nsh"
+    "artifactName": "DRAC-Control-de-Asistencia-Setup.exe"
   },
   "portable": {
     "artifactName": "DRAC-Control-de-Asistencia-Portable.exe"

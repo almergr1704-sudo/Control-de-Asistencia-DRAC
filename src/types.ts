@@ -380,14 +380,6 @@ export interface DeviceTestRecord {
     api_verified_ok?: boolean;
     [key: string]: any;
   } | DeviceStageDetail[];
-  independent_tests?: Array<{
-    id: string;
-    name: string;
-    status: 'Correcto' | 'Fallido' | 'Pendiente';
-    detail: string;
-    error?: string | null;
-    latencyMs?: number;
-  }>;
 }
 
 export interface DeviceCapabilities {
@@ -1057,13 +1049,14 @@ declare global {
         appInbound: boolean;
         appOutbound: boolean;
         details: string;
+        error?: string;
         timestamp: string;
       }>;
       repairNetworkConfig: () => Promise<{
         success: boolean;
         message: string;
-        rulesCreated?: string[];
-        errors?: string[];
+        error?: string;
+        creationResult?: any;
         firewallStatus?: any;
         timestamp: string;
       }>;
@@ -1072,22 +1065,23 @@ declare global {
         port?: number,
         timeoutMs?: number,
         model?: string,
-        serialNumber?: string,
+        serial?: string,
         commKey?: number | string
       ) => Promise<{
         success: boolean;
-        overallStatus: 'Correcto' | 'Fallido' | 'Pendiente';
+        status: 'Correcto' | 'Fallido' | 'Pendiente';
         ip: string;
         port: number;
+        model: string;
+        serial_number: string;
         tests: Array<{
           id: string;
           name: string;
           status: 'Correcto' | 'Fallido' | 'Pendiente';
-          detail: string;
+          message: string;
           error?: string | null;
           latencyMs?: number;
         }>;
-        totalDurationMs: number;
         timestamp: string;
       }>;
       getSystemInfo: () => Promise<{
@@ -1100,9 +1094,6 @@ declare global {
         nodeVersion: string;
         electronVersion: string;
         networkAddresses: { interface: string; ip: string }[];
-        firewallConfigured?: boolean;
-        firewallStatus?: string;
-        isAdmin?: boolean;
         localTime: string;
       }>;
       minimize: () => void;
