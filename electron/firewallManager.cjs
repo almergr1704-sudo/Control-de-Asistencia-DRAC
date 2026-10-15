@@ -179,11 +179,31 @@ async function createFirewallRules() {
   if (!isAdmin) {
     log('Usuario sin permisos administrativos: solicitando elevación mediante UAC...');
     return new Promise((resolve) => {
-      // Construir script PowerShell elevado
-      const psCommands = commands.map((c) => c.cmd.replace(/"/g, '`"')).join('; ');
-      const elevateCmd = `powershell -Command "Start-Process cmd -ArgumentList '/c ${psCommands}' -Verb RunAs -Wait"`;
+      const fs = require('fs');
+      const tempBatPath = path.join(os.tmpdir(), `drac_firewall_${Date.now()}.bat`);
+      const batLines = [
+        '@echo off',
+        'chcp 65001 > nul',
+        ...commands.map((c) => c.cmd),
+        'exit /b 0',
+      ];
+      try {
+        fs.writeFileSync(tempBatPath, batLines.join('\r\n'), 'utf8');
+      } catch (writeErr) {
+        return resolve({
+          success: false,
+          message: `Error creando script temporal: ${writeErr.message}`,
+          isAdmin: false,
+        });
+      }
+
+      const elevateCmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList '/c \\"${tempBatPath}\\"' -Verb RunAs -Wait"`;
 
       exec(elevateCmd, (err) => {
+        try {
+          if (fs.existsSync(tempBatPath)) fs.unlinkSync(tempBatPath);
+        } catch (_) {}
+
         if (err) {
           log(`Error al solicitar elevación administrativa: ${err.message}`);
           resolve({

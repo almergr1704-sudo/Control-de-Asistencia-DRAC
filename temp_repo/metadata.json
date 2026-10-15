@@ -1,7 +1,0 @@
-{
-  "name": "DRAC Control de Asistencia",
-  "description": "Sistema Institucional de Control de Asistencia, Biométricos ZKTeco, Papeletas de Salida y Vacaciones - Dirección Regional de Agricultura Cajamarca",
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

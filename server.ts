@@ -6904,11 +6904,7 @@ pause
 
 
 
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.use("/assets", express.static(path.join(distPath, "assets")));
-
-  // Vite middleware for development
+  // Vite middleware for development (HMR, React TSX compilation, Tailwind CSS)
   if (process.env.NODE_ENV !== "production") {
     try {
       const vite = await createViteServer({
@@ -6919,11 +6915,14 @@ pause
     } catch (e) {
       console.warn("Vite dev server info:", e);
     }
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.use("/assets", express.static(path.join(distPath, "assets")));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
   }
-
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);

@@ -39,7 +39,7 @@
   },
   "nsis": {
     "oneClick": false,
-    "perMachine": false,
+    "perMachine": true,
     "allowElevation": true,
     "include": "scripts/installer.nsh",
     "allowToChangeInstallationDirectory": true,
