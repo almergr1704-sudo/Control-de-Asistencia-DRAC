@@ -489,10 +489,23 @@ export interface DispositivoZkTeco {
   log_count?: number;
   adms_url?: string;
   push_config?: DevicePushConfig;
+  biotime_config?: BioTimeConfig;
   assigned_agent_id?: string;
   assigned_agent_name?: string;
   agent_status?: 'ONLINE' | 'OFFLINE' | 'SYNCING' | 'ERROR';
   tcp_status?: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
+}
+
+export interface BioTimeConfig {
+  enabled: boolean;
+  web_port: number; // e.g. 89
+  db_type: string; // PostgreSQL
+  db_host: string; // 127.0.0.1
+  db_port: number; // 7496
+  db_name: string; // biotime
+  db_user: string; // postgres
+  service_type?: string; // Apache
+  install_path?: string; // C:\BioTime
 }
 
 export interface DracZkAgent {

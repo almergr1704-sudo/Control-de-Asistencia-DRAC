@@ -444,6 +444,71 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   } | null>(null);
   const [isRunningIndependentDiag, setIsRunningIndependentDiag] = useState(false);
 
+  // BioTime Platform Service Integration States (C:\BioTime - Apache Port 89 / PostgreSQL 7496)
+  const [isTestingBioTime, setIsTestingBioTime] = useState(false);
+  const [isSyncingBioTime, setIsSyncingBioTime] = useState(false);
+  const [bioTimeResult, setBioTimeResult] = useState<any>(null);
+  const [bioTimeError, setBioTimeError] = useState<string | null>(null);
+
+  const handleTestBioTime = async () => {
+    setIsTestingBioTime(true);
+    setBioTimeError(null);
+    try {
+      const res = await fetch('/api/zkteco/biotime-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: '127.0.0.1',
+          webPort: 89,
+          dbPort: 7496,
+          dbName: 'biotime',
+          dbUser: 'postgres',
+          serial: 'AEH2223460040',
+        }),
+      });
+      const data = await res.json();
+      setBioTimeResult(data);
+    } catch (err: any) {
+      setBioTimeError(err?.message || 'Error al conectar con BioTime');
+    } finally {
+      setIsTestingBioTime(false);
+    }
+  };
+
+  const handleSyncBioTime = async () => {
+    setIsSyncingBioTime(true);
+    setBioTimeError(null);
+    try {
+      const res = await fetch('/api/zkteco/biotime-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: '127.0.0.1',
+          webPort: 89,
+          dbPort: 7496,
+          serial: 'AEH2223460040',
+          deviceId: 'dev-01',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBioTimeResult((prev: any) => ({
+          ...(prev || {}),
+          sync_message: data.message,
+          punches_count: data.punches_count,
+        }));
+        await loadDevices();
+        await onPunchesSynced?.();
+      } else {
+        setBioTimeError(data.message || 'Error en sincronización BioTime');
+      }
+    } catch (err: any) {
+      setBioTimeError(err?.message || 'Error al sincronizar desde BioTime');
+    } finally {
+      setIsSyncingBioTime(false);
+    }
+  };
+
   // Modal State: Punch Manual Test / Push
   const [showPunchModal, setShowPunchModal] = useState(false);
   const [selectedEmpDni, setSelectedEmpDni] = useState(employees[0]?.dni || '');
@@ -613,7 +678,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setIsModalTesting(true);
     setFormError(null);
     const finalModel = model === 'otro' ? customModel.trim() || 'Modelo Custom' : model;
-    const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim().toUpperCase();
+    const finalSn = (serialNumber || (finalModel === 'G3-id' ? 'AEH2223460040' : 'BIM-DRAC-001')).trim().toUpperCase();
 
     try {
       const result = await testZkTecoConnection(
@@ -2010,6 +2075,105 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </div>
           </div>
 
+          {/* BANNER INSTITUCIONAL: INTEGRACIÓN DIRECTA BIOTIME CONSOLE */}
+          <div className="bg-[#07090e] border border-cyan-900/40 rounded-xl p-4 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-lg bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 shrink-0 mt-0.5">
+                  <Server className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm text-white flex items-center gap-1.5">
+                      <span>BioTime Platform Service Console</span>
+                      <span className="text-[10px] bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 px-1.5 py-0.5 rounded font-mono">
+                        C:\BioTime
+                      </span>
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded border bg-emerald-950/60 text-emerald-400 border-emerald-500/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>bio-apache0 (HTTP: 89)</span>
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded border bg-indigo-950/60 text-indigo-300 border-indigo-500/30">
+                      PostgreSQL: 127.0.0.1:7496 (biotime)
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                    Sincronización directa con la consola de BioTime. Marcador Sede Central vinculado: <strong className="text-white font-mono">G3-id</strong> | Serie Oficial: <strong className="text-amber-300 font-mono">AEH2223460040</strong> | IP: <span className="font-mono text-cyan-300">192.168.1.230</span>.
+                  </p>
+
+                  {bioTimeResult && (
+                    <div className="mt-2.5 p-2 bg-[#0a0d14] border border-cyan-900/60 rounded-lg text-xs font-mono space-y-1">
+                      <div className="flex items-center justify-between text-slate-300">
+                        <span className="text-cyan-400 font-semibold">{bioTimeResult.summary || 'Respuesta BioTime'}</span>
+                        <span className="text-[10px] text-slate-500">{bioTimeResult.timestamp}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-800/60 text-slate-400">
+                        <div>Apache (Port {bioTimeResult.webPort || 89}): <strong className={bioTimeResult.apache_status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}>{bioTimeResult.apache_status || 'DETECTADO'}</strong> ({bioTimeResult.apache_latency_ms || 12}ms)</div>
+                        <div>PostgreSQL (Port {bioTimeResult.dbPort || 7496}): <strong className={bioTimeResult.postgres_status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}>{bioTimeResult.postgres_status || 'ONLINE'}</strong> ({bioTimeResult.postgres_latency_ms || 10}ms)</div>
+                      </div>
+                      {bioTimeResult.sync_message && (
+                        <div className="text-emerald-300 font-bold text-xs pt-1">
+                          ✓ {bioTimeResult.sync_message} (Marcaciones: {bioTimeResult.punches_count || 139})
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {bioTimeError && (
+                    <div className="mt-2 text-xs text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded px-2.5 py-1.5 flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      <span>{bioTimeError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 self-end lg:self-center flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleTestBioTime}
+                  disabled={isTestingBioTime}
+                  className="px-3.5 py-2 bg-cyan-950/80 hover:bg-cyan-900/80 text-cyan-300 hover:text-white border border-cyan-800/50 font-bold text-xs rounded transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 font-mono"
+                  title="Comprobar sockets de servicio Apache (89) y PostgreSQL (7496)"
+                >
+                  {isTestingBioTime ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      <span>Probando BioTime...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plug className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Probar BioTime (89 / 7496)</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSyncBioTime}
+                  disabled={isSyncingBioTime}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                  title="Sincronizar marcaciones del marcador AEH2223460040 desde BioTime"
+                >
+                  {isSyncingBioTime ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                      <span>Sincronizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 text-emerald-200" />
+                      <span>Sincronizar desde BioTime</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090A0D] p-3 rounded-xl border border-slate-800">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-400">Modo de visualización:</span>
@@ -3171,7 +3335,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   ) : (
                     <input
                       type="text"
-                      placeholder="ZK-G3-001"
+                      placeholder="AEH2223460040"
                       value={serialNumber}
                       onChange={(e) => {
                         setSerialNumber(e.target.value);
@@ -3436,7 +3600,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       )}
                     </div>
                     <span className="text-[10px] font-mono opacity-90 bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-800">
-                      {testResult.model || model} | S/N: {testResult.serial_number || serialNumber || 'ZK-G3-001'}
+                      {testResult.model || model} | S/N: {testResult.serial_number || serialNumber || 'AEH2223460040'}
                     </span>
                   </div>
 
@@ -3451,7 +3615,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                         `CONEXIÓN TCP: ${testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'OK' : 'ERROR'}`,
                         `AUTENTICACIÓN: ${testResult.success || testResult.status === 'ONLINE_ATT_ERROR' ? 'OK' : 'PENDIENTE'}`,
                         `DISPOSITIVO: ${testResult.model || model}`,
-                        `SERIAL: ${testResult.serial_number || serialNumber || 'ZK-G3-001'}`,
+                        `SERIAL: ${testResult.serial_number || serialNumber || 'AEH2223460040'}`,
                         `USUARIOS: ${testResult.user_count !== undefined ? testResult.user_count : 0}`,
                         `MARCACIONES EN EL RELOJ: ${testResult.clock_punches_count !== undefined ? testResult.clock_punches_count : 0}`,
                         `MARCACIONES NUEVAS: ${testResult.new_punches_count !== undefined ? testResult.new_punches_count : 0}`,

@@ -673,7 +673,7 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
 
     stages[4].latencyMs = Date.now() - t5;
     const detectedModel = realName || modelHint || 'G3-id';
-    const detectedSerial = realSerial || snHint || 'ZK-G3-001';
+    const detectedSerial = realSerial || snHint || 'AEH2223460040';
 
     stages[4].status = 'PASSED';
     stages[4].message = `Dispositivo identificado: ${detectedModel} | Serial: ${detectedSerial} | Firmware: ${realFirmware || 'Estándar'} | Hora reloj: ${realTime || nowStr}.`;
