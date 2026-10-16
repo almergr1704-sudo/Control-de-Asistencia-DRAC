@@ -7,6 +7,7 @@
 const net = require('net');
 const dgram = require('dgram');
 const os = require('os');
+const { exec } = require('child_process');
 // Constantes del Protocolo ZKTeco Standalone (TCP / UDP)
 const COMMANDS = {
   CMD_CONNECT: 1000,
