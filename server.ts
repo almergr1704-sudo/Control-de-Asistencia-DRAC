@@ -6908,7 +6908,7 @@ pause
   if (process.env.NODE_ENV !== "production") {
     try {
       const vite = await createViteServer({
-        server: { middlewareMode: true },
+        server: { middlewareMode: true, hmr: false },
         appType: "spa",
       });
       app.use(vite.middlewares);

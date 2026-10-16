@@ -36,7 +36,7 @@ jobs:
           cache: 'npm'
 
       - name: 3. Instalar dependencias del proyecto (incluyendo opcionales nativas)
-        run: npm ci --include=optional
+        run: npm ci --include=optional || npm install --include=optional
 
       - name: 4. Comprobación obligatoria de módulos nativos para Windows
         shell: pwsh
