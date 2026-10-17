@@ -523,14 +523,14 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
     const t3 = Date.now();
     if (tcpProbe.code === 'ECONNREFUSED') {
       stages[2].status = 'FAILED';
-      stages[2].message = `Conexión rechazada por ${cleanIp}:${targetPort}. El host responde pero el puerto TCP está cerrado o el servicio ZKTeco no escucha.`;
+      stages[2].message = `Conexión rechazada por ${cleanIp}:${targetPort}. El host responde en red local pero el puerto TCP ${targetPort} está cerrado o el servicio Standalone no escucha.`;
       stages[2].latencyMs = tcpProbe.latency;
       skipRemainingStages(3, 'Puerto TCP cerrado o rechazado por el marcador.');
       return buildDiagnosisResult(
         false,
         'OFFLINE',
         'Puerto TCP cerrado en el marcador.',
-        `La IP ${cleanIp} responde en red pero rechazó la conexión en el puerto ${targetPort}. Verifique en el menú del marcador (Menú > Comunicaciones > Red) que el puerto esté fijado en 4370.`,
+        `La IP ${cleanIp} responde en red pero rechazó la conexión en el puerto ${targetPort}. Causa principal: El marcador ZKTeco está configurado en modo PUSH / Servidor Cloud hacia BioTime (Puerto HTTP 89), lo que desactiva el puerto local 4370. Soluciones: 1) Si usa BioTime, utilice el botón "Sincronizar desde BioTime" en la pantalla de Relojes Biométricos. 2) Si desea conexión directa TCP 4370, verifique en el menú del marcador (Menú > Comunicaciones > Red > Ethernet) que el puerto sea 4370 y desactive "Servidor Cloud".`,
         cleanIp,
         targetPort,
         modelHint,

@@ -17,3 +17,4 @@ builder-effective-config.yaml
 .icon-ico/
 .env*
 !.env.example
+bun.lock*
