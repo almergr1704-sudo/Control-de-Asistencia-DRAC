@@ -27,6 +27,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('zk:ping-device', { ip, port, timeoutMs });
   },
 
+  // Integración BioTime Platform Service Console (C:\BioTime)
+  checkBioTimeStatus: (params = {}) => {
+    return ipcRenderer.invoke('biotime:check-status', params);
+  },
+  syncBioTimePunches: (params = {}) => {
+    return ipcRenderer.invoke('biotime:sync-punches', params);
+  },
+
   // Hardware y Sistema Operativo
   getSystemInfo: () => {
     return ipcRenderer.invoke('system:get-info');

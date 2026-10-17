@@ -1236,10 +1236,66 @@ async function runIndependentDiagnostics(
   };
 }
 
+/**
+ * Comprobación directa de servicios de BioTime Console desde Node.js nativo (Electron):
+ * 1. Puerto Web Apache (89)
+ * 2. Puerto de base de datos PostgreSQL (7496)
+ * 3. Diagnóstico descriptivo del estado del servicio local C:\BioTime
+ */
+async function checkBioTimeService(host = '127.0.0.1', webPort = 89, dbPort = 7496, serial = 'AEH2223460040') {
+  const cleanHost = String(host || '127.0.0.1').trim();
+  const targetWebPort = Number(webPort) || 89;
+  const targetDbPort = Number(dbPort) || 7496;
+  const targetSerial = String(serial || 'AEH2223460040').trim().toUpperCase();
+  const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
+
+  // 1. Probar socket TCP al puerto de Apache Web (89)
+  const webProbe = await probeTcpPort(cleanHost, targetWebPort, 2500);
+
+  // 2. Probar socket TCP al puerto de PostgreSQL BioTime (7496)
+  const dbProbe = await probeTcpPort(cleanHost, targetDbPort, 2500);
+
+  const apacheOk = webProbe.ok;
+  const postgresOk = dbProbe.ok;
+  const anyServiceOk = apacheOk || postgresOk;
+
+  let summary = '';
+  if (apacheOk && postgresOk) {
+    summary = `BioTime Console detectado y 100% operativo (Apache :${targetWebPort} y PostgreSQL :${targetDbPort}).`;
+  } else if (apacheOk) {
+    summary = `Servicio Apache de BioTime en puerto ${targetWebPort} activo. Verifique PostgreSQL en puerto ${targetDbPort}.`;
+  } else if (postgresOk) {
+    summary = `Base de datos PostgreSQL en puerto ${targetDbPort} activa. Verifique servicio Apache en puerto ${targetWebPort}.`;
+  } else {
+    summary = `Servicios de BioTime no responden en ${cleanHost}. Abra la consola "C:\\BioTime" e inicie el servicio con el botón [Start].`;
+  }
+
+  return {
+    success: anyServiceOk,
+    serial: targetSerial,
+    host: cleanHost,
+    webPort: targetWebPort,
+    dbPort: targetDbPort,
+    apache_status: apacheOk ? 'ONLINE' : 'OFFLINE',
+    apache_latency_ms: webProbe.latency,
+    apache_message: apacheOk
+      ? `Servicio Apache de BioTime escuchando activamente en puerto ${targetWebPort} (${webProbe.latency}ms).`
+      : `Puerto HTTP ${targetWebPort} de BioTime no responde localmente en ${cleanHost} (${webProbe.code || 'ECONNREFUSED'}). Abra la consola C:\\BioTime y pulse [Start].`,
+    postgres_status: postgresOk ? 'ONLINE' : 'OFFLINE',
+    postgres_latency_ms: dbProbe.latency,
+    postgres_message: postgresOk
+      ? `Motor PostgreSQL de BioTime activo en puerto ${targetDbPort} (${dbProbe.latency}ms).`
+      : `Puerto PostgreSQL ${targetDbPort} no responde localmente en ${cleanHost} (${dbProbe.code || 'ECONNREFUSED'}). Inicie la base de datos desde la consola C:\\BioTime.`,
+    summary,
+    timestamp: nowStr,
+  };
+}
+
 module.exports = {
   diagnoseZkDevice,
   readZkDevicePunches,
   probeTcpPort,
   makeCommkey,
   runIndependentDiagnostics,
+  checkBioTimeService,
 };

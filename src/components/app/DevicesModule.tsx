@@ -454,22 +454,45 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setIsTestingBioTime(true);
     setBioTimeError(null);
     try {
-      const res = await fetch('/api/zkteco/biotime-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+      let data: any = null;
+
+      if (electronAPI && typeof electronAPI.checkBioTimeStatus === 'function') {
+        data = await electronAPI.checkBioTimeStatus({
           host: '127.0.0.1',
           webPort: 89,
           dbPort: 7496,
           dbName: 'biotime',
           dbUser: 'postgres',
           serial: 'AEH2223460040',
-        }),
-      });
-      const data = await res.json();
+        });
+      } else {
+        const res = await fetch('/api/zkteco/biotime-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: '127.0.0.1',
+            webPort: 89,
+            dbPort: 7496,
+            dbName: 'biotime',
+            dbUser: 'postgres',
+            serial: 'AEH2223460040',
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(`El servidor devolvió respuesta HTTP ${res.status}`);
+        }
+        data = await res.json();
+      }
+
       setBioTimeResult(data);
     } catch (err: any) {
-      setBioTimeError(err?.message || 'Error al conectar con BioTime');
+      const isFetchErr = err?.message?.toLowerCase().includes('failed to fetch') || err?.name === 'TypeError';
+      setBioTimeError(
+        isFetchErr
+          ? 'No se pudo contactar el servicio de verificación de BioTime. Para comprobar sockets locales en 127.0.0.1 (puertos 89 y 7496), ejecute la aplicación de escritorio Windows (.exe) instalada.'
+          : err?.message || 'Error al conectar con BioTime'
+      );
     } finally {
       setIsTestingBioTime(false);
     }
@@ -479,19 +502,36 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setIsSyncingBioTime(true);
     setBioTimeError(null);
     try {
-      const res = await fetch('/api/zkteco/biotime-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+      let data: any = null;
+
+      if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
+        data = await electronAPI.syncBioTimePunches({
           host: '127.0.0.1',
           webPort: 89,
           dbPort: 7496,
           serial: 'AEH2223460040',
           deviceId: 'dev-01',
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
+        });
+      } else {
+        const res = await fetch('/api/zkteco/biotime-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: '127.0.0.1',
+            webPort: 89,
+            dbPort: 7496,
+            serial: 'AEH2223460040',
+            deviceId: 'dev-01',
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(`El servidor devolvió respuesta HTTP ${res.status}`);
+        }
+        data = await res.json();
+      }
+
+      if (data && data.success) {
         setBioTimeResult((prev: any) => ({
           ...(prev || {}),
           sync_message: data.message,
@@ -500,10 +540,15 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         await loadDevices();
         await onPunchesSynced?.();
       } else {
-        setBioTimeError(data.message || 'Error en sincronización BioTime');
+        setBioTimeError(data?.message || 'Error en sincronización BioTime');
       }
     } catch (err: any) {
-      setBioTimeError(err?.message || 'Error al sincronizar desde BioTime');
+      const isFetchErr = err?.message?.toLowerCase().includes('failed to fetch') || err?.name === 'TypeError';
+      setBioTimeError(
+        isFetchErr
+          ? 'No se pudo contactar el servicio de sincronización. Ejecute la aplicación de escritorio (.exe) para acceder a la base de datos local de BioTime en 127.0.0.1:7496.'
+          : err?.message || 'Error al sincronizar desde BioTime'
+      );
     } finally {
       setIsSyncingBioTime(false);
     }
