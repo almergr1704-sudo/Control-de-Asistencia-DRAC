@@ -1337,7 +1337,7 @@ async function startServer() {
           success: false,
           status: "OFFLINE",
           message: "Dirección IP o puerto TCP no válidos.",
-          cause: "La dirección IP debe tener formato IPv4 (ej: 192.168.1.230) y el puerto debe estar entre 1 y 65535.",
+          cause: "La dirección IP debe tener formato IPv4 (ej: 192.168.1.180) y el puerto debe estar entre 1 y 65535.",
           ip: cleanIp,
           port: targetPort,
           model: cleanModel,
@@ -1969,7 +1969,7 @@ async function startServer() {
           message: `Sincronización BioTime exitosa (Puerto ${webPort} / PostgreSQL ${dbPort}).`,
           user: "Administrador DRAC",
           latency_ms: 15,
-          ip: devices[targetIdx].ip_address || "192.168.1.230",
+          ip: devices[targetIdx].ip_address || "192.168.1.180",
           port: devices[targetIdx].port || 4370,
           model: "G3-id",
           serial_number: cleanSn,
@@ -2677,7 +2677,7 @@ async function startServer() {
       (reqHeaders?.['x-real-ip'] as string) ||
       (reqHeaders?.['cf-connecting-ip'] as string) ||
       (reqHeaders?.['remote-addr'] as string) ||
-      '192.168.1.230';
+      '192.168.1.180';
 
     // Load reference catalog for real device and employee matching
     const devices = await getStoredDevices();
@@ -3400,7 +3400,7 @@ async function startServer() {
         id: `cmd-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         agent_id: agent_id || 'ALL',
         device_id: targetDev?.id || device_id || 'dev-zk-01',
-        device_ip: targetDev?.ip_address || '192.168.1.230',
+        device_ip: targetDev?.ip_address || '192.168.1.180',
         device_port: targetDev?.port || 4370,
         command: command || 'TEST_CONNECTION',
         params: params || {},
@@ -3454,7 +3454,7 @@ async function startServer() {
  * DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA (DRAC)
  * =======================================================
  * Este agente ejecuta en una PC/Servidor Windows en la red LAN de DRAC.
- * Se conecta a los marcadores ZKTeco mediante Socket TCP 4370 (192.168.1.230:4370),
+ * Se conecta a los marcadores ZKTeco mediante Socket TCP 4370 (192.168.1.180:4370),
  * descarga marcaciones reales, gestiona cola offline con reintentos y transmite
  * de forma segura mediante HTTPS API al Sistema DRAC en Vercel/Cloud.
  */
@@ -3479,8 +3479,8 @@ const defaultConfig = {
     {
       id: "dev-zk-01",
       name: "Marcador Puerta Principal DRAC",
-      serial_number: "BIM-DRAC-001",
-      ip: "192.168.1.230",
+      serial_number: "AEH2223460040",
+      ip: "192.168.1.180",
       port: 4370,
       timeout_ms: 5000
     },
@@ -3629,7 +3629,7 @@ async function executeRemoteCommand(cmd) {
 
   try {
     if (cmd.command === 'TEST_CONNECTION') {
-      const conn = await testTcpConnection(cmd.device_ip || '192.168.1.230', cmd.device_port || 4370);
+      const conn = await testTcpConnection(cmd.device_ip || '192.168.1.180', cmd.device_port || 4370);
       result = conn;
     } else if (cmd.command === 'DOWNLOAD_PUNCHES') {
       result = { message: 'Lectura de marcaciones completada exitosamente vía Socket TCP 4370.', punches_found: 0 };
@@ -3713,8 +3713,8 @@ pause
             {
               id: "dev-zk-01",
               name: "Marcador Puerta Principal DRAC",
-              serial_number: "BIM-DRAC-001",
-              ip: "192.168.1.230",
+              serial_number: "AEH2223460040",
+              ip: "192.168.1.180",
               port: 4370,
               timeout_ms: 5000
             }
@@ -3959,7 +3959,7 @@ pause
         push_online: adms_status === 'OK' || adms_status === 'WAITING_PUNCHES',
         status_message,
         tcp_status: 'UNAVAILABLE_CLOUD',
-        tcp_message: 'Puerto TCP 4370 reservado para administración LAN/Intranet directa (192.168.1.230). En Vercel Cloud la recepción de marcaciones opera vía ADMS/PUSH HTTPS.',
+        tcp_message: 'Puerto TCP 4370 reservado para administración LAN/Intranet directa (192.168.1.180). En Vercel Cloud la recepción de marcaciones opera vía ADMS/PUSH HTTPS.',
         adms_status,
         adms_message,
         last_connection: latestPushLog?.reception_time || (devices.length > 0 ? devices[0].last_activity : null),

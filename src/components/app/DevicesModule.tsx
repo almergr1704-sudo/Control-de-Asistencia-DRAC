@@ -2100,7 +2100,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   </div>
 
                   <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                    Sincronización directa con la consola de BioTime. Marcador Sede Central vinculado: <strong className="text-white font-mono">G3-id</strong> | Serie Oficial: <strong className="text-amber-300 font-mono">AEH2223460040</strong> | IP: <span className="font-mono text-cyan-300">192.168.1.230</span>.
+                    Sincronización directa con la consola de BioTime. Marcador Sede Central vinculado: <strong className="text-white font-mono">G3-id</strong> | Serie Oficial: <strong className="text-amber-300 font-mono">AEH2223460040</strong> | IP: <span className="font-mono text-cyan-300">192.168.1.180</span>.
                   </p>
 
                   {bioTimeResult && (
@@ -3432,7 +3432,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   <label className="block text-slate-300 mb-1 font-medium">Dirección IP (IPv4) *</label>
                   <input
                     type="text"
-                    placeholder="192.168.1.230"
+                    placeholder="192.168.1.180"
                     value={ipAddress}
                     onChange={(e) => {
                       setIpAddress(e.target.value);
@@ -3739,7 +3739,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           <p className="font-bold text-amber-200">Recomendaciones para comprobar el biométrico:</p>
                           <ul className="text-[11px] text-slate-300 list-disc list-inside mt-1 space-y-0.5 font-sans leading-relaxed">
                             <li><strong>Red local:</strong> Si ejecuta la versión Web, recuerde que los navegadores en la nube no alcanzan IPs privadas (192.168.1.x). Ejecute la aplicación de escritorio Windows conectada a la misma red/switch.</li>
-                            <li><strong>Encendido e IP:</strong> Verifique físicamente en el marcador que esté encendido y que en <em>Menú &gt; Comunicaciones &gt; Red</em> la IP asignada sea <code className="text-amber-300 font-mono font-bold">{ipAddress || '192.168.1.230'}</code>.</li>
+                            <li><strong>Encendido e IP:</strong> Verifique físicamente en el marcador que esté encendido y que en <em>Menú &gt; Comunicaciones &gt; Red</em> la IP asignada sea <code className="text-amber-300 font-mono font-bold">{ipAddress || '192.168.1.180'}</code>.</li>
                             <li><strong>Puerto TCP y Clave:</strong> Confirme que el puerto sea <code className="text-amber-300 font-mono font-bold">{port || 4370}</code> y que la <em>Clave de comunicación (CommKey)</em> coincida (actual: <code className="text-amber-300 font-mono font-bold">{commKey || '0'}</code>).</li>
                           </ul>
                         </div>

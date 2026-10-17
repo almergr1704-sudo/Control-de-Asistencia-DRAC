@@ -425,7 +425,7 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
   const t1 = Date.now();
   if (!isValidIpv4(cleanIp)) {
     stages[0].status = 'FAILED';
-    stages[0].message = `Dirección IP inválida: "${cleanIp}". Debe tener formato IPv4 estándar (ej: 192.168.1.230).`;
+    stages[0].message = `Dirección IP inválida: "${cleanIp}". Debe tener formato IPv4 estándar (ej: 192.168.1.180).`;
     stages[0].latencyMs = Date.now() - t1;
     skipRemainingStages(1, 'Parámetros de red inválidos.');
     return buildDiagnosisResult(false, 'OFFLINE', 'Dirección IP inválida.', stages[0].message, cleanIp, targetPort, modelHint, snHint, stages, nowStr);
@@ -502,7 +502,7 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
         false,
         'OFFLINE',
         'Conexión TCP no alcanzada.',
-        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP 192.168.1.230 asignada. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows o del router no bloquee el tráfico al puerto 4370.`,
+        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP 192.168.1.180 asignada. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows o del router no bloquee el tráfico al puerto 4370.`,
         cleanIp,
         targetPort,
         modelHint,
