@@ -45,7 +45,7 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "menuCategory": true,
+    "menuCategory": "DRAC Cajamarca",
     "shortcutName": "DRAC Control de Asistencia",
     "uninstallDisplayName": "DRAC Control de Asistencia - Desinstalar",
     "differentialPackage": false,
