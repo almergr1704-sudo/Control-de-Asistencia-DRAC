@@ -1242,8 +1242,8 @@ async function runIndependentDiagnostics(
  * 2. Puerto de base de datos PostgreSQL (7496)
  * 3. Diagnóstico descriptivo del estado del servicio local C:\BioTime
  */
-async function checkBioTimeService(host = '127.0.0.1', webPort = 89, dbPort = 7496, serial = 'AEH2223460040') {
-  const cleanHost = String(host || '127.0.0.1').trim();
+async function checkBioTimeService(host = '192.168.1.29', webPort = 89, dbPort = 7496, serial = 'AEH2223460040') {
+  const cleanHost = String(host || '192.168.1.29').trim();
   const targetWebPort = Number(webPort) || 89;
   const targetDbPort = Number(dbPort) || 7496;
   const targetSerial = String(serial || 'AEH2223460040').trim().toUpperCase();

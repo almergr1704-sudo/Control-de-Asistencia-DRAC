@@ -1836,7 +1836,7 @@ async function startServer() {
   app.post("/api/zkteco/biotime-check", async (req, res) => {
     try {
       const {
-        host = "127.0.0.1",
+        host = "192.168.1.29",
         webPort = 89,
         dbPort = 7496,
         dbName = "biotime",
@@ -1844,7 +1844,7 @@ async function startServer() {
         serial = "AEH2223460040",
       } = req.body || {};
 
-      const cleanHost = String(host).trim() || "127.0.0.1";
+      const cleanHost = String(host).trim() || "192.168.1.29";
       const targetWebPort = Number(webPort) || 89;
       const targetDbPort = Number(dbPort) || 7496;
 
@@ -1929,7 +1929,7 @@ async function startServer() {
       const {
         serial = "AEH2223460040",
         deviceId = "dev-01",
-        host = "127.0.0.1",
+        host = "192.168.1.29",
         webPort = 89,
         dbPort = 7496,
       } = req.body || {};

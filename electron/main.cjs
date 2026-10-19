@@ -287,7 +287,7 @@ ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3
 // =========================================================================
 
 ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
-  const { host = '127.0.0.1', webPort = 89, dbPort = 7496, serial = 'AEH2223460040' } = params;
+  const { host = '192.168.1.29', webPort = 89, dbPort = 7496, serial = 'AEH2223460040' } = params;
   log(`IPC biotime:check-status -> ${host} (Web: ${webPort}, DB: ${dbPort}, SN: ${serial})`);
   try {
     if (typeof zktecoDriver.checkBioTimeService === 'function') {
@@ -309,7 +309,7 @@ ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
 });
 
 ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
-  const { host = '127.0.0.1', webPort = 89, dbPort = 7496, serial = 'AEH2223460040', deviceId = 'dev-01' } = params;
+  const { host = '192.168.1.29', webPort = 89, dbPort = 7496, serial = 'AEH2223460040', deviceId = 'dev-01' } = params;
   log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);
   try {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });

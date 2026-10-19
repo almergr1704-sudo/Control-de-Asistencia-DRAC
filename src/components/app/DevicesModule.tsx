@@ -449,6 +449,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [isSyncingBioTime, setIsSyncingBioTime] = useState(false);
   const [bioTimeResult, setBioTimeResult] = useState<any>(null);
   const [bioTimeError, setBioTimeError] = useState<string | null>(null);
+  const [bioTimeHost, setBioTimeHost] = useState('192.168.1.29');
+  const [bioTimeWebPort, setBioTimeWebPort] = useState(89);
+  const [bioTimeDbPort, setBioTimeDbPort] = useState(7496);
+  const [showBioTimeExplainer, setShowBioTimeExplainer] = useState(true);
+  const [showBioTimeConfigModal, setShowBioTimeConfigModal] = useState(false);
 
   const handleTestBioTime = async () => {
     setIsTestingBioTime(true);
@@ -459,9 +464,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       if (electronAPI && typeof electronAPI.checkBioTimeStatus === 'function') {
         data = await electronAPI.checkBioTimeStatus({
-          host: '127.0.0.1',
-          webPort: 89,
-          dbPort: 7496,
+          host: bioTimeHost.trim() || '127.0.0.1',
+          webPort: Number(bioTimeWebPort) || 89,
+          dbPort: Number(bioTimeDbPort) || 7496,
           dbName: 'biotime',
           dbUser: 'postgres',
           serial: 'AEH2223460040',
@@ -471,9 +476,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            host: '127.0.0.1',
-            webPort: 89,
-            dbPort: 7496,
+            host: bioTimeHost.trim() || '127.0.0.1',
+            webPort: Number(bioTimeWebPort) || 89,
+            dbPort: Number(bioTimeDbPort) || 7496,
             dbName: 'biotime',
             dbUser: 'postgres',
             serial: 'AEH2223460040',
@@ -486,6 +491,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       }
 
       setBioTimeResult(data);
+      setShowBioTimeExplainer(true);
     } catch (err: any) {
       const isFetchErr = err?.message?.toLowerCase().includes('failed to fetch') || err?.name === 'TypeError';
       setBioTimeError(
@@ -507,9 +513,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
         data = await electronAPI.syncBioTimePunches({
-          host: '127.0.0.1',
-          webPort: 89,
-          dbPort: 7496,
+          host: bioTimeHost.trim() || '127.0.0.1',
+          webPort: Number(bioTimeWebPort) || 89,
+          dbPort: Number(bioTimeDbPort) || 7496,
           serial: 'AEH2223460040',
           deviceId: 'dev-01',
         });
@@ -518,9 +524,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            host: '127.0.0.1',
-            webPort: 89,
-            dbPort: 7496,
+            host: bioTimeHost.trim() || '127.0.0.1',
+            webPort: Number(bioTimeWebPort) || 89,
+            dbPort: Number(bioTimeDbPort) || 7496,
             serial: 'AEH2223460040',
             deviceId: 'dev-01',
           }),
@@ -2137,29 +2143,123 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                     </span>
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded border bg-emerald-950/60 text-emerald-400 border-emerald-500/30 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      <span>bio-apache0 (HTTP: 89)</span>
+                      <span>bio-apache0 (192.168.1.29:89)</span>
                     </span>
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded border bg-indigo-950/60 text-indigo-300 border-indigo-500/30">
-                      PostgreSQL: 127.0.0.1:7496 (biotime)
+                      PostgreSQL: 192.168.1.29:7496 (biotime)
                     </span>
                   </div>
 
                   <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                    Sincronización directa con la consola de BioTime. Marcador Sede Central vinculado: <strong className="text-white font-mono">G3-id</strong> | Serie Oficial: <strong className="text-amber-300 font-mono">AEH2223460040</strong> | IP: <span className="font-mono text-cyan-300">192.168.1.180</span>.
+                    Sincronización directa con el servidor BioTime (<span className="font-mono text-cyan-300 font-bold">192.168.1.29:89</span>). Marcador Sede Central: <strong className="text-white font-mono">G3</strong> | Serie: <strong className="text-amber-300 font-mono">AEH2223460040</strong> | MAC: <span className="font-mono text-slate-300">00:17:61:10:74:7F</span> | IP: <span className="font-mono text-cyan-300">192.168.1.180</span> (Puerto: <span className="font-mono text-amber-300">7496</span>).
                   </p>
 
+                  {/* RESULTADO Y DIAGNÓSTICO DETALLADO */}
                   {bioTimeResult && (
-                    <div className="mt-2.5 p-2 bg-[#0a0d14] border border-cyan-900/60 rounded-lg text-xs font-mono space-y-1">
-                      <div className="flex items-center justify-between text-slate-300">
-                        <span className="text-cyan-400 font-semibold">{bioTimeResult.summary || 'Respuesta BioTime'}</span>
-                        <span className="text-[10px] text-slate-500">{bioTimeResult.timestamp}</span>
+                    <div className="mt-2.5 p-3 bg-[#0a0d14] border border-cyan-900/60 rounded-lg text-xs space-y-2.5">
+                      <div className="flex items-center justify-between text-slate-300 flex-wrap gap-2">
+                        <span className="text-cyan-400 font-semibold font-mono flex items-center gap-1.5">
+                          <Activity className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>{bioTimeResult.summary || 'Respuesta de BioTime Platform'}</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">{bioTimeResult.timestamp}</span>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-800/60 text-slate-400">
-                        <div>Apache (Port {bioTimeResult.webPort || 89}): <strong className={bioTimeResult.apache_status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}>{bioTimeResult.apache_status || 'DETECTADO'}</strong> ({bioTimeResult.apache_latency_ms || 12}ms)</div>
-                        <div>PostgreSQL (Port {bioTimeResult.dbPort || 7496}): <strong className={bioTimeResult.postgres_status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}>{bioTimeResult.postgres_status || 'ONLINE'}</strong> ({bioTimeResult.postgres_latency_ms || 10}ms)</div>
+
+                      {/* Métricas por puerto */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1.5 border-t border-slate-800/60">
+                        <div className="p-2 rounded bg-slate-900/70 border border-slate-800 flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-slate-200">Servidor Web Apache (Puerto {bioTimeResult.webPort || 89})</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {bioTimeResult.apache_status === 'ONLINE'
+                                ? 'Escuchando activamente. El marcador G3-id puede enviar marcaciones PUSH.'
+                                : 'El servicio bio-apache0 no está iniciado en Windows.'}
+                            </div>
+                          </div>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
+                              bioTimeResult.apache_status === 'ONLINE'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                            }`}
+                          >
+                            {bioTimeResult.apache_status || 'OFFLINE'}
+                          </span>
+                        </div>
+
+                        <div className="p-2 rounded bg-slate-900/70 border border-slate-800 flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-slate-200">Base de Datos PostgreSQL (Puerto {bioTimeResult.dbPort || 7496})</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {bioTimeResult.postgres_status === 'ONLINE'
+                                ? 'Conexión lista a base de datos "biotime".'
+                                : 'Motor PostgreSQL de BioTime inactivo o detenido.'}
+                            </div>
+                          </div>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
+                              bioTimeResult.postgres_status === 'ONLINE'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                                : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                            }`}
+                          >
+                            {bioTimeResult.postgres_status || 'OFFLINE'}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Explicación Detallada cuando los servicios están OFFLINE */}
+                      {(bioTimeResult.apache_status === 'OFFLINE' || bioTimeResult.postgres_status === 'OFFLINE') && (
+                        <div className="p-2.5 rounded bg-amber-950/30 border border-amber-500/30 text-amber-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs flex items-center gap-1.5 text-amber-300">
+                              <Info className="w-3.5 h-3.5 text-amber-400" />
+                              <span>¿Por qué ocurre y cómo solucionarlo en Windows?</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowBioTimeExplainer(!showBioTimeExplainer)}
+                              className="text-[10px] text-amber-400 underline hover:text-white"
+                            >
+                              {showBioTimeExplainer ? 'Ocultar pasos' : 'Ver solución paso a paso'}
+                            </button>
+                          </div>
+
+                          {showBioTimeExplainer && (
+                            <div className="space-y-1.5 text-[11px] text-slate-300 font-sans leading-relaxed pt-1 border-t border-amber-500/20">
+                              <p className="text-amber-100 font-medium">
+                                El sistema intentó conectar con los puertos locales <code className="text-amber-300 font-mono">89</code> (Apache) y <code className="text-amber-300 font-mono">7496</code> (PostgreSQL) en <code className="text-amber-300 font-mono">{bioTimeHost}</code>, pero ambos servicios están actualmente detenidos en tu PC.
+                              </p>
+                              <ol className="list-decimal list-inside space-y-1 text-slate-200 mt-1">
+                                <li>
+                                  En tu computadora, busca la ventana <strong>BioTime Platform Service Console</strong> (o ábrela desde <code className="text-cyan-300 font-mono text-[10px]">C:\BioTime\console.exe</code>).
+                                </li>
+                                <li>
+                                  En la pestaña <strong>SERVICE</strong>, haz clic en el botón <strong>[Start]</strong>.
+                                </li>
+                                <li>
+                                  Espera unos segundos hasta que el estado confirme: <span className="text-emerald-400 font-mono font-bold">bio-apache0 is OK</span> y <span className="text-emerald-400 font-mono font-bold">bio-proxy is OK</span>.
+                                </li>
+                                <li>
+                                  En la pestaña <strong>DATABASE</strong>, confirma que el estado de PostgreSQL diga <span className="text-emerald-400 font-mono font-bold">Connected</span>.
+                                </li>
+                                <li>
+                                  Regresa a esta pantalla y vuelve a presionar el botón <strong>[Probar BioTime (89 / 7496)]</strong>.
+                                </li>
+                              </ol>
+
+                              {typeof window !== 'undefined' && !(window as any).electronAPI && (
+                                <div className="mt-2 p-1.5 rounded bg-indigo-950/60 border border-indigo-700/50 text-[10px] text-indigo-200">
+                                  💡 <strong>Aviso de Entorno Cloud:</strong> Si estás ejecutando DRAC desde el navegador web en la nube, el servidor web no puede comunicarse con tu red local privada (127.0.0.1). Para sincronización directa, ejecuta la aplicación instalada de escritorio Windows (.exe).
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {bioTimeResult.sync_message && (
-                        <div className="text-emerald-300 font-bold text-xs pt-1">
+                        <div className="text-emerald-300 font-bold text-xs pt-1 border-t border-slate-800">
                           ✓ {bioTimeResult.sync_message} (Marcaciones: {bioTimeResult.punches_count || 139})
                         </div>
                       )}
@@ -2167,15 +2267,28 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   )}
 
                   {bioTimeError && (
-                    <div className="mt-2 text-xs text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded px-2.5 py-1.5 flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                      <span>{bioTimeError}</span>
+                    <div className="mt-2 text-xs text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded px-2.5 py-2 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Error de Conexión BioTime</div>
+                        <div className="text-[11px] text-slate-300 mt-0.5">{bioTimeError}</div>
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0 self-end lg:self-center flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowBioTimeConfigModal(!showBioTimeConfigModal)}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 font-medium text-xs rounded transition-all flex items-center gap-1.5"
+                  title="Configurar IP de Host de BioTime y Puertos"
+                >
+                  <Wrench className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Configurar IP</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleTestBioTime}
@@ -2217,6 +2330,54 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Modal / Desplegable de Configuración de Host BioTime */}
+            {showBioTimeConfigModal && (
+              <div className="mt-3 pt-3 border-t border-cyan-900/40 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs bg-[#06080e] p-3 rounded-lg font-mono">
+                <div>
+                  <label className="block text-slate-400 text-[10px] mb-1">Host / IP de BioTime</label>
+                  <input
+                    type="text"
+                    value={bioTimeHost}
+                    onChange={(e) => setBioTimeHost(e.target.value)}
+                    placeholder="127.0.0.1 o 192.168.1.33"
+                    className="w-full px-2.5 py-1.5 bg-[#090b12] text-white border border-slate-700 rounded text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-[10px] mb-1">Puerto Web Apache</label>
+                  <input
+                    type="number"
+                    value={bioTimeWebPort}
+                    onChange={(e) => setBioTimeWebPort(Number(e.target.value))}
+                    placeholder="89"
+                    className="w-full px-2.5 py-1.5 bg-[#090b12] text-white border border-slate-700 rounded text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-[10px] mb-1">Puerto PostgreSQL</label>
+                  <input
+                    type="number"
+                    value={bioTimeDbPort}
+                    onChange={(e) => setBioTimeDbPort(Number(e.target.value))}
+                    placeholder="7496"
+                    className="w-full px-2.5 py-1.5 bg-[#090b12] text-white border border-slate-700 rounded text-xs focus:border-cyan-500 focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBioTimeConfigModal(false);
+                      handleTestBioTime();
+                    }}
+                    className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded text-xs transition-colors"
+                  >
+                    Guardar y Probar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#090A0D] p-3 rounded-xl border border-slate-800">
