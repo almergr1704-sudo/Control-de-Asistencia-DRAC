@@ -83,6 +83,22 @@ function createHeader(cmd, sessionId, replyId, data = '') {
   return tcpPacket;
 }
 
+// Generación de paquete raw ZKTeco sin wrapper TCP (para firmware SilkID ZMN220 / Linux)
+function createRawHeader(cmd, sessionId, replyId, data = '') {
+  const dataBuf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
+  const payload = Buffer.alloc(8 + dataBuf.length);
+  payload.writeUInt16LE(cmd, 0);
+  payload.writeUInt16LE(0, 2);
+  payload.writeUInt16LE(sessionId, 4);
+  payload.writeUInt16LE(replyId, 6);
+  if (dataBuf.length > 0) {
+    dataBuf.copy(payload, 8);
+  }
+  const chksum = createChkSum(payload);
+  payload.writeUInt16LE(chksum, 2);
+  return payload;
+}
+
 // Cliente nativo ZKTeco Standalone sobre TCP
 class ZKLibTCP {
   constructor(ip, port, timeout = 3000) {
@@ -123,8 +139,10 @@ class ZKLibTCP {
       }
 
       const packet = createHeader(cmd, this.sessionId, this.replyId, data);
+      let rawFallbackTimer = null;
 
       const onData = (chunk) => {
+        if (rawFallbackTimer) clearTimeout(rawFallbackTimer);
         this.socket.removeListener('data', onData);
         let reply = chunk;
         if (chunk.length >= 8 && chunk[0] === 0x50 && chunk[1] === 0x50) {
@@ -142,6 +160,16 @@ class ZKLibTCP {
 
       this.socket.once('data', onData);
       this.socket.write(packet);
+
+      // Si no responde con el wrapper estándar en 1.5s, enviar paquete raw
+      rawFallbackTimer = setTimeout(() => {
+        if (this.socket && !this.socket.destroyed) {
+          try {
+            const rawPacket = createRawHeader(cmd, this.sessionId, this.replyId, data);
+            this.socket.write(rawPacket);
+          } catch (_) {}
+        }
+      }, 1500);
     });
   }
 
@@ -617,11 +645,16 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
         ? `Fallo de autenticación: ${authError}`
         : `Handshake ZKTeco fallido en puerto ${targetPort}.`;
       skipRemainingStages(4, 'Sesión del protocolo ZKTeco no autenticada.');
+      let friendlyCause = authError || `El equipo respondió a la red pero rechazó el protocolo ZKTeco. Verifique la clave de comunicación (CommKey) en Menú > Comunicación > Red (actualmente probada: ${numericCommKey}).`;
+      if (authError?.includes('Timeout CMD_CONNECT')) {
+        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (1ms), pero el reloj no respondió al comando binario CMD_CONNECT. Causa: El reloj ZKTeco G3 tiene activo el modo ADMS hacia el servidor BioTime (192.168.1.29:89). Cuando ADMS está activo, el reloj envía las marcaciones como cliente HTTP saliente y desactiva el procesador de comandos SDK local. Solución: 1) Si usa BioTime, utilice el botón "Sincronizar desde BioTime" en la tarjeta superior. 2) Si desea comandos directos por cable, en el reloj vaya a Menú > Comunicaciones > Conf. Srvr. de Nube y desactive el Servidor Cloud (OFF), cambie el puerto TCP a 4370 y reinicie el equipo.`;
+      }
+
       return buildDiagnosisResult(
         false,
         'OFFLINE',
         'Fallo de protocolo o autenticación.',
-        authError || `El equipo respondió a la red pero rechazó el protocolo ZKTeco. Verifique la clave de comunicación (CommKey) en Menú > Comunicación > Red (actualmente probada: ${numericCommKey}).`,
+        friendlyCause,
         cleanIp,
         targetPort,
         modelHint,
