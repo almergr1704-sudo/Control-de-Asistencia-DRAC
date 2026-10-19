@@ -2208,8 +2208,42 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                         </div>
                       </div>
 
-                      {/* Explicación Detallada cuando los servicios están OFFLINE */}
-                      {(bioTimeResult.apache_status === 'OFFLINE' || bioTimeResult.postgres_status === 'OFFLINE') && (
+                      {/* Si Apache está ONLINE pero PostgreSQL está OFFLINE: Notificar éxito y permitir sincronización directa */}
+                      {bioTimeResult.apache_status === 'ONLINE' && bioTimeResult.postgres_status === 'OFFLINE' && (
+                        <div className="p-3 rounded bg-emerald-950/30 border border-emerald-500/40 text-emerald-200 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs flex items-center gap-2 text-emerald-300">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              <span>¡Servicio Web BioTime Conectado (Puerto 89 ONLINE)!</span>
+                            </span>
+                            <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 font-mono">
+                              Listo para sincronizar
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-slate-300 font-sans leading-relaxed">
+                            El servidor BioTime en <code className="text-cyan-300 font-mono font-bold">{bioTimeHost}:89</code> está <strong>completamente activo y escuchando</strong>. El puerto <code className="text-amber-300 font-mono">7496</code> (PostgreSQL) no respondió porque en Windows Server la base de datos por defecto solo acepta conexiones locales (<code className="text-slate-300 font-mono">127.0.0.1</code>) o el Firewall del servidor filtra el puerto 7496. <strong>Esto no impide la sincronización:</strong> puedes pulsar el botón <strong>"Sincronizar desde BioTime"</strong> para descargar las marcaciones del marcador <code className="text-white font-mono font-bold">AEH2223460040</code>.
+                          </p>
+
+                          <div className="pt-1 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleSyncBioTime}
+                              disabled={isSyncingBioTime}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded transition-all inline-flex items-center gap-1.5 shadow-sm"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-emerald-200" />
+                              <span>Sincronizar Marcaciones Ahora</span>
+                            </button>
+                            <span className="text-[11px] text-slate-400">
+                              o haz clic en el botón verde superior.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Explicación Detallada cuando ambos servicios están OFFLINE */}
+                      {bioTimeResult.apache_status === 'OFFLINE' && bioTimeResult.postgres_status === 'OFFLINE' && (
                         <div className="p-2.5 rounded bg-amber-950/30 border border-amber-500/30 text-amber-200 space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs flex items-center gap-1.5 text-amber-300">
