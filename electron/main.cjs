@@ -309,7 +309,15 @@ ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
 });
 
 ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
-  const { host = '192.168.1.29', webPort = 89, dbPort = 7496, serial = 'AEH2223460040', deviceId = 'dev-01' } = params;
+  const {
+    host = '192.168.1.29',
+    webPort = 89,
+    dbPort = 7496,
+    serial = 'AEH2223460040',
+    deviceId = 'dev-01',
+    deviceIp = '192.168.1.180',
+    devicePort = 7496,
+  } = params;
   log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);
   try {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -317,12 +325,64 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       ? await zktecoDriver.checkBioTimeService(host, webPort, dbPort, serial)
       : { success: true };
 
+    const punchesPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+    let loadedPunches = [];
+    try {
+      if (fs.existsSync(punchesPath)) {
+        loadedPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+      }
+    } catch (_) {}
+
+    // Invocación del extractor real
+    let syncResult = { punches: [], source: 'NONE', details: '' };
+    if (typeof zktecoDriver.syncBioTimeRecords === 'function') {
+      syncResult = await zktecoDriver.syncBioTimeRecords({
+        host,
+        webPort,
+        dbPort,
+        serial,
+        deviceIp,
+        devicePort,
+        existingPunches: loadedPunches,
+      });
+    }
+
+    // Deduplicación y fusión por (employee_dni, timestamp)
+    const existingKeys = new Set(
+      loadedPunches.map((p) => `${p.employee_dni || p.pin}_${p.timestamp}`)
+    );
+
+    const newlyAdded = [];
+    if (Array.isArray(syncResult.punches) && syncResult.punches.length > 0) {
+      for (const p of syncResult.punches) {
+        const key = `${p.employee_dni || p.pin}_${p.timestamp}`;
+        if (!existingKeys.has(key)) {
+          existingKeys.add(key);
+          newlyAdded.push(p);
+        }
+      }
+    }
+
+    const mergedPunches = [...newlyAdded, ...loadedPunches];
+
+    try {
+      fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
+      log(`Guardadas ${mergedPunches.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
+    } catch (writeErr) {
+      log(`Aviso al persistir raw-punches.json: ${writeErr.message}`);
+    }
+
     return {
       success: true,
-      message: `Sincronización con BioTime Platform Console completada exitosamente para ${serial}.`,
+      message: newlyAdded.length > 0
+        ? `Sincronización completada: ${newlyAdded.length} marcaciones nuevas extraídas desde ${syncResult.source}. Total en staging: ${mergedPunches.length}.`
+        : `Sincronización completada con ${syncResult.source || 'BioTime'}. Todas las marcaciones se encuentran actualizadas (${mergedPunches.length} registros).`,
       serial,
       deviceId,
-      punches_count: 139,
+      source: syncResult.source,
+      new_count: newlyAdded.length,
+      punches_count: mergedPunches.length,
+      punches: mergedPunches,
       status,
       timestamp: nowStr,
     };
@@ -334,6 +394,16 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       timestamp: new Date().toISOString(),
     };
   }
+});
+
+ipcMain.handle('punches:get-all', async () => {
+  try {
+    const punchesPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+    if (fs.existsSync(punchesPath)) {
+      return JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+    }
+  } catch (_) {}
+  return [];
 });
 
 // =========================================================================

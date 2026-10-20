@@ -203,6 +203,24 @@ export async function deleteDeviceInSupabase(id: string): Promise<{ success: boo
 
 export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
   try {
+    // 0. Si se ejecuta en Desktop (Electron), consultar canal IPC nativo primero
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI && typeof electronAPI.getRawPunches === 'function') {
+      try {
+        const desktopPunches = await electronAPI.getRawPunches();
+        if (Array.isArray(desktopPunches) && desktopPunches.length > 0) {
+          return desktopPunches.map((p: any) => ({
+            ...p,
+            device_name: normalizeInstitutionalName(p.device_name || 'Marcador ZKTeco'),
+            device_dependencia_name: normalizeInstitutionalName(p.device_dependencia_name || 'Sede Central'),
+            employee_name: normalizePersonName(p.employee_name || 'Trabajador DRAC'),
+            employee_dependencia_name: normalizeInstitutionalName(p.employee_dependencia_name || 'Sede Central'),
+          }));
+        }
+      } catch (_) {}
+    }
+
+    // 1. Consultar base de datos central en Supabase
     const { data, error } = await supabase
       .from('marcaciones_raw')
       .select('*')
@@ -235,7 +253,7 @@ export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
       }));
     }
 
-    // Fallback a Express API
+    // 2. Fallback a Express REST API
     const res = await fetch('/api/attendance/punches');
     if (res.ok) {
       const apiData = await res.json();
@@ -250,7 +268,7 @@ export async function fetchRawPunchesFromSupabase(): Promise<MarcacionRaw[]> {
       }
     }
   } catch (err) {
-    console.warn('Sincronización en curso con marcaciones_raw en Supabase:', err);
+    console.warn('Sincronización en curso con marcaciones_raw en Supabase/API:', err);
   }
 
   return INITIAL_RAW_PUNCHES.map((p) => ({

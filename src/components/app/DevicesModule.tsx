@@ -81,7 +81,7 @@ interface DevicesModuleProps {
   onRevokePunchAuthorization?: (authId: string, reason?: string) => Promise<any> | void;
   onDeletePunchAuthorization?: (authId: string) => Promise<any> | void;
   onRefreshDevices?: () => Promise<any> | void;
-  onRefreshPunches?: () => Promise<any> | void;
+  onRefreshPunches?: (punches?: MarcacionRaw[]) => Promise<any> | void;
 }
 
 export const DevicesModule: React.FC<DevicesModuleProps> = ({
@@ -177,25 +177,70 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [punchSortField, setPunchSortField] = useState<string | null>('timestamp');
   const [punchSortOrder, setPunchSortOrder] = useState<SortOrder>('desc');
 
-  // Handle Refresh Punches from Server
+  // Handle Refresh Punches from Server & BioTime
   const handleRefreshPunchesList = async () => {
     setIsRefreshingPunches(true);
     try {
-      if (onRefreshPunches) {
-        await onRefreshPunches().catch(() => {});
-      } else {
-        const res = await fetch('/api/attendance/punches', {
-          headers: { 'Accept': 'application/json' },
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json().catch(() => null);
-          console.log(`API returned: ${data?.data?.length || 0} punches`);
+      let loadedPunches: MarcacionRaw[] = [];
+
+      // 1. Consultar endpoint REST /api/attendance/punches
+      try {
+        const res = await fetch('/api/attendance/punches');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+            loadedPunches = data.data;
+          }
         }
+      } catch (_) {}
+
+      // 2. Si no hay o se requiere recarga en caliente, consultar sincronización directa de BioTime
+      if (loadedPunches.length === 0) {
+        try {
+          const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+          if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
+            const btRes = await electronAPI.syncBioTimePunches({
+              host: bioTimeHost.trim() || '192.168.1.29',
+              webPort: Number(bioTimeWebPort) || 89,
+              dbPort: Number(bioTimeDbPort) || 7496,
+              serial: 'AEH2223460040',
+              deviceId: 'dev-01',
+            });
+            if (btRes && Array.isArray(btRes.punches) && btRes.punches.length > 0) {
+              loadedPunches = btRes.punches;
+            }
+          } else {
+            const res = await fetch('/api/zkteco/biotime-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                host: bioTimeHost.trim() || '192.168.1.29',
+                webPort: Number(bioTimeWebPort) || 89,
+                dbPort: Number(bioTimeDbPort) || 7496,
+                serial: 'AEH2223460040',
+                deviceId: 'dev-01',
+              }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && Array.isArray(data.punches) && data.punches.length > 0) {
+                loadedPunches = data.punches;
+              }
+            }
+          }
+        } catch (_) {}
       }
-      setSuccessToast('Marcaciones actualizadas correctamente desde el backend.');
+
+      if (loadedPunches.length > 0) {
+        if (onRefreshPunches) await onRefreshPunches(loadedPunches);
+        setSuccessToast(`Marcaciones actualizadas: ${loadedPunches.length} marcaciones cargadas desde la base de datos institucional.`);
+      } else {
+        if (onRefreshPunches) await onRefreshPunches();
+        const finalCount = rawPunches?.length || 0;
+        setSuccessToast(`Marcaciones consultadas (${finalCount} registros en memoria).`);
+      }
     } catch (err: any) {
-      setSuccessToast('Marcaciones consultadas.');
+      setSuccessToast(`Marcaciones consultadas (${rawPunches?.length || 0} registros).`);
     } finally {
       setIsRefreshingPunches(false);
     }
@@ -544,8 +589,17 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           punches_count: data.punches_count,
         }));
         if (onRefreshDevices) await onRefreshDevices().catch(() => {});
-        if (onRefreshPunches) await onRefreshPunches().catch(() => {});
-        setSuccessToast(`Sincronización completada: ${data.punches_count || 139} marcaciones registradas desde BioTime (192.168.1.29:89).`);
+        if (onRefreshPunches) {
+          if (Array.isArray(data.punches) && data.punches.length > 0) {
+            await onRefreshPunches(data.punches).catch(() => {});
+          } else {
+            await onRefreshPunches().catch(() => {});
+          }
+        }
+        const newCountStr = data.new_count && data.new_count > 0 ? ` (${data.new_count} nuevas sincronizadas)` : '';
+        setSuccessToast(
+          `Sincronización completada: ${data.punches_count || data.punches?.length || rawPunches.length} marcaciones registradas${newCountStr} desde BioTime (${bioTimeHost || '192.168.1.29'}:${bioTimeWebPort || 89}).`
+        );
       } else {
         setBioTimeError(data?.message || 'Error en sincronización BioTime');
       }
@@ -2987,15 +3041,29 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleRefreshPunchesList}
-              disabled={isRefreshingPunches}
-              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPunches ? 'animate-spin' : ''}`} />
-              <span>{isRefreshingPunches ? 'Consultando Backend...' : 'Actualizar Marcaciones'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSyncBioTime}
+                disabled={isSyncingBioTime}
+                className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+                title="Conectar a BioTime (192.168.1.29:89 / PostgreSQL 7496) y traer marcaciones"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingBioTime ? 'animate-spin' : ''}`} />
+                <span>{isSyncingBioTime ? 'Sincronizando BioTime...' : 'Sincronizar BioTime'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRefreshPunchesList}
+                disabled={isRefreshingPunches}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+                title="Consultar y actualizar marcaciones desde el backend central"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPunches ? 'animate-spin' : ''}`} />
+                <span>{isRefreshingPunches ? 'Consultando Backend...' : `Actualizar (${rawPunches?.length || 0})`}</span>
+              </button>
+            </div>
           </div>
 
           <AdvancedSearchFilter

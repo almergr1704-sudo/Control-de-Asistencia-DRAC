@@ -1,136 +1,328 @@
 [
   {
-    "id": "raw-1787835277804-0-9cfg",
+    "id": "raw-1792507512029-5",
     "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000001",
-    "employee_name": "Administrador General",
-    "timestamp": "2026-08-27 07:54:12",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FACE",
-    "processed": false,
-    "raw_payload": "PIN=10000001\tTIME=2026-08-27 07:54:12\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-1-i0zl",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000002",
-    "employee_name": "Roberto Alvarado Paredes",
-    "timestamp": "2026-08-27 07:58:30",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FINGERPRINT",
-    "processed": false,
-    "raw_payload": "PIN=10000002\tTIME=2026-08-27 07:58:30\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-2-ly7z",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000003",
-    "employee_name": "Fernando Castillo Rojas",
-    "timestamp": "2026-08-27 08:04:15",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FINGERPRINT",
-    "processed": false,
-    "raw_payload": "PIN=10000003\tTIME=2026-08-27 08:04:15\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-3-e6kf",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000004",
-    "employee_name": "Elena Ramos Vasquez",
-    "timestamp": "2026-08-27 08:08:44",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FACE",
-    "processed": false,
-    "raw_payload": "PIN=10000004\tTIME=2026-08-27 08:08:44\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-4-t0mb",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000005",
-    "employee_name": "Carlos Mendoza Silva",
-    "timestamp": "2026-08-27 08:12:05",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FINGERPRINT",
-    "processed": false,
-    "raw_payload": "PIN=10000005\tTIME=2026-08-27 08:12:05\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-5-7wp8",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
-    "device_dependencia_tipo": "SEDE_CENTRAL",
-    "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000006",
-    "employee_name": "Lucia Diaz Torres",
-    "timestamp": "2026-08-27 07:55:00",
-    "punch_type": "CHECK_IN",
-    "verify_mode": "FINGERPRINT",
-    "processed": false,
-    "raw_payload": "PIN=10000006\tTIME=2026-08-27 07:55:00\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
-  },
-  {
-    "id": "raw-1787835277804-6-u9oy",
-    "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
     "employee_dni": "10000007",
-    "employee_name": "Jorge Morales Ruiz",
-    "timestamp": "2026-08-27 08:01:22",
+    "employee_code": "10000007",
+    "employee_name": "Juan Pérez García",
+    "timestamp": "2026-10-20 08:14:02",
     "punch_type": "CHECK_IN",
+    "punch_state": 0,
     "verify_mode": "FACE",
     "processed": false,
-    "raw_payload": "PIN=10000007\tTIME=2026-08-27 08:01:22\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
+    "raw_payload": "PIN=10000007\tTIME=2026-10-20 08:14:02\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
   },
   {
-    "id": "raw-1787835277804-7-s60y",
+    "id": "raw-1792507512029-4",
     "device_id": "dev-01",
-    "device_sn": "ZK-G3-001",
-    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
-    "employee_dni": "10000008",
-    "employee_name": "Patricia Vega Medina",
-    "timestamp": "2026-08-27 07:59:10",
+    "employee_dni": "10000005",
+    "employee_code": "10000005",
+    "employee_name": "Jorge Morales Vega",
+    "timestamp": "2026-10-20 08:12:35",
     "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000005\tTIME=2026-10-20 08:12:35\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-3",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000004",
+    "employee_code": "10000004",
+    "employee_name": "María Silva Terrones",
+    "timestamp": "2026-10-20 08:08:10",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
     "verify_mode": "FINGERPRINT",
     "processed": false,
-    "raw_payload": "PIN=10000008\tTIME=2026-08-27 07:59:10\tVERIFY=1\tSN=ZK-G3-001",
-    "validation_status": "VALIDA"
+    "raw_payload": "PIN=10000004\tTIME=2026-10-20 08:08:10\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-2",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000003",
+    "employee_code": "10000003",
+    "employee_name": "Fernando Castillo Rojas",
+    "timestamp": "2026-10-20 08:03:22",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000003\tTIME=2026-10-20 08:03:22\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512028-1",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000002",
+    "employee_code": "10000002",
+    "employee_name": "Roberto Alvarado Paredes",
+    "timestamp": "2026-10-20 07:56:45",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000002\tTIME=2026-10-20 07:56:45\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512028-0",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000001",
+    "employee_code": "10000001",
+    "employee_name": "Administrador General",
+    "timestamp": "2026-10-20 07:52:14",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000001\tTIME=2026-10-20 07:52:14\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-11",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000003",
+    "employee_code": "10000003",
+    "employee_name": "Fernando Castillo Rojas",
+    "timestamp": "2026-10-19 18:05:20",
+    "punch_type": "CHECK_OUT",
+    "punch_state": 1,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000003\tTIME=2026-10-19 18:05:20\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-7",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000001",
+    "employee_code": "10000001",
+    "employee_name": "Administrador General",
+    "timestamp": "2026-10-19 18:02:15",
+    "punch_type": "CHECK_OUT",
+    "punch_state": 1,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000001\tTIME=2026-10-19 18:02:15\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-15",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000007",
+    "employee_code": "10000007",
+    "employee_name": "Juan Pérez García",
+    "timestamp": "2026-10-19 18:01:45",
+    "punch_type": "CHECK_OUT",
+    "punch_state": 1,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000007\tTIME=2026-10-19 18:01:45\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-9",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000002",
+    "employee_code": "10000002",
+    "employee_name": "Roberto Alvarado Paredes",
+    "timestamp": "2026-10-19 17:59:40",
+    "punch_type": "CHECK_OUT",
+    "punch_state": 1,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000002\tTIME=2026-10-19 17:59:40\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-14",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000007",
+    "employee_code": "10000007",
+    "employee_name": "Juan Pérez García",
+    "timestamp": "2026-10-19 13:58:00",
+    "punch_type": "BREAK_IN",
+    "punch_state": 0,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000007\tTIME=2026-10-19 13:58:00\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-13",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000007",
+    "employee_code": "10000007",
+    "employee_name": "Juan Pérez García",
+    "timestamp": "2026-10-19 13:02:00",
+    "punch_type": "BREAK_OUT",
+    "punch_state": 1,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000007\tTIME=2026-10-19 13:02:00\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-12",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000007",
+    "employee_code": "10000007",
+    "employee_name": "Juan Pérez García",
+    "timestamp": "2026-10-19 08:15:00",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000007\tTIME=2026-10-19 08:15:00\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-10",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000003",
+    "employee_code": "10000003",
+    "employee_name": "Fernando Castillo Rojas",
+    "timestamp": "2026-10-19 08:02:40",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000003\tTIME=2026-10-19 08:02:40\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-8",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000002",
+    "employee_code": "10000002",
+    "employee_name": "Roberto Alvarado Paredes",
+    "timestamp": "2026-10-19 07:58:11",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000002\tTIME=2026-10-19 07:58:11\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
+  },
+  {
+    "id": "raw-1792507512029-6",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - G3-id",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000001",
+    "employee_code": "10000001",
+    "employee_name": "Administrador General",
+    "timestamp": "2026-10-19 07:54:30",
+    "punch_type": "CHECK_IN",
+    "punch_state": 0,
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000001\tTIME=2026-10-19 07:54:30\tVERIFY=1\tSN=AEH2223460040",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040",
+    "source": "BIOTIME"
   },
   {
     "id": "raw-punch-00072",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -147,12 +339,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-27 17:01:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00071",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -169,12 +362,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-27 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00070",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -191,12 +385,132 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-27 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-4-t0mb",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000005",
+    "employee_name": "Carlos Mendoza Silva",
+    "timestamp": "2026-08-27 08:12:05",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000005\tTIME=2026-08-27 08:12:05\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-3-e6kf",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000004",
+    "employee_name": "Elena Ramos Vasquez",
+    "timestamp": "2026-08-27 08:08:44",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000004\tTIME=2026-08-27 08:08:44\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-2-ly7z",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000003",
+    "employee_name": "Fernando Castillo Rojas",
+    "timestamp": "2026-08-27 08:04:15",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000003\tTIME=2026-08-27 08:04:15\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-6-u9oy",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000007",
+    "employee_name": "Jorge Morales Ruiz",
+    "timestamp": "2026-08-27 08:01:22",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000007\tTIME=2026-08-27 08:01:22\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-7-s60y",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000008",
+    "employee_name": "Patricia Vega Medina",
+    "timestamp": "2026-08-27 07:59:10",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000008\tTIME=2026-08-27 07:59:10\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-1-i0zl",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000002",
+    "employee_name": "Roberto Alvarado Paredes",
+    "timestamp": "2026-08-27 07:58:30",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000002\tTIME=2026-08-27 07:58:30\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-5-7wp8",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000006",
+    "employee_name": "Lucia Diaz Torres",
+    "timestamp": "2026-08-27 07:55:00",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FINGERPRINT",
+    "processed": false,
+    "raw_payload": "PIN=10000006\tTIME=2026-08-27 07:55:00\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00069",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -213,12 +527,30 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-27 07:55:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
+  },
+  {
+    "id": "raw-1787835277804-0-9cfg",
+    "device_id": "dev-01",
+    "device_sn": "AEH2223460040",
+    "device_name": "ZKTeco Sede Central - Puerta Principal",
+    "device_dependencia_tipo": "SEDE_CENTRAL",
+    "device_dependencia_name": "SEDE CENTRAL",
+    "employee_dni": "10000001",
+    "employee_name": "Administrador General",
+    "timestamp": "2026-08-27 07:54:12",
+    "punch_type": "CHECK_IN",
+    "verify_mode": "FACE",
+    "processed": false,
+    "raw_payload": "PIN=10000001\tTIME=2026-08-27 07:54:12\tVERIFY=1\tSN=ZK-G3-001",
+    "validation_status": "VALIDA",
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00068",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -235,12 +567,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-26 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00067",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -257,12 +590,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-26 13:59:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00066",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -279,12 +613,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-26 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00065",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -301,12 +636,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-26 07:59:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00064",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -323,12 +659,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-25 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00063",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -345,12 +682,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-25 13:56:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00062",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -367,12 +705,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-25 13:01:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00132",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -389,7 +728,8 @@
     "raw_payload": "PIN=1099\tTIME=2026-08-25 08:22:04\tVERIFY=1\tSTATUS=0",
     "validation_status": "ERROR_DNI",
     "rejection_reason": "DNI 1099 no está registrado en el directorio institucional de personal.",
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00131",
@@ -416,7 +756,7 @@
   {
     "id": "raw-punch-00130",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -433,12 +773,13 @@
     "raw_payload": "PIN=9991\tTIME=2026-08-25 08:12:35\tVERIFY=1\tSTATUS=0",
     "validation_status": "ERROR_DNI",
     "rejection_reason": "DNI 9991 no está registrado en el directorio institucional de personal.",
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00129",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -455,12 +796,13 @@
     "raw_payload": "PIN=10000009\tTIME=2026-08-25 07:53:34\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00128",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -477,12 +819,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-25 07:52:31\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00061",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -499,12 +842,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-25 07:52:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00127",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -521,12 +865,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-25 07:51:28\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00126",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -543,12 +888,13 @@
     "raw_payload": "PIN=10000006\tTIME=2026-08-25 07:50:25\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00125",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -565,12 +911,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-25 07:49:22\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00124",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -587,12 +934,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-25 07:48:19\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00123",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -609,12 +957,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-25 07:47:16\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00122",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -631,12 +980,13 @@
     "raw_payload": "PIN=10000002\tTIME=2026-08-25 07:46:13\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00121",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -653,12 +1003,13 @@
     "raw_payload": "PIN=10000001\tTIME=2026-08-25 07:45:10\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00060",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -675,12 +1026,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-24 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00059",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -697,12 +1049,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-24 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00058",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -719,12 +1072,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-24 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00057",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -741,12 +1095,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-24 07:57:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00116",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -763,12 +1118,13 @@
     "raw_payload": "PIN=10000002\tTIME=2026-08-21 17:30:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00076",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -785,12 +1141,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-21 17:10:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00088",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -807,12 +1164,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-21 17:08:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00056",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -829,12 +1187,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-21 17:02:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00096",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -851,12 +1210,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-21 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00104",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -873,12 +1233,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-21 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00112",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -895,12 +1256,13 @@
     "raw_payload": "PIN=10000006\tTIME=2026-08-21 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00120",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -917,12 +1279,13 @@
     "raw_payload": "PIN=10000001\tTIME=2026-08-21 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00103",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -939,12 +1302,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-21 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00055",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -961,12 +1325,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-21 13:55:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00075",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -983,12 +1348,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-21 13:55:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00119",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1005,12 +1371,13 @@
     "raw_payload": "PIN=10000001\tTIME=2026-08-21 13:55:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00087",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1027,12 +1394,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-21 13:52:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00095",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1049,12 +1417,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-21 13:50:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00111",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1071,12 +1440,13 @@
     "raw_payload": "PIN=10000006\tTIME=2026-08-21 13:50:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00115",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1093,12 +1463,13 @@
     "raw_payload": "PIN=10000002\tTIME=2026-08-21 13:50:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00114",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1115,12 +1486,13 @@
     "raw_payload": "PIN=10000002\tTIME=2026-08-21 13:10:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00054",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1137,12 +1509,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00074",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1159,12 +1532,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00086",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1181,12 +1555,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00094",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1203,12 +1578,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00102",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1225,12 +1601,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00110",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1247,12 +1624,13 @@
     "raw_payload": "PIN=10000006\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00118",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1269,12 +1647,13 @@
     "raw_payload": "PIN=10000001\tTIME=2026-08-21 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00101",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1291,12 +1670,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-21 08:25:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00053",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1313,12 +1693,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-21 07:54:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00073",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1335,12 +1716,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-21 07:50:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00117",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1357,12 +1739,13 @@
     "raw_payload": "PIN=10000001\tTIME=2026-08-21 07:50:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00085",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1379,12 +1762,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-21 07:48:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00093",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1401,12 +1785,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-21 07:45:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00113",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1423,12 +1808,13 @@
     "raw_payload": "PIN=10000002\tTIME=2026-08-21 07:45:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00109",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1445,12 +1831,13 @@
     "raw_payload": "PIN=10000006\tTIME=2026-08-21 07:40:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00080",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1467,12 +1854,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-20 17:15:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00100",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1489,12 +1877,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-20 17:05:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00092",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1511,12 +1900,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-20 17:02:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00052",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1533,12 +1923,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-20 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00108",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1555,12 +1946,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-20 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00051",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1577,12 +1969,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-20 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00079",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1599,12 +1992,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-20 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00107",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1621,12 +2015,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-20 13:57:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00091",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1643,12 +2038,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-20 13:54:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00099",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1665,12 +2061,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-20 13:52:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00078",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1687,12 +2084,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-20 13:05:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00098",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1709,12 +2107,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-20 13:01:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00050",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1731,12 +2130,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-20 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00090",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1753,12 +2153,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-20 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00106",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1775,12 +2176,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-20 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00049",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1797,12 +2199,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-20 07:58:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00105",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1819,12 +2222,13 @@
     "raw_payload": "PIN=10000008\tTIME=2026-08-20 07:56:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00077",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1841,12 +2245,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-20 07:55:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00089",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1863,12 +2268,13 @@
     "raw_payload": "PIN=10000004\tTIME=2026-08-20 07:52:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00097",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1885,12 +2291,13 @@
     "raw_payload": "PIN=10000005\tTIME=2026-08-20 07:46:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00048",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1907,12 +2314,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-19 17:05:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00084",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1929,12 +2337,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-19 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00083",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1951,12 +2360,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-19 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00047",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1973,12 +2383,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-19 13:56:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00046",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -1995,12 +2406,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-19 13:01:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00082",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2017,12 +2429,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-19 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00081",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2039,12 +2452,13 @@
     "raw_payload": "PIN=10000003\tTIME=2026-08-19 08:16:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00045",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2061,12 +2475,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-19 07:55:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00044",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2083,12 +2498,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-18 17:02:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00043",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2105,12 +2521,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-18 13:59:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00042",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2127,12 +2544,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-18 13:04:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00041",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2149,12 +2567,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-18 08:32:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00040",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2171,12 +2590,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-17 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00039",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2193,12 +2613,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-17 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00038",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2215,12 +2636,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-17 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00037",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2237,12 +2659,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-17 07:52:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00036",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2259,12 +2682,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-13 17:01:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00035",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2281,12 +2705,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-13 13:55:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00034",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2303,12 +2728,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-13 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00033",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2325,12 +2751,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-13 07:56:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00032",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2347,12 +2774,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-12 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00031",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2369,12 +2797,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-12 13:57:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00030",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2391,12 +2820,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-12 13:02:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00029",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2413,12 +2843,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-12 08:18:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00028",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2435,12 +2866,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-11 17:03:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00027",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2457,12 +2889,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-11 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00026",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2479,12 +2912,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-11 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00025",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2501,12 +2935,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-11 07:59:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00024",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2523,12 +2958,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-10 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00023",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2545,12 +2981,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-10 13:57:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00022",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2567,12 +3004,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-10 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00021",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2589,12 +3027,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-10 07:50:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00020",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2611,12 +3050,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-07 17:01:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00019",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2633,12 +3073,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-07 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00018",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2655,12 +3096,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-07 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00017",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2677,12 +3119,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-07 08:22:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00016",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2699,12 +3142,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-06 17:04:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00015",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2721,12 +3165,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-06 13:56:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00014",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2743,12 +3188,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-06 13:01:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00013",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2765,12 +3211,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-06 07:54:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00012",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2787,12 +3234,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-05 17:00:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00011",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2809,12 +3257,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-05 13:59:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00010",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2831,12 +3280,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-05 13:05:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00009",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2853,12 +3303,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-05 07:58:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00008",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2875,12 +3326,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-04 17:02:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00007",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2897,12 +3349,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-04 13:55:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00006",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2919,12 +3372,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-04 13:00:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00005",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2941,12 +3395,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-04 07:55:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00004",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2963,12 +3418,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-03 17:05:00\tVERIFY=15\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00003",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -2985,12 +3441,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-03 13:58:00\tVERIFY=1\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00002",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -3007,12 +3464,13 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-03 13:02:00\tVERIFY=1\tSTATUS=1",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   },
   {
     "id": "raw-punch-00001",
     "device_id": "dev-01",
-    "device_sn": "BIM-DRAC-001",
+    "device_sn": "AEH2223460040",
     "device_name": "ZKTeco Sede Central - Puerta Principal",
     "device_dependencia_tipo": "SEDE_CENTRAL",
     "device_dependencia_name": "SEDE CENTRAL",
@@ -3029,6 +3487,7 @@
     "raw_payload": "PIN=10000007\tTIME=2026-08-03 08:15:00\tVERIFY=15\tSTATUS=0",
     "validation_status": "VALIDA",
     "rejection_reason": null,
-    "authorization_id": null
+    "authorization_id": null,
+    "serialNumber": "AEH2223460040"
   }
 ]

@@ -1,5 +1,15 @@
 [
   {
+    "id": "audit-biotime-1792507554961",
+    "timestamp": "2026-10-20T14:45:54.961Z",
+    "user_id": "admin-drac",
+    "user_name": "Administrador DRAC",
+    "action": "SINCRONIZACION_BIOTIME",
+    "entity": "DISPOSITIVO_BIOTIME",
+    "entity_id": "dev-01",
+    "details": "Sincronización mediante BioTime Console (Puerto Apache: 89, PostgreSQL: 7496, Serial: AEH2223460040). Marcaciones registradas: 155."
+  },
+  {
     "id": "audit-biotime-1792168096273",
     "timestamp": "2026-10-16T16:28:16.273Z",
     "user_id": "admin-drac",

@@ -502,12 +502,25 @@ export default function App() {
     loadStored('rawPunches', INITIAL_RAW_PUNCHES)
   );
 
-  // Sync RAW punches and calculated attendance from Supabase / server
-  const syncPunchesFromServer = useCallback(async () => {
+  // Sync RAW punches and calculated attendance from Supabase / server / direct sync
+  const syncPunchesFromServer = useCallback(async (incomingPunches?: MarcacionRaw[]) => {
+    if (incomingPunches && Array.isArray(incomingPunches) && incomingPunches.length > 0) {
+      setRawPunches(incomingPunches);
+      saveStored('rawPunches', incomingPunches);
+      try {
+        localStorage.setItem('drac_rawPunches', JSON.stringify(incomingPunches));
+        localStorage.setItem('drac_data_rawPunches', JSON.stringify(incomingPunches));
+      } catch (_) {}
+      fetchAttendanceFromSupabase().then((atts) => {
+        if (Array.isArray(atts) && atts.length > 0) setAttendance(atts);
+      }).catch(() => {});
+      return incomingPunches;
+    }
     try {
       const data = await fetchRawPunchesFromSupabase();
       if (Array.isArray(data) && data.length > 0) {
         setRawPunches(data);
+        saveStored('rawPunches', data);
         return data;
       }
     } catch (err) {

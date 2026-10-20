@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncBioTimePunches: (params = {}) => {
     return ipcRenderer.invoke('biotime:sync-punches', params);
   },
+  getRawPunches: () => {
+    return ipcRenderer.invoke('punches:get-all');
+  },
 
   // Hardware y Sistema Operativo
   getSystemInfo: () => {
