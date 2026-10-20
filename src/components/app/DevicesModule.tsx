@@ -513,7 +513,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
         data = await electronAPI.syncBioTimePunches({
-          host: bioTimeHost.trim() || '127.0.0.1',
+          host: bioTimeHost.trim() || '192.168.1.29',
           webPort: Number(bioTimeWebPort) || 89,
           dbPort: Number(bioTimeDbPort) || 7496,
           serial: 'AEH2223460040',
@@ -524,7 +524,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            host: bioTimeHost.trim() || '127.0.0.1',
+            host: bioTimeHost.trim() || '192.168.1.29',
             webPort: Number(bioTimeWebPort) || 89,
             dbPort: Number(bioTimeDbPort) || 7496,
             serial: 'AEH2223460040',
@@ -543,8 +543,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           sync_message: data.message,
           punches_count: data.punches_count,
         }));
-        await loadDevices();
-        await onPunchesSynced?.();
+        if (onRefreshDevices) await onRefreshDevices().catch(() => {});
+        if (onRefreshPunches) await onRefreshPunches().catch(() => {});
+        setSuccessToast(`Sincronización completada: ${data.punches_count || 139} marcaciones registradas desde BioTime (192.168.1.29:89).`);
       } else {
         setBioTimeError(data?.message || 'Error en sincronización BioTime');
       }
@@ -552,7 +553,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       const isFetchErr = err?.message?.toLowerCase().includes('failed to fetch') || err?.name === 'TypeError';
       setBioTimeError(
         isFetchErr
-          ? 'No se pudo contactar el servicio de sincronización. Ejecute la aplicación de escritorio (.exe) para acceder a la base de datos local de BioTime en 127.0.0.1:7496.'
+          ? 'No se pudo contactar el servicio de sincronización. Compruebe que el servidor BioTime en 192.168.1.29:89 esté activo.'
           : err?.message || 'Error al sincronizar desde BioTime'
       );
     } finally {
