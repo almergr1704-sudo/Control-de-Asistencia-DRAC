@@ -1949,20 +1949,39 @@ async function startServer() {
       let sourceName = "BioTime Console";
 
       // 1. INTENTO DE CONEXIÓN A POSTGRESQL NATIVO DE BIOTIME
-      const passwordsToTry = ["", "123456", "admin", "postgres", "biotime", "root", "ZKTeco123", "ZK123456"];
-      for (const pwd of passwordsToTry) {
-        let client: any = null;
-        try {
-          client = new pg.Client({
-            host: cleanHost,
-            port: targetDbPort,
-            database: "biotime",
-            user: "postgres",
-            password: pwd,
-            connectionTimeoutMillis: 2000,
-            statement_timeout: 2500,
-          });
-          await client.connect();
+      const isDbPortOpen = await new Promise<boolean>((resolve) => {
+        const s = new net.Socket();
+        s.setTimeout(1200);
+        s.on("connect", () => {
+          s.destroy();
+          resolve(true);
+        });
+        s.on("error", () => {
+          s.destroy();
+          resolve(false);
+        });
+        s.on("timeout", () => {
+          s.destroy();
+          resolve(false);
+        });
+        s.connect(targetDbPort, cleanHost);
+      });
+
+      if (isDbPortOpen) {
+        const passwordsToTry = ["", "123456", "admin", "postgres", "biotime", "root", "ZKTeco123"];
+        for (const pwd of passwordsToTry) {
+          let client: any = null;
+          try {
+            client = new pg.Client({
+              host: cleanHost,
+              port: targetDbPort,
+              database: "biotime",
+              user: "postgres",
+              password: pwd,
+              connectionTimeoutMillis: 1500,
+              statement_timeout: 2000,
+            });
+            await client.connect();
 
           let rows: any[] = [];
           try {
@@ -2032,6 +2051,7 @@ async function startServer() {
           }
         }
       }
+    }
 
       // 2. SI EL SERVIDOR LAN O POSTGRESQL NO TIENE REGISTROS PARA HOY / RECIENTES:
       // Inyectar marcaciones reales para hoy y ayer de los colaboradores de la Sede Central

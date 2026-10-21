@@ -55,6 +55,7 @@ import {
   MinusCircle,
   Key,
   Wrench,
+  Database,
 } from 'lucide-react';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
@@ -3066,6 +3067,44 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </div>
           </div>
 
+          {/* Quick Metrics Bar for Punches */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Total en Staging</p>
+                <p className="text-lg font-bold text-white font-mono">{rawPunches.length}</p>
+              </div>
+              <Database className="w-5 h-5 text-indigo-400/80" />
+            </div>
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Hoy ({new Date().toLocaleDateString('es-PE')})</p>
+                <p className="text-lg font-bold text-emerald-400 font-mono">
+                  {rawPunches.filter((p) => p.timestamp?.startsWith(new Date().toISOString().split('T')[0])).length}
+                </p>
+              </div>
+              <Clock className="w-5 h-5 text-emerald-400/80" />
+            </div>
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Reloj Sede Central</p>
+                <p className="text-lg font-bold text-sky-400 font-mono">
+                  {rawPunches.filter((p) => p.device_sn === 'AEH2223460040' || (p as any).serialNumber === 'AEH2223460040').length}
+                </p>
+              </div>
+              <Cpu className="w-5 h-5 text-sky-400/80" />
+            </div>
+            <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Marcaciones Válidas</p>
+                <p className="text-lg font-bold text-teal-400 font-mono">
+                  {rawPunches.filter((p) => (p.validation_status || 'VALIDA') === 'VALIDA').length}
+                </p>
+              </div>
+              <CheckCircle2 className="w-5 h-5 text-teal-400/80" />
+            </div>
+          </div>
+
           <AdvancedSearchFilter
             searchTerm={punchSearchTerm}
             onSearchChange={(val) => {
@@ -3160,7 +3199,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             <EmptyState
               icon={Clock}
               title="No se encontraron marcaciones recibidas"
-              description="No hay registros de marcación en el staging que coincidan con los criterios de búsqueda o filtros seleccionados."
+              description={
+                rawPunches.length > 0
+                  ? `Existen ${rawPunches.length} marcaciones registradas en el sistema, pero ninguna coincide con los filtros seleccionados. Pulse [Restablecer Filtros] para visualizarlas todas.`
+                  : "No hay registros de marcación en el staging. Pulse [Sincronizar BioTime] o [Actualizar] para consultar las marcaciones del servidor institucional."
+              }
               isFiltered={Boolean(punchSearchTerm.trim()) || activePunchFilterCount > 0}
               onAction={handleResetPunchFilters}
             />

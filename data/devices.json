@@ -15,7 +15,7 @@
     "area_id": "area-admin-admin",
     "area_name": "OFICINA DE ADMINISTRACION",
     "location_detail": "Acceso peatonal principal Sede Central - BioTime Console",
-    "last_activity": "2026-10-20T14:45:54.963Z",
+    "last_activity": "2026-10-21T12:50:35.044Z",
     "status": "ONLINE",
     "firmware_version": "ZMN220_TFT",
     "biotime_config": {
@@ -48,22 +48,22 @@
     "log_count": 139,
     "adms_url": "http://192.168.1.29:89/iclock/cdata",
     "last_test": {
-      "date": "20/10/2026, 9:45:54 a. m.",
+      "date": "21/10/2026, 7:50:33 a. m.",
       "result": "SUCCESS",
       "status": "ONLINE",
-      "message": "Sincronización BioTime exitosa (Puerto 89 / PostgreSQL 7496).",
+      "message": "Sincronización BioTime exitosa: 172 marcaciones (0 nuevas).",
       "user": "Administrador DRAC",
-      "latency_ms": 15,
+      "latency_ms": 12,
       "ip": "192.168.1.180",
       "port": 7496,
       "model": "G3-id",
       "serial_number": "AEH2223460040",
       "user_count": 14,
-      "clock_punches_count": 155,
+      "clock_punches_count": 172,
       "new_punches_count": 0,
-      "saved_punches_count": 155,
+      "saved_punches_count": 172,
       "error_count": 0,
-      "formatted_output": "CONEXIÓN: OK\nSISTEMA: BioTime Platform Console (C:\\BioTime)\nPUERTO HTTP: 89\nBASE DE DATOS: PostgreSQL 127.0.0.1:7496 (biotime)\nSERIAL DISPOSITIVO: AEH2223460040\nMARCACIONES REGISTRADAS: 155\nERRORES: 0"
+      "formatted_output": "CONEXIÓN: OK\nSISTEMA: BioTime Platform Console (C:\\BioTime)\nPUERTO HTTP: 89\nBASE DE DATOS: PostgreSQL 192.168.1.29:7496 (biotime)\nSERIAL DISPOSITIVO: AEH2223460040\nMARCACIONES EN STAGING: 172\nMARCACIONES NUEVAS: 0\nERRORES: 0"
     }
   },
   {

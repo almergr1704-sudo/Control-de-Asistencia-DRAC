@@ -1,5 +1,35 @@
 [
   {
+    "id": "audit-biotime-1792587035042",
+    "timestamp": "2026-10-21T12:50:35.042Z",
+    "user_id": "admin-drac",
+    "user_name": "Administrador DRAC",
+    "action": "SINCRONIZACION_BIOTIME",
+    "entity": "DISPOSITIVO_BIOTIME",
+    "entity_id": "dev-01",
+    "details": "Sincronización mediante BioTime Console (Apache: 89, PostgreSQL: 7496, Serial: AEH2223460040). Marcaciones totales: 172 (0 nuevas)."
+  },
+  {
+    "id": "audit-biotime-1792587029913",
+    "timestamp": "2026-10-21T12:50:29.913Z",
+    "user_id": "admin-drac",
+    "user_name": "Administrador DRAC",
+    "action": "SINCRONIZACION_BIOTIME",
+    "entity": "DISPOSITIVO_BIOTIME",
+    "entity_id": "dev-01",
+    "details": "Sincronización mediante BioTime Console (Apache: 89, PostgreSQL: 7496, Serial: AEH2223460040). Marcaciones totales: 172 (0 nuevas)."
+  },
+  {
+    "id": "audit-biotime-1792586990512",
+    "timestamp": "2026-10-21T12:49:50.512Z",
+    "user_id": "admin-drac",
+    "user_name": "Administrador DRAC",
+    "action": "SINCRONIZACION_BIOTIME",
+    "entity": "DISPOSITIVO_BIOTIME",
+    "entity_id": "dev-01",
+    "details": "Sincronización mediante BioTime Console (Apache: 89, PostgreSQL: 7496, Serial: AEH2223460040). Marcaciones totales: 172 (16 nuevas)."
+  },
+  {
     "id": "audit-biotime-1792507554961",
     "timestamp": "2026-10-20T14:45:54.961Z",
     "user_id": "admin-drac",
