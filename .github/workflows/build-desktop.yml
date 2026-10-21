@@ -4,18 +4,19 @@ on:
   push:
     branches:
       - main
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       tag_name:
         description: 'Etiqueta de versión (ej: v1.0.0)'
-        required: true
-        default: 'v1.0.0'
+        required: false
+        default: ''
       release_name:
         description: 'Nombre de la Release'
         required: false
-        default: 'DRAC Control de Asistencia Desktop v1.0.0'
+        default: ''
 
 permissions:
   contents: write
@@ -113,48 +114,62 @@ jobs:
           
           Get-Content "dist-desktop/SHA256SUMS.txt"
 
-      - name: 9. Determinar etiqueta y título de la Release
+      - name: 9. Subir instaladores como Artefactos de GitHub Actions (Descarga Directa)
+        uses: actions/upload-artifact@v4
+        with:
+          name: DRAC-Control-de-Asistencia-Windows-x64
+          path: |
+            dist-desktop/DRAC-Control-de-Asistencia-Setup.exe
+            dist-desktop/DRAC-Asistencia-Setup.exe
+            dist-desktop/DRAC-Control-de-Asistencia-Portable.exe
+            dist-desktop/DRAC-Asistencia-Portable.exe
+            dist-desktop/*.zip
+            dist-desktop/SHA256SUMS.txt
+          retention-days: 60
+
+      - name: 10. Determinar etiqueta y título de la Release
         id: release_info
         shell: pwsh
         run: |
           if ("${{ github.ref_type }}" -eq "tag") {
             $tag = "${{ github.ref_name }}"
             $title = "DRAC Control de Asistencia Desktop $tag"
+          } elseif ("${{ inputs.tag_name }}") {
+            $tag = "${{ inputs.tag_name }}"
+            $title = if ("${{ inputs.release_name }}") { "${{ inputs.release_name }}" } else { "DRAC Control de Asistencia Desktop $tag" }
           } else {
-            $inputTag = "${{ inputs.tag_name }}"
-            if (-not $inputTag) { $inputTag = "v1.0.0" }
-            $tag = $inputTag
-            $inputTitle = "${{ inputs.release_name }}"
-            if (-not $inputTitle) { $inputTitle = "DRAC Control de Asistencia Desktop $tag" }
-            $title = $inputTitle
+            $runNum = "${{ github.run_number }}"
+            $tag = "v1.0.$runNum"
+            $title = "DRAC Control de Asistencia Desktop v1.0.$runNum (Auto-Build)"
           }
           Write-Host "Release Tag: $tag"
           Write-Host "Release Title: $title"
           Write-Output "tag=$tag" >> $env:GITHUB_OUTPUT
           Write-Output "title=$title" >> $env:GITHUB_OUTPUT
 
-      - name: 10. Publicar en GitHub Releases con Assets Binarios
+      - name: 11. Publicar en GitHub Releases con Assets Binarios
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           tag_name: ${{ steps.release_info.outputs.tag }}
           name: ${{ steps.release_info.outputs.title }}
           body: |
             ## Sistema de Control de Asistencia Institucional - DRAC Cajamarca
-            **Versión Desktop Oficial para Windows 10 y Windows 11 (x64)**
+            **Compilación Automatizada Desktop para Windows (x64)**
 
-            ### 📦 Archivos Disponibles para Descarga (Assets):
+            ### 📦 Archivos Disponibles para Descarga:
             1. **`DRAC-Control-de-Asistencia-Setup.exe`** (Recomendado):
                - Instalador estándar asistido con accesos directos en Escritorio y Menú Inicio.
-               - Incluye soporte nativo TCP/IP (puerto 4370) para biométricos ZKTeco en red LAN.
+               - Soporte nativo para conexión con BioTime Console (`192.168.1.29:89` / PostgreSQL `7496`) y reloj biométrico G3-id (`192.168.1.180`).
             2. **`DRAC-Control-de-Asistencia-Portable.exe`**:
-               - Ejecutable directo sin necesidad de instalación previa.
+               - Ejecutable directo sin instalación previa (ideal para pruebas en servidor).
             3. **`DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip`**:
-               - Directorio completo empaquetado para distribución interna.
+               - Paquete zip portátil.
             4. **`SHA256SUMS.txt`**:
-               - Firmas criptográficas para validar la integridad de cada archivo descargado.
+               - Firmas de integridad criptográfica SHA-256.
 
             ---
-            *Compilación automatizada en entorno nativo Windows (`windows-latest`) mediante GitHub Actions.*
+            *Compilado automáticamente mediante GitHub Actions.*
           files: |
             dist-desktop/DRAC-Control-de-Asistencia-Setup.exe
             dist-desktop/DRAC-Asistencia-Setup.exe
@@ -165,7 +180,7 @@ jobs:
             dist-desktop/SHA256SUMS.txt
           draft: false
           prerelease: false
-          generate_release_notes: false
-          fail_on_unmatched_files: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
