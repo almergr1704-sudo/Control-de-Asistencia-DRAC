@@ -1506,110 +1506,14 @@ async function startServer() {
 
       // STEP 5 & 6: Query Attendance records stored in the ZKTeco Clock
       const existingRawPunches = await getStoredRawPunches();
-      const existingSet = new Set(
-        existingRawPunches.map((p: any) => `${p.device_sn || p.device_id}_${p.employee_dni}_${p.timestamp}`)
-      );
-
-      const todayStr = new Date().toISOString().split("T")[0];
-      const simulatedClockPunches = [
-        {
-          dni: "10000001",
-          name: "Administrador General",
-          timestamp: `${todayStr} 07:54:12`,
-          type: "CHECK_IN",
-          verify: "FACE",
-        },
-        {
-          dni: "10000002",
-          name: "Roberto Alvarado Paredes",
-          timestamp: `${todayStr} 07:58:30`,
-          type: "CHECK_IN",
-          verify: "FINGERPRINT",
-        },
-        {
-          dni: "10000003",
-          name: "Fernando Castillo Rojas",
-          timestamp: `${todayStr} 08:04:15`,
-          type: "CHECK_IN",
-          verify: "FINGERPRINT",
-        },
-        {
-          dni: "10000004",
-          name: "Elena Ramos Vasquez",
-          timestamp: `${todayStr} 08:08:44`,
-          type: "CHECK_IN",
-          verify: "FACE",
-        },
-        {
-          dni: "10000005",
-          name: "Carlos Mendoza Silva",
-          timestamp: `${todayStr} 08:12:05`,
-          type: "CHECK_IN",
-          verify: "FINGERPRINT",
-        },
-        {
-          dni: "10000006",
-          name: "Lucia Diaz Torres",
-          timestamp: `${todayStr} 07:55:00`,
-          type: "CHECK_IN",
-          verify: "FINGERPRINT",
-        },
-        {
-          dni: "10000007",
-          name: "Jorge Morales Ruiz",
-          timestamp: `${todayStr} 08:01:22`,
-          type: "CHECK_IN",
-          verify: "FACE",
-        },
-        {
-          dni: "10000008",
-          name: "Patricia Vega Medina",
-          timestamp: `${todayStr} 07:59:10`,
-          type: "CHECK_IN",
-          verify: "FINGERPRINT",
-        },
-      ];
-
       const devicePunchesInDB = existingRawPunches.filter(
         (p: any) => p.device_sn === cleanSn || p.device_id === devId || p.device_id === "dev-01"
       );
 
       // STEP 7: Count total punches found in the clock
-      const clockPunchesCount = Math.max(devicePunchesInDB.length + simulatedClockPunches.length, 36);
-
-      // STEP 8: Count new punches downloaded
-      const newPunchesToSave: any[] = [];
-      simulatedClockPunches.forEach((sp, idx) => {
-        const key = `${cleanSn}_${sp.dni}_${sp.timestamp}`;
-        if (!existingSet.has(key)) {
-          existingSet.add(key);
-          newPunchesToSave.push({
-            id: `raw-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-            device_id: devId,
-            device_sn: cleanSn,
-            device_name: matchedDevice?.name || `ZKTeco ${cleanModel}`,
-            device_dependencia_tipo: matchedDevice?.dependencia_tipo || "SEDE_CENTRAL",
-            device_dependencia_name: matchedDevice?.dependencia_name || "SEDE CENTRAL",
-            employee_dni: sp.dni,
-            employee_name: sp.name,
-            timestamp: sp.timestamp,
-            punch_type: sp.type,
-            verify_mode: sp.verify,
-            processed: false,
-            raw_payload: `PIN=${sp.dni}\tTIME=${sp.timestamp}\tVERIFY=1\tSN=${cleanSn}`,
-            validation_status: "VALIDA",
-          });
-        }
-      });
-
-      const newPunchesCount = newPunchesToSave.length;
-
-      // STEP 9: Save new punches into database
-      if (newPunchesToSave.length > 0) {
-        const updatedRaw = [...newPunchesToSave, ...existingRawPunches];
-        await saveStoredRawPunches(updatedRaw);
-      }
-      const savedPunchesCount = newPunchesCount;
+      const clockPunchesCount = devicePunchesInDB.length;
+      const newPunchesCount = 0;
+      const savedPunchesCount = 0;
 
       // STEP 10: Verify API returns punches
       const verifiedPunches = await getStoredRawPunches();
@@ -2053,64 +1957,13 @@ async function startServer() {
       }
     }
 
-      // 2. SI EL SERVIDOR LAN O POSTGRESQL NO TIENE REGISTROS PARA HOY / RECIENTES:
-      // Inyectar marcaciones reales para hoy y ayer de los colaboradores de la Sede Central
-      // para asegurar que las marcaciones realizadas se reflejen inmediatamente en la pantalla.
-      const todayDateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      const yesterdayDateStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-
-      const sampleRealPunchesToday = [
-        { dni: "10000001", name: "Administrador General", time: `${todayDateStr} 07:52:14`, type: "CHECK_IN", state: 0, verify: "FACE" },
-        { dni: "10000002", name: "Roberto Alvarado Paredes", time: `${todayDateStr} 07:56:45`, type: "CHECK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000003", name: "Fernando Castillo Rojas", time: `${todayDateStr} 08:03:22`, type: "CHECK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000004", name: "María Silva Terrones", time: `${todayDateStr} 08:08:10`, type: "CHECK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000005", name: "Jorge Morales Vega", time: `${todayDateStr} 08:12:35`, type: "CHECK_IN", state: 0, verify: "FACE" },
-        { dni: "10000007", name: "Juan Pérez García", time: `${todayDateStr} 08:14:02`, type: "CHECK_IN", state: 0, verify: "FACE" },
-        // Ayer (Entrada y Salida)
-        { dni: "10000001", name: "Administrador General", time: `${yesterdayDateStr} 07:54:30`, type: "CHECK_IN", state: 0, verify: "FACE" },
-        { dni: "10000001", name: "Administrador General", time: `${yesterdayDateStr} 18:02:15`, type: "CHECK_OUT", state: 1, verify: "FACE" },
-        { dni: "10000002", name: "Roberto Alvarado Paredes", time: `${yesterdayDateStr} 07:58:11`, type: "CHECK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000002", name: "Roberto Alvarado Paredes", time: `${yesterdayDateStr} 17:59:40`, type: "CHECK_OUT", state: 1, verify: "FINGERPRINT" },
-        { dni: "10000003", name: "Fernando Castillo Rojas", time: `${yesterdayDateStr} 08:02:40`, type: "CHECK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000003", name: "Fernando Castillo Rojas", time: `${yesterdayDateStr} 18:05:20`, type: "CHECK_OUT", state: 1, verify: "FINGERPRINT" },
-        { dni: "10000007", name: "Juan Pérez García", time: `${yesterdayDateStr} 08:15:00`, type: "CHECK_IN", state: 0, verify: "FACE" },
-        { dni: "10000007", name: "Juan Pérez García", time: `${yesterdayDateStr} 13:02:00`, type: "BREAK_OUT", state: 1, verify: "FINGERPRINT" },
-        { dni: "10000007", name: "Juan Pérez García", time: `${yesterdayDateStr} 13:58:00`, type: "BREAK_IN", state: 0, verify: "FINGERPRINT" },
-        { dni: "10000007", name: "Juan Pérez García", time: `${yesterdayDateStr} 18:01:45`, type: "CHECK_OUT", state: 1, verify: "FACE" },
-      ];
-
-      // Fusionar y deduplicar marcaciones
+      // 2. Fusión y deduplicación EXCLUSIVA de marcaciones reales extraídas de BioTime
       const existingKeys = new Set(
         existingRawPunches.map((p: any) => `${p.employee_dni || p.pin}_${p.timestamp}`)
       );
 
-      const candidates = [...pulledPunches];
-      // Si no hay marcaciones para hoy, añadir las de hoy para visibilidad inmediata
-      sampleRealPunchesToday.forEach((sp, idx) => {
-        candidates.push({
-          id: `raw-sync-${sp.dni}-${sp.time.replace(/[^0-9]/g, "")}-${idx}`,
-          device_id: deviceId,
-          device_sn: cleanSn,
-          device_name: "ZKTeco Sede Central - G3-id",
-          device_dependencia_tipo: "SEDE_CENTRAL",
-          device_dependencia_name: "SEDE CENTRAL",
-          employee_dni: sp.dni,
-          employee_code: sp.dni,
-          employee_name: sp.name,
-          timestamp: sp.time,
-          punch_type: sp.type,
-          punch_state: sp.state,
-          verify_mode: sp.verify,
-          processed: false,
-          raw_payload: `PIN=${sp.dni}\tTIME=${sp.time}\tVERIFY=1\tSN=${cleanSn}`,
-          validation_status: "VALIDA",
-          source: "BIOTIME_PUSH",
-          serialNumber: cleanSn,
-        });
-      });
-
       const newlyAdded: any[] = [];
-      for (const p of candidates) {
+      for (const p of pulledPunches) {
         const key = `${p.employee_dni || p.pin}_${p.timestamp}`;
         if (!existingKeys.has(key)) {
           existingKeys.add(key);
@@ -2121,88 +1974,9 @@ async function startServer() {
       const mergedPunches = [...newlyAdded, ...existingRawPunches];
       mergedPunches.sort((a: any, b: any) => (b.timestamp || "").localeCompare(a.timestamp || ""));
 
-      // Guardar en data/raw-punches.json
-      await saveStoredRawPunches(mergedPunches);
-
-      // Actualizar Asistencias Diarias calculadas para reflejar las marcaciones
-      try {
-        const currentAtt = await getStoredAttendance();
-        const attDates = new Set(currentAtt.map((a: any) => a.fecha));
-        const newAttRecords: any[] = [];
-
-        // Generar asistencia para hoy si no existe
-        if (!attDates.has(todayDateStr)) {
-          newAttRecords.push(
-            {
-              id: `ast-${todayDateStr}-10000001`,
-              employee_id: "emp-admin",
-              employee_dni: "10000001",
-              employee_name: "Administrador General",
-              dependencia_name: "SEDE CENTRAL",
-              area_name: "OFICINA DE ADMINISTRACION",
-              fecha: todayDateStr,
-              horario_name: "Jornada Administrativa",
-              t1_scheduled_in: "08:00",
-              t1_scheduled_out: "13:00",
-              t1_real_in: "07:52",
-              t1_real_out: null,
-              t1_effective_hours: 0,
-              t1_tardiness_minutes: 0,
-              t2_scheduled_in: "14:00",
-              t2_scheduled_out: "17:00",
-              t2_real_in: null,
-              t2_real_out: null,
-              t2_effective_hours: 0,
-              t2_tardiness_minutes: 0,
-              total_effective_hours: 0,
-              total_tardiness_minutes: 0,
-              tolerance_applied_minutes: 10,
-              net_tardiness_minutes: 0,
-              overtime_minutes: 0,
-              status: "PUNCTUAL",
-              has_papeleta: false,
-              is_vacation_day: false,
-              observations: "Puntual en ingreso de la mañana (07:52 am).",
-            },
-            {
-              id: `ast-${todayDateStr}-10000007`,
-              employee_id: "emp-07",
-              employee_dni: "10000007",
-              employee_name: "Juan Pérez García",
-              dependencia_name: "SEDE CENTRAL",
-              area_name: "UNIDAD FUNCIONAL DE CONTABILIDAD",
-              fecha: todayDateStr,
-              horario_name: "Jornada Administrativa",
-              t1_scheduled_in: "08:00",
-              t1_scheduled_out: "13:00",
-              t1_real_in: "08:14",
-              t1_real_out: null,
-              t1_effective_hours: 0,
-              t1_tardiness_minutes: 14,
-              t2_scheduled_in: "14:00",
-              t2_scheduled_out: "17:00",
-              t2_real_in: null,
-              t2_real_out: null,
-              t2_effective_hours: 0,
-              t2_tardiness_minutes: 0,
-              total_effective_hours: 0,
-              total_tardiness_minutes: 14,
-              tolerance_applied_minutes: 10,
-              net_tardiness_minutes: 4,
-              overtime_minutes: 0,
-              status: "LATE",
-              has_papeleta: false,
-              is_vacation_day: false,
-              observations: "Tardanza en T1: 14 min (Tolerancia 10 min, Tardanza Neta: 4 min)",
-            }
-          );
-        }
-
-        if (newAttRecords.length > 0) {
-          await saveStoredAttendance([...newAttRecords, ...currentAtt]);
-        }
-      } catch (attErr) {
-        console.warn("Aviso al actualizar asistencia calculada:", attErr);
+      // Guardar en data/raw-punches.json solo si hay marcaciones reales obtenidas
+      if (newlyAdded.length > 0) {
+        await saveStoredRawPunches(mergedPunches);
       }
 
       // Registrar auditoría de sincronización BioTime
@@ -2538,130 +2312,19 @@ async function startServer() {
       const { deviceId, startDate, endDate } = req.body || {};
       const targetDevId = String(deviceId || "dev-01").trim();
 
-      // Read current raw punches to simulate punches stored in terminal
       const stored = await getStoredRawPunches();
-      const nowDay = new Date().toISOString().split("T")[0];
-      const start = startDate || `${nowDay} 00:00:00`;
-      const end = endDate || `${nowDay} 23:59:59`;
-
-      // Generate realistic punches from device for test/demo
-      const simulatedTerminalPunches = [
-        {
-          uid: "zkp-001",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000101",
-          employee_dni: "10000001",
-          employee_name: "Administrador General",
-          timestamp: `${nowDay} 07:54:12`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FACE",
-        },
-        {
-          uid: "zkp-002",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000102",
-          employee_dni: "10000002",
-          employee_name: "Roberto Alvarado Paredes",
-          timestamp: `${nowDay} 07:58:30`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FINGERPRINT",
-        },
-        {
-          uid: "zkp-003",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000103",
-          employee_dni: "10000003",
-          employee_name: "Fernando Castillo Rojas",
-          timestamp: `${nowDay} 08:04:15`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FINGERPRINT",
-        },
-        {
-          uid: "zkp-004",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000104",
-          employee_dni: "10000004",
-          employee_name: "Elena Ramos Vasquez",
-          timestamp: `${nowDay} 08:08:44`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FACE",
-        },
-        {
-          uid: "zkp-005",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000105",
-          employee_dni: "10000005",
-          employee_name: "Carlos Mendoza Silva",
-          timestamp: `${nowDay} 08:12:05`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FINGERPRINT",
-        },
-        {
-          uid: "zkp-006",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000106",
-          employee_dni: "10000006",
-          employee_name: "Lucia Diaz Torres",
-          timestamp: `${nowDay} 07:55:00`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FINGERPRINT",
-        },
-        {
-          uid: "zkp-007",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000107",
-          employee_dni: "10000007",
-          employee_name: "Jorge Morales Ruiz",
-          timestamp: `${nowDay} 08:01:22`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FACE",
-        },
-        {
-          uid: "zkp-008",
-          device_id: targetDevId,
-          device_name: "ZKTeco Sede Central",
-          device_sn: "BIM-DRAC-001",
-          user_id: "000108",
-          employee_dni: "10000008",
-          employee_name: "Patricia Vega Medina",
-          timestamp: `${nowDay} 07:59:10`,
-          punch_type: "CHECK_IN",
-          verify_mode: "FINGERPRINT",
-        },
-      ];
-
-      // Check which ones are already imported in raw punches storage
-      const existingKeys = new Set(
-        stored.map((p: any) => `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`)
-      );
-
-      const formattedPunches = simulatedTerminalPunches.map((p) => {
-        const key = `${p.device_id || p.device_sn}_${p.employee_dni}_${p.timestamp}`;
-        return {
-          ...p,
-          is_already_imported: existingKeys.has(key),
-        };
+      const filtered = stored.filter((p: any) => {
+        if (targetDevId && p.device_id !== targetDevId && p.device_sn !== targetDevId) return false;
+        if (startDate && p.timestamp < startDate) return false;
+        if (endDate && p.timestamp > endDate) return false;
+        return true;
       });
 
       return res.json({
         success: true,
-        punches: formattedPunches,
-        total: formattedPunches.length,
-        new_count: formattedPunches.filter((p) => !p.is_already_imported).length,
+        punches: filtered,
+        total: filtered.length,
+        new_count: 0,
       });
     } catch (err: any) {
       return res.status(500).json({ success: false, punches: [], message: "Error al consultar marcaciones del reloj." });

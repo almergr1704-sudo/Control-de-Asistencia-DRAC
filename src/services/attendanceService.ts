@@ -13,8 +13,7 @@ import {
 } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizePersonName, normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
-import { INITIAL_DEVICES, INITIAL_ATTENDANCE } from '../data/initialData';
-import { INITIAL_RAW_PUNCHES } from '../data/initialRawPunches';
+import { INITIAL_DEVICES, INITIAL_ATTENDANCE, INITIAL_RAW_PUNCHES } from '../data/initialData';
 import { evaluatePunchesForSchedule } from '../utils/shiftCalculations';
 
 /**

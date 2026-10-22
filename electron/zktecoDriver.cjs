@@ -1455,9 +1455,14 @@ async function syncBioTimeRecords(options = {}) {
       const portsToTry = [targetDevicePort, 4370];
       for (const p of portsToTry) {
         try {
-          const clockPunches = await readZkDevicePunches(cleanDeviceIp, p, 3500, commKey);
-          if (Array.isArray(clockPunches) && clockPunches.length > 0) {
-            pulledPunches = clockPunches.map((item, idx) => ({
+          const clockRes = await readZkDevicePunches(cleanDeviceIp, p, 3500, commKey);
+          const clockList = Array.isArray(clockRes)
+            ? clockRes
+            : clockRes && Array.isArray(clockRes.punches)
+            ? clockRes.punches
+            : [];
+          if (clockList.length > 0) {
+            pulledPunches = clockList.map((item, idx) => ({
               id: item.id || `zk-direct-${cleanDeviceIp}-${Date.now()}-${idx}`,
               device_id: 'dev-01',
               device_sn: item.device_sn || cleanSerial,

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AsistenciaProcesada, AsistenciaEstado, RoleType } from '../../types';
+import { AsistenciaProcesada, AsistenciaEstado, RoleType, MarcacionRaw, Employee } from '../../types';
 import {
   Calendar,
   CheckCircle2,
@@ -19,6 +19,10 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
+  Fingerprint,
+  HardDrive,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { calculateShiftAndWorkedHours } from '../../utils/shiftCalculations';
 import { DataTablePagination } from '../common/DataTablePagination';
@@ -30,17 +34,23 @@ import { matchesSearch } from '../../utils/nameUtils';
 interface AttendanceModuleProps {
   activeView?: string;
   attendanceData: AsistenciaProcesada[];
+  rawPunches?: MarcacionRaw[];
+  employees?: Employee[];
   activeRole: RoleType;
   activeUserDni: string;
   onEditAttendanceRecord?: (record: AsistenciaProcesada) => void;
+  onNavigateToDevices?: () => void;
 }
 
 export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   activeView,
   attendanceData,
+  rawPunches = [],
+  employees = [],
   activeRole,
   activeUserDni,
   onEditAttendanceRecord,
+  onNavigateToDevices,
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -268,6 +278,304 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     activeRole === 'ADMIN_GENERAL' ||
     activeRole === 'JEFE_RRHH' ||
     activeRole === 'CONTROL_ASISTENCIA';
+
+  // RAW PUNCHES VIEW STATE
+  const [punchSearchTerm, setPunchSearchTerm] = useState('');
+  const [punchCurrentPage, setPunchCurrentPage] = useState(1);
+  const [punchPageSize, setPunchPageSize] = useState(20);
+  const [punchSortField, setPunchSortField] = useState<string | null>('timestamp');
+  const [punchSortOrder, setPunchSortOrder] = useState<SortOrder>('desc');
+
+  // Filter raw punches based on active role
+  const userRoleFilteredPunches = useMemo(() => {
+    if (!rawPunches) return [];
+    if (activeRole === 'EMPLOYEE' || activeRole === 'TRABAJADOR') {
+      return rawPunches.filter((p) => p.employee_dni === activeUserDni);
+    }
+    return rawPunches;
+  }, [rawPunches, activeRole, activeUserDni]);
+
+  const filteredRawPunches = useMemo(() => {
+    if (!punchSearchTerm.trim()) return userRoleFilteredPunches;
+    const term = punchSearchTerm.toLowerCase().trim();
+    return userRoleFilteredPunches.filter((p) => {
+      const dni = (p.employee_dni || '').toLowerCase();
+      const name = (p.employee_name || '').toLowerCase();
+      const dev = (p.device_name || p.device_sn || '').toLowerCase();
+      const time = (p.timestamp || '').toLowerCase();
+      return dni.includes(term) || name.includes(term) || dev.includes(term) || time.includes(term);
+    });
+  }, [userRoleFilteredPunches, punchSearchTerm]);
+
+  const sortedRawPunches = useMemo(() => {
+    if (!punchSortField || !punchSortOrder) return filteredRawPunches;
+    return [...filteredRawPunches].sort((a: any, b: any) => {
+      let valA = a[punchSortField] ?? '';
+      let valB = b[punchSortField] ?? '';
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+      if (valA < valB) return punchSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return punchSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredRawPunches, punchSortField, punchSortOrder]);
+
+  const paginatedRawPunches = useMemo(() => {
+    const start = (punchCurrentPage - 1) * punchPageSize;
+    return sortedRawPunches.slice(start, start + punchPageSize);
+  }, [sortedRawPunches, punchCurrentPage, punchPageSize]);
+
+  const handlePunchSort = (field: string) => {
+    if (punchSortField === field) {
+      if (punchSortOrder === 'asc') setPunchSortOrder('desc');
+      else if (punchSortOrder === 'desc') {
+        setPunchSortField(null);
+        setPunchSortOrder(null);
+      }
+    } else {
+      setPunchSortField(field);
+      setPunchSortOrder('asc');
+    }
+    setPunchCurrentPage(1);
+  };
+
+  const handleExportPunchesCSV = () => {
+    if (filteredRawPunches.length === 0) return;
+    const headers = ['DNI', 'Trabajador', 'Fecha y Hora', 'Dispositivo', 'Serial', 'Tipo', 'Metodo', 'Estado'];
+    const rows = filteredRawPunches.map((p) => [
+      p.employee_dni || '',
+      `"${p.employee_name || ''}"`,
+      p.timestamp,
+      `"${p.device_name || ''}"`,
+      p.device_sn || '',
+      p.punch_type || 'CHECK_IN',
+      typeof p.verify_mode === 'number' ? (p.verify_mode === 15 ? 'Rostro' : 'Huella') : (p.verify_mode || 'Biométrico'),
+      p.processed ? 'PROCESADA' : 'RECIBIDA',
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `marcaciones_reales_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // VISTA ESPECIALIZADA: MARCACIONES BIOMÉTRICAS REALES
+  if (activeView === 'attendance_punches') {
+    return (
+      <div className="space-y-4">
+        {/* Header Banner for Biometric Punches */}
+        <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-emerald-600/10 border border-emerald-500/20 rounded-lg text-emerald-400">
+                <Fingerprint className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>Marcaciones Reales del Reloj Biométrico</span>
+                  <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
+                    {filteredRawPunches.length} registros
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Marcaciones reales registradas por los terminales biométricos G3-id y base de datos institucional sin datos ficticios.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            {onNavigateToDevices && (
+              <button
+                type="button"
+                onClick={onNavigateToDevices}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                <span>Sincronizar / Cargar USB</span>
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={filteredRawPunches.length === 0}
+              onClick={handleExportPunchesCSV}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-bold text-xs rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Exportar CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Informative Banner on Real Hardware Transparency */}
+        <div className="bg-[#090A0D] border border-emerald-950/80 rounded-xl p-3.5 flex items-start gap-3 text-xs">
+          <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="font-bold text-emerald-300">
+              Política Institucional de Estricta Veracidad:
+            </div>
+            <p className="text-slate-400 leading-relaxed text-[11px]">
+              Esta vista refleja exclusivamente los pulsos biométricos reales generados por el reloj físico ZKTeco G3-id (<code className="text-emerald-400 font-mono">192.168.1.180:4370</code>), la base PostgreSQL BioTime (<code className="text-slate-200 font-mono">192.168.1.29:7496</code>) o la ingesta de archivos <code className="text-slate-200 font-mono">.dat/.txt</code> desde memoria USB. No se permiten datos sintéticos ni marcaciones simuladas.
+            </p>
+          </div>
+        </div>
+
+        {/* Search & Filter */}
+        <div className="bg-[#0F1115] border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-center gap-3">
+          <div className="relative flex-1 w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={punchSearchTerm}
+              onChange={(e) => {
+                setPunchSearchTerm(e.target.value);
+                setPunchCurrentPage(1);
+              }}
+              placeholder="Buscar por DNI, trabajador, marcador o fecha..."
+              className="w-full pl-9 pr-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+            />
+          </div>
+          {punchSearchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setPunchSearchTerm('');
+                setPunchCurrentPage(1);
+              }}
+              className="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded border border-slate-700 cursor-pointer"
+            >
+              Limpiar búsqueda
+            </button>
+          )}
+        </div>
+
+        {/* Table or Empty State */}
+        <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+          {filteredRawPunches.length === 0 ? (
+            <div className="p-8">
+              <EmptyState
+                icon={Fingerprint}
+                title="No se registran marcaciones del reloj biométrico"
+                description={
+                  punchSearchTerm
+                    ? 'No hay registros que coincidan con el término de búsqueda.'
+                    : 'Actualmente no existen marcaciones reales almacenadas en el sistema. Conecte y sincronice el reloj ZKTeco G3-id o cargue el archivo USB de marcaciones (.dat / .txt) para visualizar los registros.'
+                }
+                actionLabel={onNavigateToDevices ? 'Ir a Sincronización de Biométricos' : undefined}
+                onAction={onNavigateToDevices}
+              />
+            </div>
+          ) : (
+            <div className="w-full">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-[#090A0D] text-slate-400 font-medium border-b border-slate-800">
+                    <tr>
+                      <th className="w-8 px-2 py-3 text-center">#</th>
+                      <SortableHeader
+                        label="DNI / Código"
+                        field="employee_dni"
+                        currentSortField={punchSortField}
+                        currentSortOrder={punchSortOrder}
+                        onSort={handlePunchSort}
+                        className="w-32"
+                      />
+                      <SortableHeader
+                        label="Servidor Público"
+                        field="employee_name"
+                        currentSortField={punchSortField}
+                        currentSortOrder={punchSortOrder}
+                        onSort={handlePunchSort}
+                      />
+                      <SortableHeader
+                        label="Fecha y Hora de Marcación"
+                        field="timestamp"
+                        currentSortField={punchSortField}
+                        currentSortOrder={punchSortOrder}
+                        onSort={handlePunchSort}
+                        className="w-48 font-mono"
+                      />
+                      <th className="px-3 py-3">Dispositivo / Serial</th>
+                      <th className="px-3 py-3 text-center w-28">Método</th>
+                      <th className="px-3 py-3 text-center w-32">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                    {paginatedRawPunches.map((punch, idx) => {
+                      const emp = employees.find((e) => e.dni === punch.employee_dni);
+                      const empName = emp ? `${emp.first_name} ${emp.last_name}` : punch.employee_name || 'Servidor DRAC';
+                      const vm = punch.verify_mode;
+                      const verifyLabel =
+                        vm === 1 || vm === '1' || vm === 'FINGERPRINT'
+                          ? 'Huella Digital'
+                          : vm === 15 || vm === '15' || vm === 'FACE'
+                          ? 'Rostro Facial'
+                          : vm === 2 || vm === 'CARD' || vm === 'RFID'
+                          ? 'Tarjeta RFID'
+                          : vm === 0 || vm === 'PASSWORD'
+                          ? 'Contraseña'
+                          : 'Biométrico';
+
+                      return (
+                        <tr key={punch.id || idx} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="px-2 py-2.5 text-center text-slate-500 font-mono text-[11px]">
+                            {(punchCurrentPage - 1) * punchPageSize + idx + 1}
+                          </td>
+                          <td className="px-3 py-2.5 font-mono font-bold text-white">
+                            {punch.employee_dni || '—'}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-semibold text-slate-200">{empName}</div>
+                            <div className="text-[10px] text-slate-400">{emp?.cargo_name || emp?.area_name || 'Personal DRAC'}</div>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono font-bold text-emerald-400 text-xs">
+                            {punch.timestamp}
+                          </td>
+                          <td className="px-3 py-2.5 text-slate-300">
+                            <div className="font-medium text-white">{punch.device_name || punch.device_sn || 'ZKTeco G3-id'}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">{punch.device_sn || 'AEH2223460040'}</div>
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span className="px-2 py-0.5 text-[10px] rounded bg-slate-800 text-slate-300 font-mono border border-slate-700">
+                              {verifyLabel}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center font-mono">
+                            {punch.processed ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 inline-flex items-center gap-1">
+                                <Check className="w-3 h-3" />
+                                <span>PROCESADA</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-sky-950/80 text-sky-400 border border-sky-800/60 inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>RECIBIDA</span>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <DataTablePagination
+                currentPage={punchCurrentPage}
+                pageSize={punchPageSize}
+                totalItems={filteredRawPunches.length}
+                onPageChange={setPunchCurrentPage}
+                onPageSizeChange={setPunchPageSize}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

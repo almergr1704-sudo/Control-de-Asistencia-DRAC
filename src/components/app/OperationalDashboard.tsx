@@ -75,13 +75,26 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
   punchAuthorizations = [],
   onNavigate,
 }) => {
-  // Target operational date
-  const todayStr = '2026-08-21';
+  // Target operational date (dynamic local date)
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
 
   // Period state
   const [periodPreset, setPeriodPreset] = useState<'current_month' | 'prev_month' | 'custom'>('current_month');
-  const [startDate, setStartDate] = useState<string>('2026-08-01');
-  const [endDate, setEndDate] = useState<string>('2026-08-31');
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [endDate, setEndDate] = useState<string>(() => {
+    const d = new Date();
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
 
   // Boss view mode tabs: 'team' (Mi personal a cargo) vs 'me' (Mi asistencia personal)
   const [bossViewTab, setBossViewTab] = useState<'team' | 'me'>('team');
@@ -132,12 +145,20 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
   // Handle Preset changes
   const handlePresetChange = (preset: 'current_month' | 'prev_month' | 'custom') => {
     setPeriodPreset(preset);
+    const d = new Date();
     if (preset === 'current_month') {
-      setStartDate('2026-08-01');
-      setEndDate('2026-08-31');
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
+      setStartDate(`${y}-${m}-01`);
+      setEndDate(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
     } else if (preset === 'prev_month') {
-      setStartDate('2026-07-01');
-      setEndDate('2026-07-31');
+      const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+      const y = prev.getFullYear();
+      const m = String(prev.getMonth() + 1).padStart(2, '0');
+      const lastDay = new Date(y, prev.getMonth() + 1, 0).getDate();
+      setStartDate(`${y}-${m}-01`);
+      setEndDate(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
     }
   };
 

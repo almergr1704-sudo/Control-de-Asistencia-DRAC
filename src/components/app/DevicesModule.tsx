@@ -56,6 +56,7 @@ import {
   Key,
   Wrench,
   Database,
+  Upload,
 } from 'lucide-react';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
@@ -628,6 +629,88 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     details?: string;
   } | null>(null);
 
+  // Modal State: USB / Attlog.dat Import
+  const [showUsbImportModal, setShowUsbImportModal] = useState(false);
+  const [usbRawText, setUsbRawText] = useState('');
+  const [usbDeviceSn, setUsbDeviceSn] = useState(devices[0]?.serial_number || 'AEH2223460040');
+  const [isImportingUsb, setIsImportingUsb] = useState(false);
+  const [usbImportSummary, setUsbImportSummary] = useState<string | null>(null);
+
+  const handleProcessUsbPunches = async () => {
+    if (!usbRawText.trim()) {
+      setUsbImportSummary('Por favor seleccione un archivo o pegue el contenido de marcaciones.');
+      return;
+    }
+    setIsImportingUsb(true);
+    setUsbImportSummary(null);
+    try {
+      const lines = usbRawText.split(/\r?\n/);
+      const parsed: MarcacionRaw[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/[\t,;]|\s{2,}/);
+        if (parts.length >= 2) {
+          const pin = parts[0].trim();
+          let time = parts[1].trim();
+          if (parts.length >= 3 && parts[1].match(/^\d{4}-\d{2}-\d{2}$/) && parts[2].match(/^\d{2}:\d{2}/)) {
+            time = `${parts[1]} ${parts[2]}`;
+          }
+          if (pin && time && time.includes(':')) {
+            const state = Number(parts[2] || parts[3] || 0) === 1 ? 1 : 0;
+            const verify = Number(parts[3] || parts[4] || 1);
+            const matchedEmp = employees.find((e) => e.dni === pin || e.zkteco_pin === pin);
+            const dev = devices.find((d) => d.serial_number === usbDeviceSn) || devices[0];
+
+            parsed.push({
+              id: `usb-${pin}-${time.replace(/[^0-9]/g, '')}-${i}`,
+              device_id: dev?.id || 'dev-01',
+              device_sn: usbDeviceSn || 'AEH2223460040',
+              device_name: dev?.name || 'ZKTeco G3-id (Importación USB)',
+              device_dependencia_tipo: dev?.dependencia_tipo || 'SEDE_CENTRAL',
+              device_dependencia_name: dev?.dependencia_name || 'SEDE CENTRAL',
+              employee_dni: pin,
+              employee_code: pin,
+              employee_name: matchedEmp ? `${matchedEmp.first_name} ${matchedEmp.last_name}` : `Trabajador DNI ${pin}`,
+              timestamp: time.length === 16 ? `${time}:00` : time.substring(0, 19),
+              punch_type: state === 1 ? 'CHECK_OUT' : 'CHECK_IN',
+              punch_state: state,
+              verify_mode: verify === 15 ? 'FACE' : verify === 2 ? 'PASSWORD' : 'FINGERPRINT',
+              processed: false,
+              raw_payload: line,
+              validation_status: matchedEmp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+              source: 'USB_EXPORT',
+              serialNumber: usbDeviceSn || 'AEH2223460040',
+            });
+          }
+        }
+      }
+
+      if (parsed.length === 0) {
+        setUsbImportSummary('No se encontraron líneas válidas con formato PIN y Fecha/Hora.');
+        return;
+      }
+
+      await fetch('/api/zkteco/import-punches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-role': activeRole },
+        body: JSON.stringify({ punches: parsed }),
+      });
+
+      if (onRefreshPunches) {
+        await onRefreshPunches(parsed);
+      }
+      setShowUsbImportModal(false);
+      setUsbRawText('');
+      setSuccessToast(`Archivo procesado con éxito: ${parsed.length} marcaciones reales importadas al sistema.`);
+    } catch (err: any) {
+      setUsbImportSummary(`Error: ${err?.message || 'Fallo al procesar archivo'}`);
+    } finally {
+      setIsImportingUsb(false);
+    }
+  };
+
   // Modal State: New Punch Authorization
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authEmpDni, setAuthEmpDni] = useState('');
@@ -734,21 +817,100 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const handleSingleDeviceSync = async (dev: DispositivoZkTeco) => {
     setIsSyncingSingleDevice(dev.id);
     try {
-      const res = await fetch(`/api/devices/${dev.id}/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-role': activeRole,
-        },
-      });
-      const data = await res.json().catch(() => null);
-      if (onRefreshPunches) {
-        await onRefreshPunches();
+      const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+      let importedCount = 0;
+      let fetchedPunches: MarcacionRaw[] = [];
+
+      // 1. Si estamos en la app de escritorio, leer directamente del reloj mediante socket TCP
+      if (electronAPI && typeof electronAPI.readZkDevicePunches === 'function' && dev.ip_address) {
+        try {
+          const zkRes = await electronAPI.readZkDevicePunches(
+            dev.ip_address,
+            dev.port || 4370,
+            4500,
+            (dev as any).comm_key || 0
+          );
+          const rawList = Array.isArray(zkRes)
+            ? zkRes
+            : zkRes && Array.isArray(zkRes.punches)
+            ? zkRes.punches
+            : [];
+
+          if (rawList.length > 0) {
+            // Dar formato institucional a las marcaciones leídas del hardware
+            const mappedPunches: MarcacionRaw[] = rawList.map((item: any, idx: number) => {
+              const dni = String(item.employee_dni || item.deviceUserId || item.pin || 'UNKNOWN').trim();
+              const matchedEmp = employees.find((e) => e.dni === dni || e.zkteco_pin === dni);
+              return {
+                id: item.punch_id || `zk-hw-${dev.id}-${Date.now()}-${idx}`,
+                device_id: dev.id,
+                device_sn: dev.serial_number || item.device_sn || 'AEH2223460040',
+                device_name: dev.name || 'ZKTeco G3-id',
+                device_dependencia_tipo: dev.dependencia_tipo || 'SEDE_CENTRAL',
+                device_dependencia_name: dev.dependencia_name || 'SEDE CENTRAL',
+                employee_dni: dni,
+                employee_code: dni,
+                employee_name: matchedEmp
+                  ? `${matchedEmp.first_name} ${matchedEmp.last_name}`
+                  : item.employee_name || `Trabajador DNI ${dni}`,
+                timestamp: item.timestamp,
+                punch_type: item.punch_type || 'CHECK_IN',
+                punch_state: item.punch_state || 0,
+                verify_mode: item.verify_mode || 'FINGERPRINT',
+                processed: false,
+                raw_payload: `PIN=${dni}\tTIME=${item.timestamp}\tSN=${dev.serial_number}`,
+                validation_status: matchedEmp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+                source: 'TCP_DIRECT',
+                serialNumber: dev.serial_number,
+              };
+            });
+
+            // Enviar marcaciones al backend para persistir
+            const importRes = await fetch('/api/zkteco/import-punches', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-user-role': activeRole },
+              body: JSON.stringify({ punches: mappedPunches }),
+            });
+            const importData = await importRes.json().catch(() => null);
+            importedCount = importData?.imported_count || mappedPunches.length;
+            fetchedPunches = mappedPunches;
+          }
+        } catch (zkErr: any) {
+          console.warn('[handleSingleDeviceSync] Error en lectura directa de hardware:', zkErr.message);
+        }
       }
-      if (data && data.message) {
-        setSuccessToast(data.message);
+
+      // 2. Si no se descargó por socket directo, ejecutar sincronización estándar del servidor
+      if (fetchedPunches.length === 0) {
+        const res = await fetch(`/api/devices/${dev.id}/sync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-role': activeRole,
+          },
+        });
+        const data = await res.json().catch(() => null);
+        if (data && data.punches && Array.isArray(data.punches) && data.punches.length > 0) {
+          fetchedPunches = data.punches;
+        }
+      }
+
+      // 3. Notificar y actualizar la interfaz en tiempo real
+      if (onRefreshPunches) {
+        if (fetchedPunches.length > 0) {
+          await onRefreshPunches(fetchedPunches);
+        } else {
+          await onRefreshPunches();
+        }
+      }
+      if (onRefreshDevices) {
+        await onRefreshDevices();
+      }
+
+      if (fetchedPunches.length > 0) {
+        setSuccessToast(`Sincronización exitosa con ${dev.name}: ${fetchedPunches.length} marcaciones reales procesadas.`);
       } else {
-        setSuccessToast(`Conexión exitosa con ${dev.name}. Marcaciones verificadas.`);
+        setSuccessToast(`Conexión establecida con ${dev.name}. No se encontraron nuevas marcaciones registradas.`);
       }
     } catch (err: any) {
       setSuccessToast(`Error al sincronizar ${dev.name}: ${err?.message || 'Error de red'}`);
@@ -3042,16 +3204,50 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleSyncBioTime}
                 disabled={isSyncingBioTime}
                 className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
-                title="Conectar a BioTime (192.168.1.29:89 / PostgreSQL 7496) y traer marcaciones"
+                title="Conectar a BioTime Console (192.168.1.29:89 / PostgreSQL 7496) y traer marcaciones reales"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncingBioTime ? 'animate-spin' : ''}`} />
                 <span>{isSyncingBioTime ? 'Sincronizando BioTime...' : 'Sincronizar BioTime'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const dev = devices.find((d) => d.ip_address) || devices[0];
+                  if (dev) handleSingleDeviceSync(dev);
+                }}
+                disabled={isSyncingSingleDevice !== null}
+                className="px-3.5 py-1.5 bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+                title="Leer marcaciones directamente de la memoria física del reloj biométrico (192.168.1.180:4370)"
+              >
+                <Cpu className="w-3.5 h-3.5 text-sky-200" />
+                <span>{isSyncingSingleDevice !== null ? 'Leyendo Reloj...' : 'Leer Reloj Directo'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowUsbImportModal(true)}
+                className="px-3.5 py-1.5 bg-amber-700 hover:bg-amber-600 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+                title="Importar archivo attlog.dat / txt / csv extraído por USB del reloj"
+              >
+                <Upload className="w-3.5 h-3.5 text-amber-200" />
+                <span>Cargar Archivo USB</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPunchModal(true)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 font-sans cursor-pointer"
+                title="Registrar marcación manual de asistencia"
+              >
+                <Plus className="w-3.5 h-3.5 text-slate-300" />
+                <span>Marcación Manual</span>
               </button>
 
               <button
@@ -3062,7 +3258,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 title="Consultar y actualizar marcaciones desde el backend central"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPunches ? 'animate-spin' : ''}`} />
-                <span>{isRefreshingPunches ? 'Consultando Backend...' : `Actualizar (${rawPunches?.length || 0})`}</span>
+                <span>{isRefreshingPunches ? 'Consultando...' : `Actualizar (${rawPunches?.length || 0})`}</span>
               </button>
             </div>
           </div>
@@ -5021,6 +5217,125 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   Cerrar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: IMPORTAR MARCACIONES REALES DESDE USB / ATTLOG.DAT */}
+      {/* ========================================================= */}
+      {showUsbImportModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl max-w-xl w-full p-6 shadow-2xl space-y-4 text-xs font-sans">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <Upload className="w-4 h-4 text-amber-400" />
+                Importar Marcaciones Reales (USB / attlog.dat / CSV)
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUsbImportModal(false);
+                  setUsbRawText('');
+                  setUsbImportSummary(null);
+                }}
+                className="text-slate-500 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-slate-300 text-xs leading-relaxed">
+              Cargue el archivo de asistencia extraído directamente del reloj ZKTeco en una memoria USB (por ejemplo <code className="text-amber-300 font-mono">1_attlog.dat</code>, <code className="text-amber-300 font-mono">attlog.txt</code> o archivo CSV exportado).
+            </p>
+
+            {/* Select Device */}
+            <div className="space-y-1">
+              <label className="text-slate-400 font-medium">Marcador ZKTeco de Origen</label>
+              <select
+                value={usbDeviceSn}
+                onChange={(e) => setUsbDeviceSn(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500 font-sans"
+              >
+                {devices.map((d) => (
+                  <option key={d.id} value={d.serial_number}>
+                    {d.name} ({d.serial_number} - {d.dependencia_name || 'SEDE CENTRAL'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* File input */}
+            <div className="space-y-1">
+              <label className="text-slate-400 font-medium">Seleccionar Archivo de Memoria USB</label>
+              <input
+                type="file"
+                accept=".dat,.txt,.csv,.log"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                      const text = String(event.target?.result || '');
+                      setUsbRawText(text);
+                      setUsbImportSummary(`Archivo "${file.name}" cargado (${file.size} bytes). Listo para importar.`);
+                    };
+                    reader.readAsText(file);
+                  }
+                }}
+                className="w-full text-slate-300 text-xs file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-600/20 file:text-amber-300 hover:file:bg-amber-600/30 file:cursor-pointer cursor-pointer border border-slate-800 rounded-lg p-1.5 bg-slate-900"
+              />
+            </div>
+
+            {/* Preview textarea */}
+            <div className="space-y-1">
+              <label className="text-slate-400 font-medium">Contenido / Vista Previa de Marcaciones</label>
+              <textarea
+                rows={5}
+                value={usbRawText}
+                onChange={(e) => setUsbRawText(e.target.value)}
+                placeholder={"10000007\t2026-10-22 08:04:12\t0\t15\n10000001\t2026-10-22 08:08:35\t0\t1"}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 font-mono text-[11px] text-slate-300 focus:outline-none focus:border-amber-500 placeholder:text-slate-600"
+              />
+            </div>
+
+            {usbImportSummary && (
+              <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs">
+                {usbImportSummary}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUsbImportModal(false);
+                  setUsbRawText('');
+                  setUsbImportSummary(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleProcessUsbPunches}
+                disabled={isImportingUsb || !usbRawText.trim()}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+              >
+                {isImportingUsb ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Importando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Procesar e Importar Marcaciones Reales</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -498,9 +498,20 @@ export default function App() {
     loadCentralData();
   }, [loadCentralData]);
 
-  const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() =>
-    loadStored('rawPunches', INITIAL_RAW_PUNCHES)
-  );
+  const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(() => {
+    const stored = loadStored<MarcacionRaw[]>('rawPunches', INITIAL_RAW_PUNCHES);
+    if (!Array.isArray(stored)) return [];
+    const realOnly = stored.filter(
+      (p) => !p.id?.startsWith('raw-1787835277804') && !p.raw_payload?.includes('SN=ZK-G3-001')
+    );
+    if (realOnly.length !== stored.length) {
+      try {
+        localStorage.setItem('drac_data_rawPunches', JSON.stringify(realOnly));
+        localStorage.setItem('drac_rawPunches', JSON.stringify(realOnly));
+      } catch (_) {}
+    }
+    return realOnly;
+  });
 
   // Sync RAW punches and calculated attendance from Supabase / server / direct sync
   const syncPunchesFromServer = useCallback(async (incomingPunches?: MarcacionRaw[]) => {
@@ -656,9 +667,17 @@ export default function App() {
   const [vacaciones, setVacaciones] = useState<Vacacion[]>(() =>
     loadStored('vacaciones', INITIAL_VACACIONES)
   );
-  const [attendance, setAttendance] = useState<AsistenciaProcesada[]>(() =>
-    loadStored('attendance', INITIAL_ATTENDANCE)
-  );
+  const [attendance, setAttendance] = useState<AsistenciaProcesada[]>(() => {
+    const stored = loadStored<AsistenciaProcesada[]>('attendance', INITIAL_ATTENDANCE);
+    if (!Array.isArray(stored)) return [];
+    const realOnly = stored.filter((a) => !a.id?.startsWith('att-fake') && a.fecha !== '2026-08-27');
+    if (realOnly.length !== stored.length) {
+      try {
+        localStorage.setItem('drac_data_attendance', JSON.stringify(realOnly));
+      } catch (_) {}
+    }
+    return realOnly;
+  });
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() =>
     loadStored('auditLogs', INITIAL_AUDIT_LOGS)
   );
@@ -1916,9 +1935,12 @@ export default function App() {
                 <AttendanceModule
                   activeView={activeView}
                   attendanceData={attendance}
+                  rawPunches={rawPunches}
+                  employees={employees}
                   activeRole={activeRole}
                   activeUserDni={activeUserDni}
                   onEditAttendanceRecord={handleEditAttendanceRecord}
+                  onNavigateToDevices={() => handleNavigate('devices_punches')}
                 />
               )}
 
