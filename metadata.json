@@ -1,6 +1,7 @@
 {
-  "name": "Sistema de Control de Asistencia y Marcaciones DRAC - ZKTeco",
-  "description": "Plataforma institucional de control de asistencia, sincronización biométrica ZKTeco en tiempo real, gestión de turnos y régimen disciplinario de la Dirección Regional de Agricultura.",
-  "permissions": [],
-  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "DRAC Control de Asistencia",
+  "description": "Sistema Institucional de Control de Asistencia, Biométricos ZKTeco, Papeletas de Salida y Vacaciones - Dirección Regional de Agricultura Cajamarca",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
