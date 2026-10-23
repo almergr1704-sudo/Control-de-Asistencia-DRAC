@@ -1,44 +1,32 @@
 {
-  "name": "drac-control-asistencia",
+  "name": "drac-zkteco-asistencia",
   "private": true,
   "version": "1.0.0",
-  "description": "Sistema Institucional de Control de Asistencia - DRAC Cajamarca",
-  "author": "Dirección Regional de Agricultura Cajamarca",
-  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.cjs --external:vite --external:@vitejs/plugin-react --external:@tailwindcss/vite --external:fsevents",
-    "build:web": "vite build",
-    "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.cjs --external:vite --external:@vitejs/plugin-react --external:@tailwindcss/vite --external:fsevents",
-    "build:desktop": "npm run build && node scripts/prepare-build.cjs && electron-builder --win nsis portable zip",
-    "lint": "vite build --mode development",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
     "start": "tsx server.ts"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
-    "@supabase/supabase-js": "^2.112.4",
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
-    "dotenv": "^17.2.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^1.16.0",
     "express": "^4.21.2",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "pg": "^8.23.1",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "tsx": "^4.19.2",
-    "vite": "^6.2.3",
-    "xlsx": "^0.18.5"
+    "cors": "^2.8.5"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/node": "^22.14.0",
-    "@types/pg": "^8.23.1",
-    "cross-env": "^10.1.0",
-    "electron": "^44.1.1",
-    "electron-builder": "^26.15.3",
-    "esbuild": "^0.25.0",
-    "typescript": "~5.8.2"
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
   }
 }
