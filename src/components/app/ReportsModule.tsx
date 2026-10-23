@@ -44,8 +44,15 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     'ATTENDANCE' | 'TARDINESS' | 'ABSENCES' | 'OVERTIME' | 'VACATIONS' | 'PAPELETAS' | 'EXITS'
   >(reportType || 'ATTENDANCE');
 
-  const [dateStart, setDateStart] = useState('2026-08-01');
-  const [dateEnd, setDateEnd] = useState('2026-08-31');
+  const [dateStart, setDateStart] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [dateEnd, setDateEnd] = useState(() => {
+    const d = new Date();
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  });
 
   const reportTitles: Record<typeof activeReport, string> = {
     ATTENDANCE: 'Reporte Consolidado de Asistencia General',

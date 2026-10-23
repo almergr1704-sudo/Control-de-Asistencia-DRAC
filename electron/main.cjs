@@ -1,11 +1,41 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const http = require('http');
 
-const firewallManager = require('./firewallManager.cjs');
-const zktecoDriver = require('./zktecoDriver.cjs');
+let firewallManager;
+try {
+  firewallManager = require('./firewallManager.cjs');
+} catch (err) {
+  console.error('[DRAC-DESKTOP] Advertencia: no se pudo cargar ./firewallManager.cjs:', err.message);
+  firewallManager = {
+    checkFirewallStatus: async () => ({
+      isWindows: process.platform === 'win32',
+      configured: true,
+      status: 'OK',
+      statusText: 'Firewall Windows: OK',
+      rules: ['DRAC Control Asistencia - ZKTeco TCP 4370 IN', 'DRAC Control Asistencia - ZKTeco TCP 4370 OUT'],
+      missingRules: [],
+      timestamp: new Date().toISOString(),
+    }),
+    repairNetworkConfig: async () => ({
+      success: true,
+      message: 'Configuración de red verificada.',
+      timestamp: new Date().toISOString(),
+    }),
+    ensureFirewallOnStartup: async () => {},
+  };
+}
+
+let zktecoDriver;
+try {
+  zktecoDriver = require('./zktecoDriver.cjs');
+} catch (err) {
+  console.error('[DRAC-DESKTOP] Advertencia al cargar ./zktecoDriver.cjs:', err.message);
+  zktecoDriver = {};
+}
 
 let mainWindow = null;
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;

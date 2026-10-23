@@ -4,6 +4,7 @@
   "productName": "DRAC Control de Asistencia",
   "executableName": "DRAC-Control-de-Asistencia",
   "copyright": "Copyright © 2026 Dirección Regional de Agricultura Cajamarca",
+  "electronVersion": "33.2.1",
   "directories": {
     "output": "dist-desktop",
     "buildResources": "build"

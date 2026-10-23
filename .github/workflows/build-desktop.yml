@@ -39,11 +39,11 @@ jobs:
       - name: 3. Instalar dependencias del proyecto (incluyendo opcionales nativas)
         run: npm ci --include=optional || npm install --include=optional
 
-      - name: 4. Comprobación obligatoria de módulos nativos para Windows
+      - name: 4. Comprobación obligatoria de módulos nativos para Windows y Electron
         shell: pwsh
         run: |
-          Write-Host "=== Asegurando modulos nativos para Windows x64 ==="
-          npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4 @esbuild/win32-x64@0.25.12 lightningcss-win32-x64-msvc@1.32.0 @tailwindcss/oxide-win32-x64-msvc@4.3.3
+          Write-Host "=== Asegurando modulos nativos para Windows x64 y Electron ==="
+          npm install --no-save --include=optional @rollup/rollup-win32-x64-msvc@4.62.4 @esbuild/win32-x64@0.25.12 lightningcss-win32-x64-msvc@1.32.0 @tailwindcss/oxide-win32-x64-msvc@4.3.3 electron@33.2.1
           
           Write-Host "Verificando modulo nativo @rollup/rollup-win32-x64-msvc..."
           node -e "require('@rollup/rollup-win32-x64-msvc'); console.log('Rollup Windows native module OK')"
@@ -66,6 +66,9 @@ jobs:
             exit 1
           }
 
+          Write-Host "Verificando disponibilidad de Electron..."
+          node -e "console.log('Electron version instalada:', require('electron/package.json').version)"
+
       - name: 5. Preparar recursos e icono institucional
         run: node scripts/prepare-build.cjs
 
@@ -76,7 +79,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I' }}
 
       - name: 7. Compilar y empaquetar versión Desktop con Electron Builder (NSIS, Portable, ZIP)
-        run: npx electron-builder --win nsis portable zip
+        run: npx electron-builder --win --config electron-builder.json --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
