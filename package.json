@@ -2,19 +2,25 @@
   "name": "drac-zkteco-asistencia",
   "private": true,
   "version": "1.0.0",
+  "description": "Sistema de Control de Asistencia Institucional y Marcaciones Biométricas ZKTeco - DRAC",
+  "author": "Dirección Regional de Agricultura <soporte@drac.gob.pe>",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "build:electron": "vite build && electron-builder --win nsis portable zip",
     "lint": "tsc --noEmit",
     "start": "tsx server.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "lucide-react": "^1.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^1.16.0",
-    "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
@@ -24,6 +30,8 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^26.0.1",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
