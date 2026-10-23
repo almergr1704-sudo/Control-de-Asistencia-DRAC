@@ -32,12 +32,15 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      webSecurity: true,
+      webSecurity: false,
     },
     show: false,
     backgroundColor: '#07080A',
     autoHideMenuBar: true,
   });
+
+  const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+  const devUrl = process.env.ELECTRON_START_URL || `http://localhost:${DESKTOP_PORT}`;
 
   // Mostrar cuando esté listo para evitar flash blanco
   mainWindow.once('ready-to-show', () => {
@@ -45,30 +48,49 @@ async function createWindow() {
     log('Ventana principal cargada y visible.');
   });
 
-  // Cargar frontend
-  if (isDev) {
-    const devUrl = `http://localhost:${DESKTOP_PORT}`;
-    log(`Modo Desarrollo: cargando ${devUrl}`);
-    mainWindow.loadURL(devUrl).catch((err) => {
-      log(`Error cargando URL dev: ${err.message}. Reintentando en 2s...`);
-      setTimeout(() => mainWindow && mainWindow.loadURL(devUrl), 2000);
+  // Temporizador de seguridad para garantizar visibilidad si ready-to-show no dispara
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      log('Mostrando ventana por timeout de seguridad.');
+      mainWindow.show();
+    }
+  }, 2500);
+
+  // Atajos para inspección (F12 / Ctrl+Shift+I) y recarga (F5)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+    if (input.key === 'F5' || (input.control && input.key.toLowerCase() === 'r')) {
+      mainWindow.reload();
+      event.preventDefault();
+    }
+  });
+
+  // Manejo de errores de carga
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    log(`[ERROR CARGA] (${errorCode}) ${errorDescription} en: ${validatedURL}`);
+    if (fs.existsSync(indexPath) && !validatedURL.endsWith('index.html')) {
+      log(`Intentando recuperación con archivo local compilado: ${indexPath}`);
+      mainWindow.loadFile(indexPath);
+    }
+  });
+
+  // Cargar frontend: si existe dist/index.html (empaquetado o post-build), cargarlo directamente
+  if (app.isPackaged || fs.existsSync(indexPath)) {
+    log(`Cargando frontend empaquetado desde ${indexPath}...`);
+    mainWindow.loadFile(indexPath).catch((err) => {
+      log(`Aviso al cargar loadFile: ${err.message}. Intentando fallback URL ${devUrl}`);
+      mainWindow.loadURL(devUrl).catch((devErr) => {
+        log(`Error al cargar URL dev de contingencia: ${devErr.message}`);
+      });
     });
   } else {
-    // En producción empaquetada:
-    // 1. Iniciamos el backend local si existe
-    try {
-      const serverPath = path.join(__dirname, '..', 'dist', 'server.cjs');
-      log(`Iniciando backend integrado en ${serverPath}...`);
-      require(serverPath);
-    } catch (err) {
-      log(`Aviso al iniciar backend integrado: ${err.message}`);
-    }
-
-    // 2. Cargamos el archivo HTML
-    const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
-    mainWindow.loadFile(indexPath).catch((err) => {
-      log(`Fallback cargando archivo estático: ${err.message}`);
-      mainWindow.loadURL(`http://localhost:${DESKTOP_PORT}`);
+    log(`Modo Desarrollo activo: cargando URL dev ${devUrl}`);
+    mainWindow.loadURL(devUrl).catch((err) => {
+      log(`Error cargando URL dev: ${err.message}. Reintentando en 2s...`);
+      setTimeout(() => mainWindow && !mainWindow.isDestroyed() && mainWindow.loadURL(devUrl), 2000);
     });
   }
 

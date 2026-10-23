@@ -1,14 +1,19 @@
 import { MarcacionRaw, AttendanceRecord } from '../types';
+import { getApiUrl } from '../utils/apiConfig';
 
 export const attendanceService = {
   /**
-   * Obtiene las marcaciones crudas reales desde el backend DRAC.
+   * Obtiene las marcaciones crudas reales desde el backend DRAC o IPC nativo.
    * Si la base de datos no contiene marcaciones físicas, retorna un array vacío.
    * NUNCA retorna marcaciones simuladas ni datos sintéticos.
    */
   async getRawPunches(): Promise<MarcacionRaw[]> {
     try {
-      const res = await fetch('/api/attendance/punches');
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.getRawPunches) {
+        const desktopPunches = await (window as any).electronAPI.getRawPunches();
+        if (Array.isArray(desktopPunches)) return desktopPunches;
+      }
+      const res = await fetch(getApiUrl('/api/attendance/punches'));
       if (!res.ok) {
         throw new Error(`HTTP error ${res.status}`);
       }
@@ -28,7 +33,7 @@ export const attendanceService = {
    */
   async getAttendanceRecords(): Promise<AttendanceRecord[]> {
     try {
-      const res = await fetch('/api/attendance');
+      const res = await fetch(getApiUrl('/api/attendance'));
       if (!res.ok) {
         throw new Error(`HTTP error ${res.status}`);
       }
@@ -47,7 +52,7 @@ export const attendanceService = {
    */
   async syncDevice(deviceId: string): Promise<{ success: boolean; newPunches: number; message: string }> {
     try {
-      const res = await fetch(`/api/zkteco/devices/${deviceId}/sync`, {
+      const res = await fetch(getApiUrl(`/api/zkteco/devices/${deviceId}/sync`), {
         method: 'POST',
       });
       const data = await res.json();

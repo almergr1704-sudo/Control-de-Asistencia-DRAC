@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { DispositivoZkTeco, MarcacionRaw, Employee } from '../../types';
+import { getApiUrl } from '../../utils/apiConfig';
 import {
   Server,
   Activity,
@@ -62,7 +63,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setIsSyncing(true);
     setSyncStatusMsg(null);
     try {
-      const res = await fetch(`/api/zkteco/devices/${dev.id}/sync`, { method: 'POST' });
+      const res = await fetch(getApiUrl(`/api/zkteco/devices/${dev.id}/sync`), { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         setSyncStatusMsg(`✓ Sincronización finalizada: ${data.imported_count || 0} marcaciones nuevas descargadas.`);
