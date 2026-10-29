@@ -422,12 +422,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
     return vacaciones.filter((v) => {
       if (v.status !== 'SOLICITADA') return false;
       // Admins and HR leadership can see all
-      if (
-        isEditorRole ||
-        activeRole === 'ADMIN_GENERAL' ||
-        activeRole === 'HR_ADMIN' ||
-        activeRole === 'JEFE_RRHH'
-      ) {
+      if (isEditorRole) {
         return true;
       }
       // For immediate boss or encargado, filter to requests within authority/scope

@@ -1,10 +1,11 @@
 /**
- * Utility to resolve API URLs correctly across Web browser and Electron file:// protocol.
+ * DRAC Cajamarca - API Configuration Helper
+ * Resuelve rutas de API de forma segura para comunicación cliente-servidor e IPC.
  */
-export const getApiUrl = (endpoint: string): string => {
-  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-    return `http://localhost:3000${path}`;
+
+export function getApiUrl(path: string): string {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
   }
-  return path;
-};
+  return path.startsWith('/') ? path : `/${path}`;
+}

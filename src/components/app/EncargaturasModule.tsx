@@ -741,7 +741,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => generateTemplateEncargaturas(employees, direccionesOrganos, areas)}
+                onClick={() => generateTemplateEncargaturas(direccionesOrganos, areas, employees)}
                 className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 title="Descargar Plantilla Oficial Excel para Encargaturas"
               >

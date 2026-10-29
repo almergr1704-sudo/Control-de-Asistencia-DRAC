@@ -70,7 +70,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
-                DRAC CUSCO — PANEL OPERATIVO
+                DRAC CAJAMARCA — PANEL OPERATIVO
               </span>
               <span className="text-xs text-slate-400 font-mono">
                 {new Date().toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}

@@ -13,17 +13,23 @@ export interface DataPolicyConfirmConfig {
   onCancel: () => void;
 }
 
-export const DataPolicyConfirmModal: React.FC<DataPolicyConfirmConfig> = ({
-  isOpen,
-  title,
-  message,
-  actionType,
-  entityName,
-  requireReason = false,
-  confirmText,
-  onConfirm,
-  onCancel,
-}) => {
+export interface DataPolicyConfirmModalProps extends Partial<DataPolicyConfirmConfig> {
+  config?: DataPolicyConfirmConfig;
+}
+
+export const DataPolicyConfirmModal: React.FC<DataPolicyConfirmModalProps> = (props) => {
+  const actualProps = props.config ? props.config : (props as DataPolicyConfirmConfig);
+  const {
+    isOpen,
+    title,
+    message,
+    actionType,
+    entityName,
+    requireReason = false,
+    confirmText,
+    onConfirm,
+    onCancel,
+  } = actualProps;
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 

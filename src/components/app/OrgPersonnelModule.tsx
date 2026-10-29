@@ -1015,7 +1015,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // FORM STATES: Area / Oficina
   const [areaCode, setAreaCode] = useState('');
   const [areaName, setAreaName] = useState('');
-  const [areaTipo, setAreaTipo] = useState<'AREA' | 'OFICINA'>('AREA');
+  const [areaTipo, setAreaTipo] = useState<'AREA' | 'OFICINA' | 'UNIDAD_FUNCIONAL' | 'SUB_AREA'>('AREA');
   const [areaDesc, setAreaDesc] = useState('');
   const [areaDepId, setAreaDepId] = useState('');
   const [areaDirId, setAreaDirId] = useState('');

@@ -141,6 +141,16 @@ app.get('/api/zkteco/devices', (req, res) => {
   });
 });
 
+// GET /api/employees
+app.get('/api/employees', (req, res) => {
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  return res.json({
+    success: true,
+    count: employees.length,
+    data: employees,
+  });
+});
+
 // POST /api/zkteco/devices/:id/sync - Genuine Hardware Handshake
 app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   const { id } = req.params;

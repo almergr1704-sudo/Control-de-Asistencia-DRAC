@@ -6,6 +6,7 @@ export interface EmptyStateProps {
   title: string;
   description: string;
   actionText?: string;
+  actionLabel?: string;
   onAction?: () => void;
   isFiltered?: boolean;
 }
@@ -15,9 +16,11 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   title,
   description,
   actionText,
+  actionLabel,
   onAction,
   isFiltered = false,
 }) => {
+  const effectiveActionText = actionText || actionLabel;
   return (
     <div className="p-8 sm:p-12 text-center bg-[#090A0D]/50 border-t border-slate-800/80">
       <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-400">
@@ -33,7 +36,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-sm"
           >
             {isFiltered && <RotateCcw className="w-3.5 h-3.5" />}
-            <span>{actionText || (isFiltered ? 'Limpiar filtros' : 'Reintentar')}</span>
+            <span>{effectiveActionText || (isFiltered ? 'Limpiar filtros' : 'Reintentar')}</span>
           </button>
         </div>
       )}

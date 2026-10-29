@@ -270,8 +270,8 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
                       <tr key={p.id} className="hover:bg-slate-900/40 font-mono">
                         <td className="p-3 text-indigo-400 font-bold">{p.code}</td>
                         <td className="p-3 text-white font-bold font-sans">{p.employee_name}</td>
-                        <td className="p-3 text-slate-300 font-sans">{p.type} - {p.reason}</td>
-                        <td className="p-3 text-slate-400">{p.fecha} ({p.start_time} - {p.end_time})</td>
+                        <td className="p-3 text-slate-300 font-sans">{p.motivo || p.type || 'Papeleta'} - {p.descripcion || p.reason || p.destino || ''}</td>
+                        <td className="p-3 text-slate-400">{p.fecha} ({p.hora_estimada_salida || p.start_time || '--:--'} - {p.hora_estimada_retorno || p.end_time || '--:--'})</td>
                         <td className="p-3 font-sans">
                           <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded text-[10px] font-bold">
                             {p.status}

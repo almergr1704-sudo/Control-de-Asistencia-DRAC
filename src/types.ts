@@ -122,6 +122,7 @@ export interface EmployeeAssignmentHistory {
   supervisor_id?: string | null;
   supervisor_name?: string;
   reason?: string;
+  change_reason?: string;
   created_at: string;
 }
 
@@ -253,7 +254,16 @@ export interface Employee {
   unidad_dirigida_name?: string; // Nombre de la unidad que dirige
   unidad_dirigida_type?: OrganoType; // Tipo orgánico (DIRECCION, ORGANO_APOYO, JEFATURA_AGENCIA, OFICINA_AGRARIA)
   
-  hire_date: string; // NON-EDITABLE original hire date
+  // Compatibilidad de alias
+  cargo_name?: string;
+  dependencia_tipo?: string;
+  nombres?: string;
+  apellidos?: string;
+  cargo?: string;
+  condicion?: string;
+  estado?: string;
+  
+  hire_date?: string; // Original hire date
   active: boolean; // DESACTIVABLE
   schedule_id?: string;
   schedule_name?: string;
@@ -491,9 +501,18 @@ export interface DispositivoZkTeco {
   push_config?: DevicePushConfig;
   biotime_config?: BioTimeConfig;
   assigned_agent_id?: string;
-  assigned_agent_name?: string;
   agent_status?: 'ONLINE' | 'OFFLINE' | 'SYNCING' | 'ERROR';
-  tcp_status?: 'ONLINE' | 'OFFLINE' | 'UNTESTED';
+  tcp_status?: any;
+  last_latency_ms?: number;
+  device_type?: string;
+  mac_address?: string;
+  last_sync?: string;
+  push_enabled?: boolean;
+  push_server_address?: string;
+  push_server_port?: number;
+  push_endpoint?: string;
+  push_protocol?: string;
+  push_interval?: number;
 }
 
 export interface BioTimeConfig {
@@ -614,6 +633,12 @@ export interface MarcacionRaw {
   validation_status?: PunchValidationStatus;
   rejection_reason?: string;
   authorization_id?: string;
+  
+  // Compatibilidad
+  fecha?: string;
+  source?: string;
+  deviceId?: string;
+  pin?: string;
 }
 
 export interface AutorizacionMarcacionTemporal {
@@ -650,7 +675,16 @@ export type PapeletaStatus =
   | 'IN_OUTING'
   | 'COMPLETED'
   | 'REJECTED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'AUTORIZADA_JEFE'
+  | 'VALIDADA_RRHH'
+  | 'RECHAZADA'
+  | 'SALIDA_EFECTUADA'
+  | 'RETORNO_REGISTRADO'
+  | 'PENDIENTE_JEFE'
+  | 'PENDIENTE_RRHH'
+  | 'APROBADA'
+  | 'EMITIDA';
 
 export type PapeletaMotivo =
   | 'COMISION_SERVICIOS'
@@ -698,6 +732,7 @@ export interface PapeletaSalida {
   employee_dni: string;
   employee_name: string;
   dependencia_name: string;
+  direccion_organo_id?: string;
   direccion_organo_name?: string;
   area_name: string;
   
@@ -718,6 +753,12 @@ export interface PapeletaSalida {
   sin_retorno?: boolean; // Salida sin retorno (Comisión final de jornada, etc.)
   status: PapeletaStatus;
   origin?: PapeletaOrigen;
+  
+  // Compatibilidad de alias para reportes
+  type?: string;
+  reason?: string;
+  start_time?: string;
+  end_time?: string;
   
   digital_signature_data?: string; // Digital signature image / vector
   signed_at?: string;
@@ -750,9 +791,11 @@ export type VacacionTipo = 'TOTAL' | 'PARCIAL' | 'TOTAL_30' | 'FRACCIONADO';
 export type VacacionStatus =
   | 'SOLICITADA'
   | 'VISTO_BUENO_JEFE'
+  | 'VB_JEFE'
   | 'OBSERVADA'
   | 'RECHAZADA'
   | 'APROBADA_RRHH'
+  | 'APROBADA'
   | 'PROGRAMADA'
   | 'EN_CURSO'
   | 'FINALIZADA'
@@ -813,6 +856,7 @@ export interface Vacacion {
   start_date: string;
   end_date: string;
   total_days: number;
+  dias_solicitados?: number;
   period_year: number;
 
   status: VacacionStatus;
@@ -925,6 +969,8 @@ export interface AuditLog {
   affected_record_id: string;
   details: string;
   ip_address?: string;
+  employee_dni?: string;
+  employee_name?: string;
   app_origin?: AppOrigin;
   result?: 'SUCCESS' | 'ERROR' | 'WARNING';
 }
@@ -1117,5 +1163,9 @@ declare global {
     __DRAC_DESKTOP_CLIENT__?: boolean;
   }
 }
+
+// Compatibilidad de alias para módulos DRAC
+export type UserRole = RoleType;
+export type AttendanceRecord = AsistenciaProcesada;
 
 

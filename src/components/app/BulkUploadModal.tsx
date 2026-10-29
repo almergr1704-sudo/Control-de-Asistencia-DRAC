@@ -58,10 +58,11 @@ interface BulkUploadModalProps {
   cargos: Cargo[];
   employees: Employee[];
   encargaturas?: Encargatura[];
-  activeRole: RoleType;
-  onConfirmDirecciones: (validDirs: DireccionOrgano[], updateDirs: DireccionOrgano[], summary: ValidationSummary<DireccionOrgano>) => void;
-  onConfirmAreas: (validAreas: Area[], updateAreas: Area[], summary: ValidationSummary<Area>) => void;
-  onConfirmTrabajadores: (validEmps: Employee[], updateEmps: Employee[], summary: ValidationSummary<Employee>) => void;
+  horarios?: any[];
+  activeRole?: RoleType;
+  onConfirmDirecciones?: (validDirs: DireccionOrgano[], updateDirs: DireccionOrgano[], summary: ValidationSummary<DireccionOrgano>) => void;
+  onConfirmAreas?: (validAreas: Area[], updateAreas: Area[], summary: ValidationSummary<Area>) => void;
+  onConfirmTrabajadores?: (validEmps: Employee[], updateEmps: Employee[], summary: ValidationSummary<Employee>) => void;
   onConfirmEncargaturas?: (validEncs: Encargatura[], summary: ValidationSummary<Encargatura>) => void;
 }
 
@@ -75,11 +76,11 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   cargos,
   employees,
   encargaturas = [],
-  activeRole,
-  onConfirmDirecciones,
-  onConfirmAreas,
-  onConfirmTrabajadores,
-  onConfirmEncargaturas,
+  activeRole = 'ADMIN_GENERAL',
+  onConfirmDirecciones = () => {},
+  onConfirmAreas = () => {},
+  onConfirmTrabajadores = () => {},
+  onConfirmEncargaturas = () => {},
 }) => {
   if (!isOpen) return null;
 

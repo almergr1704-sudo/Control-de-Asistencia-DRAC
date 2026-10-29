@@ -6,8 +6,10 @@ export type SortOrder = 'asc' | 'desc' | null;
 export interface SortableHeaderProps {
   label: string;
   field: string;
-  currentSortField: string | null;
-  currentSortOrder: SortOrder;
+  currentSortField?: string | null;
+  currentSortOrder?: SortOrder;
+  currentField?: string | null;
+  currentOrder?: SortOrder;
   onSort: (field: string) => void;
   className?: string;
   align?: 'left' | 'center' | 'right';
@@ -18,11 +20,15 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
   field,
   currentSortField,
   currentSortOrder,
+  currentField,
+  currentOrder,
   onSort,
   className = '',
   align = 'left',
 }) => {
-  const isSorted = currentSortField === field;
+  const activeSortField = currentSortField !== undefined ? currentSortField : currentField;
+  const activeSortOrder = currentSortOrder !== undefined ? currentSortOrder : currentOrder;
+  const isSorted = activeSortField === field;
 
   const getAlignmentClass = () => {
     if (align === 'right') return 'justify-end text-right';
