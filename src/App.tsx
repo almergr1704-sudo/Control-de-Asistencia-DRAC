@@ -548,6 +548,7 @@ export const App: React.FC = () => {
                 rawPunches={rawPunches}
                 employees={employees}
                 activeRole={activeRole}
+                activeSubView={activeView}
                 onRefreshDevices={loadServerData}
                 onRefreshPunches={loadServerData}
               />

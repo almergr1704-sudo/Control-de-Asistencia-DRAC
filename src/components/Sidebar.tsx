@@ -214,8 +214,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Cpu,
       allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
       subItems: [
-        { id: 'devices_list', label: 'Dispositivos ZKTeco' },
-        { id: 'devices_sync', label: 'Sincronización PUSH' },
+        { id: 'devices_list', label: 'Marcador G3-id (192.168.1.180)' },
+        { id: 'devices_sync', label: 'Servidor ADMS Push (HTTP)' },
+        { id: 'devices_agent', label: 'Agente Local LAN (ZK Agent)' },
+        { id: 'devices_diag', label: 'Pruebas & Diagnóstico Socket' },
+        { id: 'devices_spec', label: 'Especificación Técnica ZK' },
         { id: 'devices_staging', label: 'Marcaciones Recibidas' },
       ],
     },

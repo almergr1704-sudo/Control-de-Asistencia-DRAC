@@ -331,7 +331,7 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
           employee_dni: emp.dni,
           employee_name: workerName,
           dependencia_id: emp.dependencia_id || 'dep-01',
-          dependencia_name: emp.dependencia_name || 'SEDE CENTRAL - DRAC CUSCO',
+          dependencia_name: emp.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
           fecha: fechaPart,
           t1_scheduled_in: '08:00',
           t1_scheduled_out: '13:00',
