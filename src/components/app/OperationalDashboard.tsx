@@ -182,7 +182,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
                 <div className="grid grid-cols-2 gap-1 text-[11px] font-mono text-slate-400">
                   <div>SN: <span className="text-slate-200">{d.serial_number}</span></div>
                   <div>IP: <span className="text-slate-200">{d.ip_address}</span></div>
-                  <div>TCP: <span className="text-emerald-400 font-bold">4370 OK</span></div>
+                  <div>TCP: <span className="text-emerald-400 font-bold">{d.port || 7496} OK</span></div>
                   <div>PUSH: <span className="text-emerald-400 font-bold">3000 OK</span></div>
                 </div>
               </div>

@@ -258,10 +258,10 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1">
                 <div className="flex items-center gap-1.5 font-bold text-amber-300 font-mono text-[11px]">
                   <Cpu className="w-3.5 h-3.5 text-amber-400" />
-                  <span>MODO TCP/IP SOCKET (Puerto 4370)</span>
+                  <span>MODO TCP/IP SOCKET (Puerto Configurado: 7496 / 4370)</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  <strong className="text-slate-200">Dirección:</strong> DRAC → Reloj ZKTeco. Comunicación bajo demanda para lectura manual, sincronización forzada y verificación de estado físico del hardware (G3-id).
+                  <strong className="text-slate-200">Dirección:</strong> DRAC → Reloj ZKTeco. Comunicación bajo demanda para lectura manual, sincronización forzada y verificación de estado físico del hardware (ZKTeco G3).
                 </p>
               </div>
 
@@ -387,10 +387,10 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
           <div>
             <h3 className="font-bold text-sm text-white flex items-center gap-2">
               <Activity className="w-4 h-4 text-cyan-400" />
-              <span>Diagnóstico de Conectividad en Tiempo Real (Hardware G3-id)</span>
+              <span>Diagnóstico de Conectividad en Tiempo Real (Hardware ZKTeco G3)</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Verifica la accesibilidad del socket TCP (puerto 4370) y la disponibilidad del endpoint de escucha PUSH sin generar marcaciones ficticias.
+              Verifica la accesibilidad del socket TCP (puerto configurable 7496 / 4370) y la disponibilidad del endpoint de escucha PUSH sin generar marcaciones ficticias.
             </p>
           </div>
 
@@ -402,7 +402,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
             >
               {devices.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name} ({d.ip_address}:{d.port})
+                  {d.name} ({d.ip_address}:{d.port || 7496})
                 </option>
               ))}
             </select>
@@ -424,7 +424,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="text-slate-200">
-                  Equipo: <strong className="text-white">{pipelineDiag.device_name}</strong> (SN: {pipelineDiag.serial_number} | IP: {pipelineDiag.ip_address}:{pipelineDiag.port})
+                  Equipo: <strong className="text-white">{pipelineDiag.device_name}</strong> (SN: {pipelineDiag.serial_number} | IP: {pipelineDiag.ip_address}:{pipelineDiag.port || 7496})
                 </span>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">
@@ -433,7 +433,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-1">
               <div className="p-2 bg-slate-900/60 rounded border border-slate-800 flex items-center justify-between">
-                <span className="text-slate-400 text-[11px]">Socket TCP 4370</span>
+                <span className="text-slate-400 text-[11px]">Socket TCP {pipelineDiag.port || 7496}</span>
                 <span className="text-emerald-400 font-mono font-bold text-[11px]">DISPONIBLE</span>
               </div>
               <div className="p-2 bg-slate-900/60 rounded border border-slate-800 flex items-center justify-between">

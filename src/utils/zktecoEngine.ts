@@ -235,15 +235,15 @@ export async function testZkTecoConnection(
   commKey: number | string = 0
 ): Promise<DeviceTestResponse> {
   const cleanIp = (ip || '').trim();
-  const targetPort = Number(port) || 4370;
+  const targetPort = Number(port) || 7496;
   const numericCommKey = Number(commKey) || 0;
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
-  const finalSerial = (serial_number || (model === 'G3-id' ? 'ZK-G3-001' : 'BIM-DRAC-001')).trim();
+  const finalSerial = (serial_number || (model === 'G3-id' ? 'AEH2223460040' : 'BIM-DRAC-001')).trim();
 
   const emptyStages: DeviceStageDetail[] = [
     { stage: 1, name: 'Validación de dirección IP y puerto', status: 'FAILED', message: 'Dirección IP o puerto no especificados.' },
     { stage: 2, name: 'Alcance de red y conectividad host desde Windows', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
-    { stage: 3, name: 'Apertura de conexión y socket TCP (puerto 4370)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
+    { stage: 3, name: `Apertura de conexión y socket TCP (puerto ${targetPort})`, status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
     { stage: 4, name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
     { stage: 5, name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
     { stage: 6, name: 'Lectura de usuarios registrados en el biométrico', status: 'SKIPPED', message: 'Omitido: parámetros de red no válidos.' },
@@ -258,7 +258,7 @@ export async function testZkTecoConnection(
       success: false,
       status: 'OFFLINE',
       message: 'Dirección IP o puerto TCP no especificados.',
-      cause: 'Debe ingresar la dirección IP y el puerto de comunicación (4370).',
+      cause: `Debe ingresar la dirección IP y el puerto de comunicación (${targetPort || 7496}).`,
       ip: cleanIp,
       port: targetPort,
       model,
@@ -368,13 +368,13 @@ export async function testZkTecoConnection(
           success: true,
           status: 'ONLINE',
           message: `Marcador "${model}" conectado y operativo en red (Modo PUSH_ADMS hacia BioTime 192.168.1.29:89).`,
-          user_count: 14,
-          clock_punches_count: 139,
-          new_punches_count: 0,
-          saved_punches_count: 139,
-          error_count: 0,
+          user_count: typeof realDiagnosis.user_count === 'number' ? realDiagnosis.user_count : 0,
+          clock_punches_count: typeof realDiagnosis.clock_punches_count === 'number' ? realDiagnosis.clock_punches_count : 0,
+          new_punches_count: newCount,
+          saved_punches_count: savedCount,
+          error_count: realDiagnosis.error_count || 0,
           step_details: updatedSteps,
-          formatted_output: `CONEXIÓN: OK\nMODO: PUSH_ADMS (BioTime Console)\nIP MARCADOR: ${cleanIp}:${targetPort}\nSERVIDOR BIOTIME: 192.168.1.29:89\nSERIAL: ${finalSerial}\nUSUARIOS: 14\nMARCACIONES REGISTRADAS: 139\nESTADO: ONLINE`,
+          formatted_output: realDiagnosis.formatted_output || `CONEXIÓN: OK\nMODO: PUSH_ADMS (BioTime Console)\nIP MARCADOR: ${cleanIp}:${targetPort}\nSERVIDOR BIOTIME: 192.168.1.29:89\nSERIAL: ${finalSerial}\nESTADO: ONLINE`,
           is_private_ip: isPrivate,
         };
       }
@@ -389,7 +389,7 @@ export async function testZkTecoConnection(
       const failedStages: DeviceStageDetail[] = [
         { stage: 1, name: 'Validación de dirección IP y puerto', status: 'PASSED', message: `IP ${cleanIp}:${targetPort} válida.` },
         { stage: 2, name: 'Alcance de red y conectividad host desde Windows', status: 'FAILED', message: `Fallo IPC al invocar driver nativo: ${e?.message || 'Error de proceso'}.` },
-        { stage: 3, name: 'Apertura de conexión y socket TCP (puerto 4370)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
+        { stage: 3, name: `Apertura de conexión y socket TCP (puerto ${targetPort})`, status: 'SKIPPED', message: 'Omitido: error en driver local.' },
         { stage: 4, name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
         { stage: 5, name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
         { stage: 6, name: 'Lectura de usuarios registrados en el biométrico', status: 'SKIPPED', message: 'Omitido: error en driver local.' },
@@ -438,7 +438,7 @@ export async function testZkTecoConnection(
     },
     {
       stage: 3,
-      name: 'Apertura de conexión y socket TCP (puerto 4370)',
+      name: `Apertura de conexión y socket TCP (puerto ${targetPort})`,
       status: 'SKIPPED',
       message: 'Omitido: la conexión física a sockets de red local corresponde a la aplicación de escritorio Windows instalada en la institución.',
     },

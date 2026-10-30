@@ -141,6 +141,35 @@ app.get('/api/zkteco/devices', (req, res) => {
   });
 });
 
+// PUT /api/zkteco/devices/:id - Update device configuration (port, IP, etc.)
+app.put('/api/zkteco/devices/:id', (req, res) => {
+  const { id } = req.params;
+  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const index = devices.findIndex((d) => d.id === id || d.serial_number === id);
+
+  if (index === -1) {
+    return res.status(404).json({ success: false, message: 'Dispositivo no encontrado' });
+  }
+
+  const existing = devices[index];
+  const updated = {
+    ...existing,
+    ...req.body,
+    port: req.body.port !== undefined ? Number(req.body.port) : existing.port,
+    comm_key: req.body.comm_key !== undefined ? Number(req.body.comm_key) : existing.comm_key,
+    updated_at: new Date().toISOString(),
+  };
+
+  devices[index] = updated;
+  writeJsonFile(DEVICES_FILE, devices);
+
+  return res.json({
+    success: true,
+    message: `Dispositivo ${updated.name} actualizado. Puerto configurado: ${updated.port}.`,
+    data: updated,
+  });
+});
+
 // GET /api/employees
 app.get('/api/employees', (req, res) => {
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
@@ -163,7 +192,7 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
 
   // Attempt real TCP socket handshake to verify IP & port reachability
   const host = device.ip_address || '192.168.1.180';
-  const port = device.port || 4370;
+  const port = Number(req.body?.port) || device.port || 7496;
 
   const checkSocket = (): Promise<{ ok: boolean; latency: number }> => {
     return new Promise((resolve) => {
@@ -485,7 +514,7 @@ app.post('/api/zkteco/diagnose-pipeline', (req, res) => {
     device_name: dev ? dev.name : 'ZKTeco G3-id Sede Central',
     serial_number: dev ? dev.serial_number : 'AEH2223460040',
     ip_address: dev ? dev.ip_address : '192.168.1.180',
-    port: dev ? dev.port : 4370,
+    port: dev ? dev.port : 7496,
     latency_ms: 18,
     overall_status: 'ALL_SYSTEMS_OK',
     timestamp: new Date().toISOString(),

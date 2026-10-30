@@ -157,8 +157,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
           command,
           params: {
             ip: targetDev?.ip_address || '192.168.1.180',
-            port: targetDev?.port || 4370,
-            serial: targetDev?.serial_number || 'BIM-DRAC-001',
+            port: targetDev?.port || 7496,
+            serial: targetDev?.serial_number || 'AEH2223460040',
           },
         }),
       });
@@ -167,15 +167,17 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         // Wait simulated response
         await new Promise((r) => setTimeout(r, 1200));
 
+        const devPort = targetDev?.port || 7496;
+
         if (command === 'TEST_CONNECTION') {
           setCommandResult({
             success: true,
-            message: `Prueba TCP Socket 4370 ejecutada exitosamente en ${targetDev?.name || 'Marcador ZKTeco'}.`,
+            message: `Prueba TCP Socket ${devPort} ejecutada exitosamente en ${targetDev?.name || 'Marcador ZKTeco G3'}.`,
             details: {
               ip: targetDev?.ip_address || '192.168.1.180',
-              port: targetDev?.port || 4370,
-              model: targetDev?.model || 'G3-id',
-              serial: targetDev?.serial_number || 'BIM-DRAC-001',
+              port: devPort,
+              model: targetDev?.model || 'ZKTeco G3',
+              serial: targetDev?.serial_number || 'AEH2223460040',
               tcp_status: 'ONLINE',
               latency_ms: Math.floor(Math.random() * 8) + 4,
               users_in_clock: employees.length > 0 ? employees.length : 14,
@@ -185,7 +187,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         } else if (command === 'DOWNLOAD_PUNCHES') {
           setCommandResult({
             success: true,
-            message: `Sincronización TCP 4370 completada. Se leyeron marcaciones del dispositivo y se transmitieron al backend DRAC vía HTTPS.`,
+            message: `Sincronización TCP ${devPort} completada. Se leyeron marcaciones del dispositivo y se transmitieron al backend DRAC vía HTTPS.`,
             details: {
               device: targetDev?.name,
               received_punches: 0,
@@ -262,7 +264,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               DRAC ZK Agent para Windows &amp; Servidor ADMS/PUSH Complementario
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              El <strong>DRAC ZK Agent</strong> es un servicio local Windows que se ejecuta en la red LAN de la DRAC. Establece comunicación por <strong>Socket TCP 4370</strong> directo hacia la IP privada del marcador (ej. <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">192.168.1.180:4370</code>), manteniendo una cola offline resiliente y transmitiendo marcaciones al backend Cloud mediante HTTPS API sin exponer puertos a Internet.
+              El <strong>DRAC ZK Agent</strong> es un servicio local Windows que se ejecuta en la red LAN de la DRAC. Establece comunicación por <strong>Socket TCP configurado (7496 / 4370)</strong> directo hacia la IP privada del marcador (ej. <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">192.168.1.180:7496</code>), manteniendo una cola offline resiliente y transmitiendo marcaciones al backend Cloud mediante HTTPS API sin exponer puertos a Internet.
             </p>
           </div>
 
@@ -285,14 +287,14 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               <Cpu className="w-4 h-4 text-amber-400" />
             </div>
             <div>
-              <div className="font-bold text-slate-200">ZKTeco Biométrico</div>
-              <div className="text-[10px] text-slate-400 font-mono">192.168.1.180 (LAN)</div>
+              <div className="font-bold text-slate-200">ZKTeco Biométrico G3</div>
+              <div className="text-[10px] text-slate-400 font-mono">192.168.1.180:7496</div>
             </div>
           </div>
 
           <div className="flex items-center justify-center text-slate-500 gap-1">
             <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
-              TCP 4370
+              TCP 7496 / 4370
             </span>
             <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
           </div>
@@ -517,7 +519,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <Activity className={`w-3.5 h-3.5 ${executingCommand === 'TEST_CONNECTION' ? 'animate-spin' : ''}`} />
-                  <span>Probar Conexión TCP 4370</span>
+                  <span>Probar Conexión TCP (7496 / 4370)</span>
                 </div>
                 <span className="text-[10px] bg-indigo-800 px-1.5 py-0.5 rounded font-mono">192.168.1.180</span>
               </button>
@@ -530,7 +532,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <Download className={`w-3.5 h-3.5 ${executingCommand === 'DOWNLOAD_PUNCHES' ? 'animate-bounce' : ''}`} />
-                  <span>Descargar Marcaciones (TCP 4370)</span>
+                  <span>Descargar Marcaciones (Socket TCP)</span>
                 </div>
                 <span className="text-[10px] text-slate-400">Ahora</span>
               </button>

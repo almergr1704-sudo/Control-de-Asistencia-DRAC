@@ -110,38 +110,42 @@ async function createWindow() {
 // IPC HANDLERS - GESTIÓN DE FIREWALL DE WINDOWS & RED
 // =========================================================================
 
-// Consultar estado de las reglas del Firewall de Windows para TCP 4370
-ipcMain.handle('firewall:check-status', async () => {
-  log('IPC firewall:check-status invocado.');
+// Consultar estado de las reglas del Firewall de Windows para el puerto TCP configurado (7496 por defecto)
+ipcMain.handle('firewall:check-status', async (_event, port = 7496) => {
+  const targetPort = Number(port) || 7496;
+  log(`IPC firewall:check-status invocado para puerto ${targetPort}.`);
   try {
-    return await firewallManager.checkFirewallStatus();
+    return await firewallManager.checkFirewallStatus(targetPort);
   } catch (err) {
     log(`Error en firewall:check-status: ${err.message}`);
     return {
       isWindows: process.platform === 'win32',
       configured: false,
+      port: targetPort,
       status: 'REQUIERE CONFIGURACIÓN',
-      statusText: 'Firewall Windows: REQUIERE CONFIGURACIÓN',
+      statusText: `Firewall Windows: REQUIERE CONFIGURACIÓN (TCP ${targetPort})`,
       isAdmin: false,
       error: err.message,
       rules: [],
-      missingRules: ['DRAC Control Asistencia - ZKTeco TCP 4370'],
+      missingRules: [`DRAC Control Asistencia - ZKTeco TCP ${targetPort}`],
       details: `Fallo al auditar Firewall: ${err.message}`,
       timestamp: new Date().toISOString(),
     };
   }
 });
 
-// Acción administrativa: "Reparar Configuración de Red"
-ipcMain.handle('firewall:repair-network', async () => {
-  log('IPC firewall:repair-network invocado.');
+// Acción administrativa: "Configurar Regla de Firewall para el Puerto Específico"
+ipcMain.handle('firewall:repair-network', async (_event, port = 7496) => {
+  const targetPort = Number(port) || 7496;
+  log(`IPC firewall:repair-network invocado para puerto ${targetPort}.`);
   try {
-    return await firewallManager.repairNetworkConfig();
+    return await firewallManager.repairNetworkConfig(targetPort);
   } catch (err) {
     log(`Error en firewall:repair-network: ${err.message}`);
     return {
       success: false,
-      message: `Error al reparar configuración de red: ${err.message}`,
+      port: targetPort,
+      message: `Error al configurar regla de red para puerto ${targetPort}: ${err.message}`,
       error: err.message,
       timestamp: new Date().toISOString(),
     };
@@ -149,16 +153,17 @@ ipcMain.handle('firewall:repair-network', async () => {
 });
 
 // =========================================================================
-// IPC HANDLERS - COMUNICACIÓN BIOMÉTRICA ZKTECO (TCP 4370 NATIVO)
+// IPC HANDLERS - COMUNICACIÓN BIOMÉTRICA ZKTECO (TCP 7496 / 4370 NATIVO)
 // =========================================================================
 
 // Diagnóstico exhaustivo de 10 etapas
 ipcMain.handle(
   'zk:diagnose-device',
-  async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
-    log(`IPC zk:diagnose-device -> ${ip}:${port} (${model}, S/N: ${serial}, CommKey: ${commKey})`);
+  async (_event, { ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
+    const targetPort = Number(port) || 7496;
+    log(`IPC zk:diagnose-device -> ${ip}:${targetPort} (${model}, S/N: ${serial}, CommKey: ${commKey})`);
     try {
-      return await zktecoDriver.diagnoseZkDevice(ip, port, timeoutMs, model, serial, commKey);
+      return await zktecoDriver.diagnoseZkDevice(ip, targetPort, timeoutMs, model, serial, commKey);
     } catch (err) {
       log(`Error en diagnoseZkDevice: ${err.message}`);
       return {
@@ -167,7 +172,7 @@ ipcMain.handle(
         message: `Error interno al ejecutar diagnóstico: ${err.message}`,
         cause: err.message,
         ip,
-        port,
+        port: targetPort,
         model,
         serial_number: serial,
         user_count: 0,
@@ -181,10 +186,11 @@ ipcMain.handle(
 );
 
 // Lectura directa de marcaciones mediante socket TCP
-ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 5000, commKey = 0 }) => {
-  log(`IPC zk:read-punches -> ${ip}:${port} (CommKey: ${commKey})`);
+ipcMain.handle('zk:read-punches', async (_event, { ip, port = 7496, timeoutMs = 5000, commKey = 0 }) => {
+  const targetPort = Number(port) || 7496;
+  log(`IPC zk:read-punches -> ${ip}:${targetPort} (CommKey: ${commKey})`);
   try {
-    return await zktecoDriver.readZkDevicePunches(ip, port, timeoutMs, commKey);
+    return await zktecoDriver.readZkDevicePunches(ip, targetPort, timeoutMs, commKey);
   } catch (err) {
     log(`Error en readZkDevicePunches: ${err.message}`);
     return {
@@ -196,20 +202,21 @@ ipcMain.handle('zk:read-punches', async (_event, { ip, port = 4370, timeoutMs = 
   }
 });
 
-// Comprobaciones independientes (Ping, TCP 4370, Firewall Windows, Socket TCP, ZKTeco, Info)
+// Comprobaciones independientes (Ping, TCP 7496/4370, Firewall Windows, Socket TCP, ZKTeco, Info)
 ipcMain.handle(
   'zk:run-independent-diagnostics',
-  async (_event, { ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
-    log(`IPC zk:run-independent-diagnostics -> ${ip}:${port}`);
+  async (_event, { ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0 }) => {
+    const targetPort = Number(port) || 7496;
+    log(`IPC zk:run-independent-diagnostics -> ${ip}:${targetPort}`);
     try {
-      return await zktecoDriver.runIndependentDiagnostics(ip, port, timeoutMs, model, serial, commKey);
+      return await zktecoDriver.runIndependentDiagnostics(ip, targetPort, timeoutMs, model, serial, commKey);
     } catch (err) {
       log(`Error en runIndependentDiagnostics: ${err.message}`);
       return {
         success: false,
         status: 'Fallido',
         ip,
-        port,
+        port: targetPort,
         model,
         serial_number: serial,
         tests: [
@@ -222,8 +229,9 @@ ipcMain.handle(
 );
 
 // Verificación Real TCP Socket para Marcadores ZKTeco con discriminación de errores precisa
-ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3000 }) => {
-  log(`Verificando conectividad física con marcador ZKTeco: ${ip}:${port} (timeout=${timeoutMs}ms)`);
+ipcMain.handle('zk:ping-device', async (_event, { ip, port = 7496, timeoutMs = 3000 }) => {
+  const targetPort = Number(port) || 7496;
+  log(`Verificando conectividad física con marcador ZKTeco: ${ip}:${targetPort} (timeout=${timeoutMs}ms)`);
 
   return new Promise((resolve) => {
     const startTime = Date.now();
@@ -236,14 +244,14 @@ ipcMain.handle('zk:ping-device', async (_event, { ip, port = 4370, timeoutMs = 3
       const latency = Date.now() - startTime;
       isResolved = true;
       socket.destroy();
-      log(`Conexión TCP exitosa con ${ip}:${port} en ${latency}ms`);
+      log(`Conexión TCP exitosa con ${ip}:${targetPort} en ${latency}ms`);
       resolve({
         success: true,
         reachable: true,
         ip,
-        port,
+        port: targetPort,
         latencyMs: latency,
-        message: `Marcador respondiendo en ${ip}:${port} (${latency}ms). Puerto TCP 4370 abierto.`,
+        message: `Marcador respondiendo en ${ip}:${targetPort} (${latency}ms). Puerto TCP ${targetPort} abierto.`,
         timestamp: new Date().toISOString(),
       });
     });

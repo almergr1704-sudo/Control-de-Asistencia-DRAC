@@ -6,24 +6,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
 
   // Firewall de Windows y Reparación de Red Institucional
-  checkFirewallStatus: () => {
-    return ipcRenderer.invoke('firewall:check-status');
+  checkFirewallStatus: (port = 7496) => {
+    return ipcRenderer.invoke('firewall:check-status', port);
   },
-  repairNetworkConfig: () => {
-    return ipcRenderer.invoke('firewall:repair-network');
+  repairNetworkConfig: (port = 7496) => {
+    return ipcRenderer.invoke('firewall:repair-network', port);
   },
 
-  // Comunicación y Diagnóstico ZKTeco Standalone (TCP 4370)
-  diagnoseZkDevice: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
+  // Comunicación y Diagnóstico ZKTeco Standalone (TCP 7496 inicial / 4370 alternativo)
+  diagnoseZkDevice: (ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
     return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serial, commKey });
   },
-  readZkDevicePunches: (ip, port = 4370, timeoutMs = 5000, commKey = 0) => {
+  readZkDevicePunches: (ip, port = 7496, timeoutMs = 5000, commKey = 0) => {
     return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs, commKey });
   },
-  runIndependentDiagnostics: (ip, port = 4370, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
+  runIndependentDiagnostics: (ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
     return ipcRenderer.invoke('zk:run-independent-diagnostics', { ip, port, timeoutMs, model, serial, commKey });
   },
-  pingZkDevice: (ip, port = 4370, timeoutMs = 3000) => {
+  pingZkDevice: (ip, port = 7496, timeoutMs = 3000) => {
     return ipcRenderer.invoke('zk:ping-device', { ip, port, timeoutMs });
   },
 

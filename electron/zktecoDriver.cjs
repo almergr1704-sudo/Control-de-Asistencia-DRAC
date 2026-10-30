@@ -419,9 +419,9 @@ function probeTcpPort(ip, port, timeoutMs = 2000) {
  * Diagnóstico de conexión en 10 etapas estrictamente diferenciadas
  * Cada etapa refleja su resultado real: PASSED, WARNING, FAILED o SKIPPED.
  */
-async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = 'G3-id', snHint = '', commKey = 0) {
+async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = 'G3-id', snHint = '', commKey = 0) {
   const cleanIp = String(ip || '').trim();
-  const targetPort = Number(port) || 4370;
+  const targetPort = Number(port) || 7496;
   const numericCommKey = Number(commKey) || 0;
   const timeout = Math.min(4500, Math.max(1200, Number(timeoutMs) || 3000));
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -429,7 +429,7 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
   const stages = [
     { stage: 1, name: 'Validación de dirección IP y puerto', status: 'PENDING', message: '', latencyMs: 0 },
     { stage: 2, name: 'Alcance de red y conectividad host desde Windows', status: 'PENDING', message: '', latencyMs: 0 },
-    { stage: 3, name: 'Apertura de conexión y socket TCP (puerto 4370)', status: 'PENDING', message: '', latencyMs: 0 },
+    { stage: 3, name: `Apertura de conexión y socket TCP (puerto ${targetPort})`, status: 'PENDING', message: '', latencyMs: 0 },
     { stage: 4, name: 'Sesión de protocolo ZKTeco y autenticación (CommKey)', status: 'PENDING', message: '', latencyMs: 0 },
     { stage: 5, name: 'Lectura de telemetría y hardware (Modelo, Serial, Hora)', status: 'PENDING', message: '', latencyMs: 0 },
     { stage: 6, name: 'Lectura de usuarios registrados en el biométrico', status: 'PENDING', message: '', latencyMs: 0 },
@@ -530,7 +530,7 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
         false,
         'OFFLINE',
         'Conexión TCP no alcanzada.',
-        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP 192.168.1.180 asignada. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows o del router no bloquee el tráfico al puerto 4370.`,
+        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP 192.168.1.180 asignada. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows en el ordenador operador (192.168.1.33) no bloquee el puerto TCP ${targetPort} (o alternativo 4370).`,
         cleanIp,
         targetPort,
         modelHint,
@@ -546,19 +546,19 @@ async function diagnoseZkDevice(ip, port = 4370, timeoutMs = 3000, modelHint = '
       : `Host alcanzable a través de la tabla de enrutamiento de red.`;
 
     // =========================================================================
-    // ETAPA 3: Apertura de conexión y socket TCP (puerto 4370)
+    // ETAPA 3: Apertura de conexión y socket TCP (puerto ${targetPort})
     // =========================================================================
     const t3 = Date.now();
     if (tcpProbe.code === 'ECONNREFUSED') {
       stages[2].status = 'FAILED';
-      stages[2].message = `Conexión rechazada por ${cleanIp}:${targetPort}. El host responde en red local pero el puerto TCP ${targetPort} está cerrado o el servicio Standalone no escucha.`;
+      stages[2].message = `Conexión rechazada por ${cleanIp}:${targetPort}. El host responde en red local pero el puerto TCP ${targetPort} está cerrado o no escucha en este puerto.`;
       stages[2].latencyMs = tcpProbe.latency;
       skipRemainingStages(3, 'Puerto TCP cerrado o rechazado por el marcador.');
       return buildDiagnosisResult(
         false,
         'OFFLINE',
         'Puerto TCP cerrado en el marcador.',
-        `La IP ${cleanIp} responde en red pero rechazó la conexión en el puerto ${targetPort}. Causa principal: El marcador ZKTeco está configurado en modo PUSH / Servidor Cloud hacia BioTime (Puerto HTTP 89), lo que desactiva el puerto local 4370. Soluciones: 1) Si usa BioTime, utilice el botón "Sincronizar desde BioTime" en la pantalla de Relojes Biométricos. 2) Si desea conexión directa TCP 4370, verifique en el menú del marcador (Menú > Comunicaciones > Red > Ethernet) que el puerto sea 4370 y desactive "Servidor Cloud".`,
+        `La IP ${cleanIp} responde en red pero rechazó la conexión en el puerto ${targetPort}. Causa: El marcador ZKTeco G3 tiene configurado el puerto TCP ${targetPort} (o 4370 estándar). Si está configurado en modo PUSH hacia BioTime (192.168.1.29:89), el equipo actúa como cliente HTTP saliente. Soluciones: 1) Si usa BioTime, utilice el botón "Sincronizar desde BioTime". 2) Si desea conexión directa TCP, verifique en el menú del marcador (Menú > Comunicaciones > Red > Ethernet) que el puerto configurado coincida (${targetPort}).`,
         cleanIp,
         targetPort,
         modelHint,
