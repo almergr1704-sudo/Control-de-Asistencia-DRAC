@@ -1168,6 +1168,11 @@ declare global {
       maximize: () => void;
       close: () => void;
       isMaximized?: () => Promise<boolean>;
+      getDevices?: () => Promise<DispositivoZkTeco[]>;
+      updateDevice?: (
+        id: string,
+        payload: any
+      ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
     };
     __DRAC_DESKTOP_CLIENT__?: boolean;
   }

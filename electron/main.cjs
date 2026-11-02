@@ -445,6 +445,122 @@ ipcMain.handle('punches:get-all', async () => {
 });
 
 // =========================================================================
+// IPC HANDLERS - PERSISTENCIA Y GESTIÓN DIRECTA DE MARCADORES BIOMÉTRICOS
+// =========================================================================
+
+ipcMain.handle('device:get-all', async () => {
+  try {
+    const devicesPath = path.join(__dirname, '..', 'data', 'devices.json');
+    if (fs.existsSync(devicesPath)) {
+      return JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+    }
+  } catch (err) {
+    log(`Aviso al leer devices.json: ${err.message}`);
+  }
+  return [];
+});
+
+ipcMain.handle('device:update', async (_event, { id, payload }) => {
+  log(`IPC device:update -> Actualizando marcador ${id} (IP: ${payload.ip_address}, Puerto: ${payload.port})`);
+  try {
+    const devicesPath = path.join(__dirname, '..', 'data', 'devices.json');
+    const auditPath = path.join(__dirname, '..', 'data', 'audit-logs.json');
+
+    let devices = [];
+    if (fs.existsSync(devicesPath)) {
+      try {
+        devices = JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+      } catch (_) {
+        devices = [];
+      }
+    }
+
+    const index = devices.findIndex((d) => d.id === id || d.serial_number === id);
+    if (index === -1) {
+      return { success: false, message: 'Dispositivo no encontrado en la base de datos local' };
+    }
+
+    const existing = devices[index];
+    const nowIso = new Date().toISOString();
+
+    const updated = {
+      ...existing,
+      name: payload.name !== undefined ? String(payload.name).trim() : existing.name,
+      model: payload.model !== undefined ? String(payload.model).trim() : existing.model,
+      serial_number: payload.serial_number !== undefined ? String(payload.serial_number).trim() : existing.serial_number,
+      ip_address: payload.ip_address !== undefined ? String(payload.ip_address).trim() : existing.ip_address,
+      port: payload.port !== undefined ? Number(payload.port) : existing.port,
+      netmask: payload.netmask !== undefined ? String(payload.netmask).trim() : existing.netmask,
+      gateway: payload.gateway !== undefined ? String(payload.gateway).trim() : existing.gateway,
+      dns: payload.dns !== undefined ? String(payload.dns).trim() : (existing.dns || '200.48.225.130'),
+      mac_address: payload.mac_address !== undefined ? String(payload.mac_address).trim().toUpperCase() : existing.mac_address,
+      comm_key: payload.comm_key !== undefined ? payload.comm_key : existing.comm_key,
+      device_id_num: payload.device_id_num !== undefined ? Number(payload.device_id_num) : (existing.device_id_num || 1),
+      status: payload.status !== undefined ? String(payload.status).trim() : existing.status,
+      protocol: payload.protocol !== undefined ? String(payload.protocol).trim() : existing.protocol,
+      location_detail: payload.location_detail !== undefined ? String(payload.location_detail).trim() : existing.location_detail,
+      last_modified_by: payload.user_name ? `${payload.user_name} (${payload.user_role || 'ADMIN'})` : (existing.last_modified_by || 'Administrador DRAC'),
+      last_modified_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    devices[index] = updated;
+    fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+
+    // Registrar en auditoría
+    try {
+      let audits = [];
+      if (fs.existsSync(auditPath)) {
+        try {
+          audits = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
+        } catch (_) {
+          audits = [];
+        }
+      }
+      audits.unshift({
+        id: `audit-dev-${Date.now()}`,
+        timestamp: nowIso,
+        user_id: payload.user_id || 'admin-drac',
+        user_name: payload.user_name || 'Administrador DRAC',
+        user_role: payload.user_role || 'ADMIN_GENERAL',
+        action: 'MODIFICACION_CONFIGURACION_DISPOSITIVO',
+        entity: 'DISPOSITIVO_ZKTECO',
+        entity_id: updated.id,
+        details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number})`,
+        previous_values: {
+          ip_address: existing.ip_address,
+          port: existing.port,
+          name: existing.name,
+          serial_number: existing.serial_number,
+        },
+        new_values: {
+          ip_address: updated.ip_address,
+          port: updated.port,
+          name: updated.name,
+          serial_number: updated.serial_number,
+        },
+      });
+      fs.writeFileSync(auditPath, JSON.stringify(audits.slice(0, 500), null, 2), 'utf8');
+    } catch (auditErr) {
+      log(`Aviso al escribir auditoría: ${auditErr.message}`);
+    }
+
+    log(`Marcador ${updated.name} guardado con éxito. Nueva IP: ${updated.ip_address}, Puerto: ${updated.port}`);
+    return {
+      success: true,
+      message: `Configuración de ${updated.name} guardada exitosamente en la base de datos local y Electron. IP activa: ${updated.ip_address}, Puerto: ${updated.port}.`,
+      data: updated,
+    };
+  } catch (err) {
+    log(`Error al actualizar marcador en Electron: ${err.message}`);
+    return {
+      success: false,
+      message: `Error al persistir configuración en Electron: ${err.message}`,
+    };
+  }
+});
+
+// =========================================================================
 // IPC HANDLERS - INFORMACIÓN DEL SISTEMA LOCAL Y HARDWARE
 // =========================================================================
 

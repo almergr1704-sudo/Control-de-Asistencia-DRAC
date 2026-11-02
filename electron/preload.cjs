@@ -27,6 +27,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('zk:ping-device', { ip, port, timeoutMs });
   },
 
+  // Persistencia y Gestión Directa de Marcadores Biométricos
+  getDevices: () => {
+    return ipcRenderer.invoke('device:get-all');
+  },
+  updateDevice: (id, payload) => {
+    return ipcRenderer.invoke('device:update', { id, payload });
+  },
+
   // Integración BioTime Platform Service Console (C:\BioTime)
   checkBioTimeStatus: (params = {}) => {
     return ipcRenderer.invoke('biotime:check-status', params);

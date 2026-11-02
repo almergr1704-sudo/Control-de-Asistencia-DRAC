@@ -64,6 +64,7 @@ import { ApiConsole } from './components/ApiConsole';
 
 import { attendanceService } from './services/attendanceService';
 import { VIEW_TO_HASH, HASH_TO_VIEW } from './utils/router';
+import { getApiUrl } from './utils/apiConfig';
 
 export const App: React.FC = () => {
   // Navigation & View Routing State
@@ -231,54 +232,62 @@ export const App: React.FC = () => {
   const [turnos, setTurnos] = useState<Turno[]>(INITIAL_TURNOS);
   const [horarios, setHorarios] = useState<Horario[]>(INITIAL_HORARIOS);
   const [devices, setDevices] = useState<DispositivoZkTeco[]>(() => {
-    return [
-      {
-        id: 'dev-01',
-        name: 'ZKTeco G3 Sede Central (Entrada Principal)',
-        serial_number: 'AEH2223460040',
-        ip_address: '192.168.1.180',
-        port: 7496,
-        comm_key: 0,
-        device_id_num: 1,
-        netmask: '255.255.255.0',
-        gateway: '192.168.1.1',
-        dns: '200.48.225.130',
-        platform: 'ZMN220_TFT',
-        model: 'ZKTeco G3',
-        protocol: 'TCP',
-        location_detail: 'Entrada Principal Sede Central - DRAC Cajamarca',
-        mac_address: '00:17:61:10:74:7F',
-        device_type: 'FACIAL_G3',
-        firmware_version: 'Ver 1.14.0-build54',
-        status: 'ONLINE',
-        tcp_status: 'ONLINE',
-        agent_status: 'ONLINE',
-        last_activity: new Date().toISOString(),
-        last_sync: new Date().toISOString(),
-        last_latency_ms: 18,
-        log_count: 0,
-        enrolled_user_count: 142,
-        dependencia_id: 'dep-01',
-        dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
-        dependencia_tipo: 'SEDE_CENTRAL',
-        operator_pc: '192.168.1.33',
-        push_enabled: true,
-        push_server_address: '192.168.1.29',
-        push_server_port: 89,
-        push_endpoint: '/iclock/cdata',
-        push_protocol: 'HTTP',
-        push_interval: 5,
-        biotime_config: {
-          enabled: true,
-          web_port: 89,
-          db_type: 'PostgreSQL',
-          db_host: '192.168.1.29',
-          db_port: 7496,
-          db_name: 'biotime',
-          db_user: 'postgres',
-        },
+    const defaultDev: DispositivoZkTeco = {
+      id: 'dev-01',
+      name: 'ZKTeco G3 Sede Central (Entrada Principal)',
+      serial_number: 'AEH2223460040',
+      ip_address: '192.168.1.180',
+      port: 7496,
+      comm_key: 0,
+      device_id_num: 1,
+      netmask: '255.255.255.0',
+      gateway: '192.168.1.1',
+      dns: '200.48.225.130',
+      platform: 'ZMN220_TFT',
+      model: 'ZKTeco G3',
+      protocol: 'TCP',
+      location_detail: 'Entrada Principal Sede Central - DRAC Cajamarca',
+      mac_address: '00:17:61:10:74:7F',
+      device_type: 'FACIAL_G3',
+      firmware_version: 'Ver 1.14.0-build54',
+      status: 'ONLINE',
+      tcp_status: 'ONLINE',
+      agent_status: 'ONLINE',
+      last_activity: new Date().toISOString(),
+      last_sync: new Date().toISOString(),
+      last_latency_ms: 18,
+      log_count: 0,
+      enrolled_user_count: 142,
+      dependencia_id: 'dep-01',
+      dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
+      dependencia_tipo: 'SEDE_CENTRAL',
+      operator_pc: '192.168.1.33',
+      push_enabled: true,
+      push_server_address: '192.168.1.29',
+      push_server_port: 89,
+      push_endpoint: '/iclock/cdata',
+      push_protocol: 'HTTP',
+      push_interval: 5,
+      biotime_config: {
+        enabled: true,
+        web_port: 89,
+        db_type: 'PostgreSQL',
+        db_host: '192.168.1.29',
+        db_port: 7496,
+        db_name: 'biotime',
+        db_user: 'postgres',
       },
-    ];
+    };
+
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
+        if (stored['dev-01']) {
+          return [{ ...defaultDev, ...stored['dev-01'] }];
+        }
+      } catch (_) {}
+    }
+    return [defaultDev];
   });
 
   const [rawPunches, setRawPunches] = useState<MarcacionRaw[]>(INITIAL_RAW_PUNCHES);
@@ -360,9 +369,26 @@ export const App: React.FC = () => {
         });
       }
       // 4. Devices
-      const resDevs = await fetch('/api/zkteco/devices').then((r) => r.json()).catch(() => null);
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.getDevices) {
+        try {
+          const electronDevs = await (window as any).electronAPI.getDevices();
+          if (Array.isArray(electronDevs) && electronDevs.length > 0) {
+            setDevices(electronDevs);
+            return;
+          }
+        } catch (_) {}
+      }
+
+      const resDevs = await fetch(getApiUrl('/api/zkteco/devices')).then((r) => r.json()).catch(() => null);
       if (resDevs?.success && Array.isArray(resDevs.data) && resDevs.data.length > 0) {
         setDevices(resDevs.data);
+      } else if (typeof window !== 'undefined') {
+        try {
+          const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
+          if (stored['dev-01']) {
+            setDevices((prev) => prev.map((d) => (d.id === 'dev-01' ? { ...d, ...stored['dev-01'] } : d)));
+          }
+        } catch (_) {}
       }
     } catch (err) {
       console.warn('[DRAC-CAJAMARCA] Error sincronizando con backend:', err);
