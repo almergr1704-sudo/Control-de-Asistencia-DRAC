@@ -966,14 +966,14 @@ function buildDiagnosisResult(
  */
 async function runIndependentDiagnostics(
   ip,
-  port = 4370,
+  port = 7496,
   timeoutMs = 3000,
-  modelHint = 'G3-id',
-  snHint = '',
+  modelHint = 'ZKTeco G3',
+  snHint = 'AEH2223460040',
   commKey = 0
 ) {
   const cleanIp = String(ip || '').trim();
-  const targetPort = Number(port) || 4370;
+  const targetPort = Number(port) || 7496;
   const numericCommKey = Number(commKey) || 0;
   const timeout = Math.min(5000, Math.max(1500, Number(timeoutMs) || 3000));
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -987,7 +987,7 @@ async function runIndependentDiagnostics(
   let firewallResult = { status: 'Correcto', message: 'Firewall de Windows no aplicable (sistema no Windows).' };
   if (firewallManager && typeof firewallManager.checkFirewallStatus === 'function') {
     try {
-      const fwStatus = await firewallManager.checkFirewallStatus();
+      const fwStatus = await firewallManager.checkFirewallStatus(targetPort);
       if (!fwStatus.isWindows) {
         firewallResult = {
           status: 'Correcto',
@@ -996,12 +996,12 @@ async function runIndependentDiagnostics(
       } else if (fwStatus.configured) {
         firewallResult = {
           status: 'Correcto',
-          message: 'Firewall Windows: OK. Reglas para puerto TCP 4370 (Entrada y Salida) y ejecutables activas.',
+          message: `Firewall Windows: OK. Reglas para puerto TCP ${targetPort} (Entrada y Salida) y ejecutables activas.`,
         };
       } else {
         firewallResult = {
           status: 'Fallido',
-          message: `Firewall Windows: REQUIERE CONFIGURACIÓN. Reglas faltantes: ${fwStatus.missingRules?.join(', ') || 'TCP 4370'}.`,
+          message: `Firewall Windows: REQUIERE CONFIGURACIÓN. Reglas faltantes: ${fwStatus.missingRules?.join(', ') || `TCP ${targetPort}`}.`,
           error: 'REGLAS_FIREWALL_FALTANTES',
         };
       }
@@ -1049,7 +1049,7 @@ async function runIndependentDiagnostics(
     };
   }
 
-  // 3. Apertura TCP 4370
+  // 3. Apertura TCP (puerto configurado)
   let tcpPortResult = { status: 'Pendiente', message: 'En espera...' };
   const tcpProbe = await probeTcpPort(cleanIp, targetPort, timeout);
 
