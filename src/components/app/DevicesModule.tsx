@@ -29,6 +29,13 @@ import {
   Info,
   Sliders,
   Network,
+  Edit3,
+  Save,
+  X,
+  Eye,
+  EyeOff,
+  Key,
+  Globe,
 } from 'lucide-react';
 
 interface DevicesModuleProps {
@@ -68,6 +75,50 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [syncStatusMsg, setSyncStatusMsg] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Editable form state for ZKTeco G3 Biometric Marker
+  const [isEditing, setIsEditing] = useState(false);
+  const [showCommKey, setShowCommKey] = useState(false);
+  const [isSavingDevice, setIsSavingDevice] = useState(false);
+  const [deviceSaveMessage, setDeviceSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  const [formData, setFormData] = useState({
+    name: devices[0]?.name || 'ZKTeco G3 Sede Central',
+    model: devices[0]?.model || 'ZKTeco G3',
+    serial_number: devices[0]?.serial_number || 'AEH2223460040',
+    ip_address: devices[0]?.ip_address || '192.168.1.180',
+    port: devices[0]?.port || 7496,
+    netmask: devices[0]?.netmask || '255.255.255.0',
+    gateway: devices[0]?.gateway || '192.168.1.1',
+    dns: devices[0]?.dns || '200.48.225.130',
+    mac_address: devices[0]?.mac_address || '00:17:61:10:74:7F',
+    comm_key: devices[0]?.comm_key ?? 0,
+    device_id_num: devices[0]?.device_id_num ?? 1,
+    status: devices[0]?.status || 'ONLINE',
+    protocol: devices[0]?.protocol || 'TCP',
+    location_detail: devices[0]?.location_detail || 'Entrada Principal - Sede Central DRAC Cajamarca',
+  });
+
+  const syncFormWithDevice = (dev: DispositivoZkTeco) => {
+    setFormData({
+      name: dev.name || 'ZKTeco G3 Sede Central',
+      model: dev.model || 'ZKTeco G3',
+      serial_number: dev.serial_number || 'AEH2223460040',
+      ip_address: dev.ip_address || '192.168.1.180',
+      port: dev.port || 7496,
+      netmask: dev.netmask || '255.255.255.0',
+      gateway: dev.gateway || '192.168.1.1',
+      dns: dev.dns || '200.48.225.130',
+      mac_address: dev.mac_address || '00:17:61:10:74:7F',
+      comm_key: dev.comm_key ?? 0,
+      device_id_num: dev.device_id_num ?? 1,
+      status: dev.status || 'ONLINE',
+      protocol: dev.protocol || 'TCP',
+      location_detail: dev.location_detail || 'Entrada Principal - Sede Central DRAC Cajamarca',
+    });
+    setFormErrors({});
+  };
+
   // Port configuration state (Default: 7496, configurable to 4370 or custom)
   const [portInput, setPortInput] = useState<number>(devices[0]?.port || 7496);
   const [isSavingPort, setIsSavingPort] = useState(false);
@@ -100,6 +151,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       const devPort = dev.port || 7496;
       setTestPort(devPort);
       setPortInput(devPort);
+      if (!isEditing) {
+        syncFormWithDevice(dev);
+      }
     }
   }, [devices]);
 
@@ -120,6 +174,170 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const handleStartEdit = () => {
+    if (selectedDevice) {
+      syncFormWithDevice(selectedDevice);
+    }
+    setIsEditing(true);
+    setDeviceSaveMessage(null);
+  };
+
+  const handleCancelEdit = () => {
+    if (selectedDevice) {
+      syncFormWithDevice(selectedDevice);
+    }
+    setIsEditing(false);
+    setFormErrors({});
+    setDeviceSaveMessage(null);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    const ipv4Regex = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+    if (!formData.name.trim()) errors.name = 'El nombre del dispositivo es obligatorio.';
+    if (!formData.model.trim()) errors.model = 'El modelo del marcador es obligatorio.';
+    if (!formData.serial_number.trim()) errors.serial_number = 'El número de serie es obligatorio.';
+
+    if (!formData.ip_address.trim()) {
+      errors.ip_address = 'La dirección IP es obligatoria.';
+    } else if (!ipv4Regex.test(formData.ip_address.trim())) {
+      errors.ip_address = 'Formato de IP inválido (IPv4 requerido: ej. 192.168.1.180).';
+    }
+
+    const portNum = Number(formData.port);
+    if (!formData.port || isNaN(portNum) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      errors.port = 'Puerto TCP inválido (debe ser un número entero entre 1 y 65535).';
+    }
+
+    if (formData.netmask && formData.netmask.trim() && !ipv4Regex.test(formData.netmask.trim())) {
+      errors.netmask = 'Máscara inválida (IPv4 requerida: ej. 255.255.255.0).';
+    }
+
+    if (formData.gateway && formData.gateway.trim() && !ipv4Regex.test(formData.gateway.trim())) {
+      errors.gateway = 'Puerta de enlace inválida (IPv4 requerida: ej. 192.168.1.1).';
+    }
+
+    if (formData.dns && formData.dns.trim() && !ipv4Regex.test(formData.dns.trim())) {
+      errors.dns = 'DNS institucional inválido (ej. 200.48.225.130).';
+    }
+
+    if (formData.mac_address && formData.mac_address.trim() && !macRegex.test(formData.mac_address.trim())) {
+      errors.mac_address = 'Dirección MAC inválida (formato: 00:17:61:10:74:7F).';
+    }
+
+    const devIdNum = Number(formData.device_id_num);
+    if (isNaN(devIdNum) || devIdNum < 1) {
+      errors.device_id_num = 'Device ID debe ser un número entero mayor o igual a 1.';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveDeviceConfig = async () => {
+    if (!selectedDevice) return;
+    if (!validateForm()) {
+      setDeviceSaveMessage({
+        type: 'error',
+        text: 'Existen errores de formato en el formulario. Corrija los campos señalados en rojo antes de guardar.',
+      });
+      return;
+    }
+
+    setIsSavingDevice(true);
+    setDeviceSaveMessage(null);
+
+    const payload = {
+      name: formData.name.trim(),
+      model: formData.model.trim(),
+      serial_number: formData.serial_number.trim(),
+      ip_address: formData.ip_address.trim(),
+      port: Number(formData.port),
+      netmask: formData.netmask.trim(),
+      gateway: formData.gateway.trim(),
+      dns: formData.dns.trim(),
+      mac_address: formData.mac_address.trim().toUpperCase(),
+      comm_key: formData.comm_key,
+      device_id_num: Number(formData.device_id_num),
+      status: formData.status,
+      protocol: formData.protocol,
+      location_detail: formData.location_detail.trim(),
+      user_role: activeRole,
+      user_name: 'Administrador DRAC',
+    };
+
+    try {
+      const res = await fetch(getApiUrl(`/api/zkteco/devices/${selectedDevice.id}`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': activeRole,
+          'x-user-name': 'Administrador DRAC',
+          'x-user-id': 'admin-drac',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSelectedDevice(data.data);
+        setTestIp(data.data.ip_address);
+        setTestPort(data.data.port);
+        setPortInput(data.data.port);
+        syncFormWithDevice(data.data);
+        setIsEditing(false);
+        setDeviceSaveMessage({
+          type: 'success',
+          text: `✓ ${data.message || 'Configuración guardada exitosamente en la base de datos central.'}`,
+        });
+        if (onRefreshDevices) onRefreshDevices();
+      } else {
+        setDeviceSaveMessage({
+          type: 'error',
+          text: `Error al guardar: ${data.message || 'El servidor rechazó la actualización.'}`,
+        });
+      }
+    } catch (err: any) {
+      setDeviceSaveMessage({
+        type: 'error',
+        text: `Error de comunicación al guardar cambios: ${err.message}`,
+      });
+    } finally {
+      setIsSavingDevice(false);
+      setTimeout(() => {
+        setDeviceSaveMessage((prev) => (prev?.type === 'success' ? null : prev));
+      }, 6000);
+    }
+  };
+
+  const handleTestConnection = (overrideIp?: string, overridePort?: number) => {
+    const ip = overrideIp || (isEditing ? formData.ip_address : selectedDevice?.ip_address) || '192.168.1.180';
+    const port = Number(overridePort || (isEditing ? formData.port : selectedDevice?.port) || 7496);
+
+    const ipv4Regex = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    if (!ipv4Regex.test(ip.trim())) {
+      setDeviceSaveMessage({
+        type: 'error',
+        text: `No se puede probar la conexión: La dirección IP '${ip}' tiene formato inválido.`,
+      });
+      return;
+    }
+    if (isNaN(port) || port < 1 || port > 65535) {
+      setDeviceSaveMessage({
+        type: 'error',
+        text: `No se puede probar la conexión: El puerto '${port}' es inválido (debe ser de 1 a 65535).`,
+      });
+      return;
+    }
+
+    setTestIp(ip.trim());
+    setTestPort(port);
+    setActiveTab('diag');
+    executeSocketTest(ip.trim(), port);
+  };
+
   // Save modified TCP port for the selected device
   const handleSavePort = async (newPort: number) => {
     if (!selectedDevice) return;
@@ -128,7 +346,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     try {
       const res = await fetch(getApiUrl(`/api/zkteco/devices/${selectedDevice.id}`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': activeRole,
+          'x-user-name': 'Administrador DRAC',
+        },
         body: JSON.stringify({ port: newPort }),
       });
       const data = await res.json();
@@ -136,6 +358,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         setSelectedDevice((prev) => (prev ? { ...prev, port: newPort } : null));
         setTestPort(newPort);
         setPortInput(newPort);
+        setFormData((prev) => ({ ...prev, port: newPort }));
         setPortUpdateMessage(`✓ Puerto actualizado a ${newPort} para ${selectedDevice.name}.`);
         if (onRefreshDevices) onRefreshDevices();
       } else {
@@ -237,7 +460,9 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   };
 
   // Execute in-depth socket TCP & pipeline diagnostics on target IP and port
-  const executeSocketTest = async () => {
+  const executeSocketTest = async (overrideIp?: string, overridePort?: number) => {
+    const currentIp = overrideIp || testIp;
+    const currentPort = Number(overridePort || testPort);
     setIsTestingSocket(true);
     setSocketTestLog(null);
     const start = Date.now();
@@ -247,8 +472,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     if (electronAPI?.isDesktop && typeof electronAPI.diagnoseZkDevice === 'function') {
       try {
         const diag = await electronAPI.diagnoseZkDevice(
-          testIp,
-          testPort,
+          currentIp,
+          currentPort,
           4000,
           selectedDevice?.model || 'ZKTeco G3',
           selectedDevice?.serial_number || 'AEH2223460040',
@@ -258,8 +483,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
         setSocketTestLog({
           success: diag.success,
-          ip: testIp,
-          port: testPort,
+          ip: currentIp,
+          port: currentPort,
           latency: diag.latency_ms || elapsed,
           timestamp: new Date().toLocaleTimeString('es-PE'),
           message: diag.message,
@@ -272,13 +497,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       } catch (err: any) {
         setSocketTestLog({
           success: false,
-          ip: testIp,
-          port: testPort,
+          ip: currentIp,
+          port: currentPort,
           latency: Date.now() - start,
           timestamp: new Date().toLocaleTimeString('es-PE'),
           message: `Error al invocar driver nativo de escritorio: ${err.message}`,
           steps: [
-            { name: 'Validación de dirección IP y puerto', ok: true, info: `IP ${testIp}:${testPort} válida.` },
+            { name: 'Validación de dirección IP y puerto', ok: true, info: `IP ${currentIp}:${currentPort} válida.` },
             { name: 'Alcance de red y conectividad host desde Windows', ok: false, info: err.message },
           ],
         });
@@ -292,21 +517,21 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       const res = await fetch(getApiUrl('/api/zkteco/diagnose-pipeline'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedDevice?.id || 'dev-01', ip: testIp, port: testPort }),
+        body: JSON.stringify({ deviceId: selectedDevice?.id || 'dev-01', ip: currentIp, port: currentPort }),
       });
       const data = await res.json();
       const elapsed = Date.now() - start;
 
       setSocketTestLog({
         success: data.success ?? true,
-        ip: testIp,
-        port: testPort,
+        ip: currentIp,
+        port: currentPort,
         latency: data.latency_ms || elapsed || 18,
         timestamp: new Date().toLocaleTimeString('es-PE'),
-        message: `Diagnóstico de pipeline completado para ${testIp}:${testPort}.`,
+        message: `Diagnóstico de pipeline completado para ${currentIp}:${currentPort}.`,
         steps: [
-          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 válida en segmento institucional (${testIp})` },
-          { name: 'Disponibilidad de Puerto TCP', ok: true, info: `Puerto ${testPort} configurado y probado` },
+          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 válida en segmento institucional (${currentIp})` },
+          { name: 'Disponibilidad de Puerto TCP', ok: true, info: `Puerto ${currentPort} configurado y probado` },
           { name: 'Handshake Protocolo ZK', ok: true, info: `Sesión de protocolo ZKTeco verificada` },
           { name: 'Buffer de Marcaciones', ok: true, info: `0 marcaciones nuevas en memoria del reloj` },
           { name: 'Recepción PUSH ADMS', ok: true, info: `Endpoint /api/zkteco/push en puerto 3000 habilitado para ingesta automática` },
@@ -315,14 +540,14 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     } catch (err: any) {
       setSocketTestLog({
         success: false,
-        ip: testIp,
-        port: testPort,
+        ip: currentIp,
+        port: currentPort,
         latency: Date.now() - start,
         timestamp: new Date().toLocaleTimeString('es-PE'),
-        message: `No se pudo conectar al marcador en ${testIp}:${testPort}: ${err.message}`,
+        message: `No se pudo conectar al marcador en ${currentIp}:${currentPort}: ${err.message}`,
         steps: [
-          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 ${testIp}` },
-          { name: 'Disponibilidad de Puerto TCP', ok: false, info: `Puerto ${testPort} no responde o firewall bloquea el socket` },
+          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 ${currentIp}` },
+          { name: 'Disponibilidad de Puerto TCP', ok: false, info: `Puerto ${currentPort} no responde o firewall bloquea el socket` },
           { name: 'Handshake Protocolo ZK', ok: false, info: `Sin respuesta del dispositivo` },
         ],
       });
@@ -581,106 +806,626 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           <div className="lg:col-span-2 space-y-4">
             {selectedDevice ? (
               <div className="bg-[#0F1115] border border-slate-800 rounded-xl p-5 space-y-5">
-                <div className="flex items-start justify-between border-b border-slate-800 pb-4 flex-wrap gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-white text-sm">{selectedDevice.name}</h3>
+                {/* Header with Title, Badges, and Action Buttons */}
+                <div className="flex items-start justify-between border-b border-slate-800 pb-4 flex-wrap gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-white text-base tracking-tight">
+                        {isEditing ? formData.name || 'Editando Dispositivo' : selectedDevice.name}
+                      </h3>
                       <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
                         {selectedDevice.platform || 'ZMN220_TFT'}
                       </span>
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded flex items-center gap-1 border ${
+                          String(isEditing ? formData.status : selectedDevice.status) === 'ONLINE' ||
+                          String(isEditing ? formData.status : selectedDevice.status) === 'Activo'
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                            : 'bg-rose-950/80 text-rose-300 border-rose-800'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            String(isEditing ? formData.status : selectedDevice.status) === 'ONLINE' ||
+                            String(isEditing ? formData.status : selectedDevice.status) === 'Activo'
+                              ? 'bg-emerald-400 animate-pulse'
+                              : 'bg-rose-400'
+                          }`}
+                        />
+                        {String(isEditing ? formData.status : selectedDevice.status) === 'ONLINE' ||
+                        String(isEditing ? formData.status : selectedDevice.status) === 'Activo'
+                          ? 'ACTIVO / ONLINE'
+                          : 'INACTIVO'}
+                      </span>
+                      <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-slate-900 text-slate-300 border border-slate-700">
+                        {(isEditing ? formData.protocol : selectedDevice.protocol) === 'PUSH_ADMS'
+                          ? 'ADMS PUSH'
+                          : 'TCP SOCKET'}
+                      </span>
                     </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Modelo institucional ZKTeco G3, plataforma ZMN220_TFT, S/N AEH2223460040 en la Sede Central DRAC.
+                    <p className="text-xs text-slate-400">
+                      Modelo: <strong className="text-slate-200">{isEditing ? formData.model : selectedDevice.model || 'ZKTeco G3'}</strong> | Serial: <strong className="text-slate-200 font-mono">{isEditing ? formData.serial_number : selectedDevice.serial_number}</strong> | Ubicación: <span className="text-slate-300">{isEditing ? formData.location_detail : selectedDevice.location_detail}</span>
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {/* Primary Action Buttons: Editar, Guardar, Cancelar, Probar */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {!isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleStartEdit}
+                          disabled={!canManage}
+                          title={!canManage ? 'Solo Administradores pueden editar parámetros' : 'Modificar datos del marcador'}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-100 font-semibold text-xs rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Editar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleTestConnection()}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Probar Conexión</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSyncDevice(selectedDevice)}
+                          disabled={isSyncing}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-900/30"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>{isSyncing ? 'Conectando...' : `Sincronizar Socket (${selectedDevice.port || 7496})`}</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleSaveDeviceConfig}
+                          disabled={isSavingDevice}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-900/40"
+                        >
+                          <Save className={`w-3.5 h-3.5 ${isSavingDevice ? 'animate-spin' : ''}`} />
+                          <span>{isSavingDevice ? 'Guardando...' : 'Guardar Cambios'}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          disabled={isSavingDevice}
+                          className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition-colors flex items-center gap-1.5"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Cancelar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleTestConnection(formData.ip_address, formData.port)}
+                          disabled={isSavingDevice}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl transition-colors flex items-center gap-1.5"
+                        >
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Probar Estos Datos</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Notification / Feedback Banner */}
+                {deviceSaveMessage && (
+                  <div
+                    className={`p-3.5 rounded-xl border text-xs flex items-center justify-between font-mono animate-fadeIn ${
+                      deviceSaveMessage.type === 'success'
+                        ? 'bg-emerald-950/70 border-emerald-500 text-emerald-200'
+                        : 'bg-rose-950/70 border-rose-500 text-rose-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {deviceSaveMessage.type === 'success' ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                      )}
+                      <span>{deviceSaveMessage.text}</span>
+                    </div>
                     <button
-                      onClick={() => handleSyncDevice(selectedDevice)}
-                      disabled={isSyncing}
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-900/30"
+                      type="button"
+                      onClick={() => setDeviceSaveMessage(null)}
+                      className="text-slate-400 hover:text-white ml-2"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                      <span>{isSyncing ? 'Conectando...' : `Sincronizar Vía Socket TCP (${activePort})`}</span>
+                      ✕
                     </button>
                   </div>
-                </div>
+                )}
 
-                {/* Hardware Specifications Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Número de Serie</span>
-                    <div className="flex items-center justify-between font-mono font-bold text-slate-100">
-                      <span>{selectedDevice.serial_number}</span>
-                      <button
-                        onClick={() => handleCopy(selectedDevice.serial_number, 'sn')}
-                        className="text-slate-500 hover:text-white"
-                      >
-                        {copiedKey === 'sn' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      </button>
+                {/* EDIT MODE: Complete 13-Field Form */}
+                {isEditing ? (
+                  <div className="space-y-5 bg-[#090A0D] p-4 md:p-5 rounded-xl border border-indigo-500/30">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Edit3 className="w-4 h-4 text-indigo-400" />
+                        <h4 className="font-bold text-xs uppercase text-indigo-300 tracking-wider">
+                          Modificar Parámetros del Marcador Biométrico (Base de Datos Supabase & Local)
+                        </h4>
+                      </div>
+                      <span className="text-[11px] text-slate-400">
+                        Los cambios se aplican automáticamente al motor de Electron y a la API
+                      </span>
+                    </div>
+
+                    {/* Group 1: Identificación del Equipo */}
+                    <div className="space-y-3">
+                      <h5 className="text-[11px] font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <Cpu className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>1. Identificación y Estado del Marcador</span>
+                      </h5>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                        {/* 1. Nombre */}
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Nombre del Dispositivo <span className="text-rose-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.name}
+                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            placeholder="ZKTeco G3 Sede Central"
+                            className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white text-xs focus:outline-none focus:ring-1 ${
+                              formErrors.name ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                            }`}
+                          />
+                          {formErrors.name && <p className="text-[10px] text-rose-400">{formErrors.name}</p>}
+                        </div>
+
+                        {/* 2. Modelo */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Modelo <span className="text-rose-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.model}
+                            onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                            placeholder="ZKTeco G3"
+                            className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white text-xs font-mono focus:outline-none focus:ring-1 ${
+                              formErrors.model ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                            }`}
+                          />
+                          {formErrors.model && <p className="text-[10px] text-rose-400">{formErrors.model}</p>}
+                        </div>
+
+                        {/* 3. Número de serie */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Número de Serie <span className="text-rose-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.serial_number}
+                            onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
+                            placeholder="AEH2223460040"
+                            className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white text-xs font-mono font-bold focus:outline-none focus:ring-1 ${
+                              formErrors.serial_number ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                            }`}
+                          />
+                          {formErrors.serial_number && <p className="text-[10px] text-rose-400">{formErrors.serial_number}</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group 2: Red Institucional & Socket TCP */}
+                    <div className="space-y-3 pt-2 border-t border-slate-800">
+                      <h5 className="text-[11px] font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <Network className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>2. Red Institucional y Puertos de Comunicación</span>
+                      </h5>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                        {/* 4. Dirección IP */}
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Dirección IP LAN <span className="text-rose-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.ip_address}
+                            onChange={(e) => setFormData({ ...formData, ip_address: e.target.value })}
+                            placeholder="192.168.1.180"
+                            className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white font-mono text-xs font-bold focus:outline-none focus:ring-1 ${
+                              formErrors.ip_address ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                            }`}
+                          />
+                          {formErrors.ip_address && <p className="text-[10px] text-rose-400">{formErrors.ip_address}</p>}
+                        </div>
+
+                        {/* 5. Puerto TCP */}
+                        <div className="md:col-span-2 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                              Puerto TCP <span className="text-rose-400">*</span>
+                            </label>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, port: 7496 })}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                  Number(formData.port) === 7496 ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                7496 G3
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, port: 4370 })}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                  Number(formData.port) === 4370 ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                4370 ZK
+                              </button>
+                            </div>
+                          </div>
+                          <input
+                            type="number"
+                            value={formData.port}
+                            onChange={(e) => setFormData({ ...formData, port: Number(e.target.value) })}
+                            placeholder="7496"
+                            className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-amber-300 font-mono text-xs font-bold focus:outline-none focus:ring-1 ${
+                              formErrors.port ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                            }`}
+                          />
+                          {formErrors.port && <p className="text-[10px] text-rose-400">{formErrors.port}</p>}
+                        </div>
+
+                        {/* 6. Máscara de subred */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">Máscara Subred</label>
+                          <input
+                            type="text"
+                            value={formData.netmask}
+                            onChange={(e) => setFormData({ ...formData, netmask: e.target.value })}
+                            placeholder="255.255.255.0"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          {formErrors.netmask && <p className="text-[10px] text-rose-400">{formErrors.netmask}</p>}
+                        </div>
+
+                        {/* 7. Puerta de enlace (Gateway) */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">Gateway</label>
+                          <input
+                            type="text"
+                            value={formData.gateway}
+                            onChange={(e) => setFormData({ ...formData, gateway: e.target.value })}
+                            placeholder="192.168.1.1"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          {formErrors.gateway && <p className="text-[10px] text-rose-400">{formErrors.gateway}</p>}
+                        </div>
+
+                        {/* 8. DNS */}
+                        <div className="md:col-span-3 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">Servidor DNS</label>
+                          <input
+                            type="text"
+                            value={formData.dns}
+                            onChange={(e) => setFormData({ ...formData, dns: e.target.value })}
+                            placeholder="200.48.225.130"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          {formErrors.dns && <p className="text-[10px] text-rose-400">{formErrors.dns}</p>}
+                        </div>
+
+                        {/* 9. Dirección MAC */}
+                        <div className="md:col-span-3 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">Dirección MAC</label>
+                          <input
+                            type="text"
+                            value={formData.mac_address}
+                            onChange={(e) => setFormData({ ...formData, mac_address: e.target.value.toUpperCase() })}
+                            placeholder="00:17:61:10:74:7F"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          {formErrors.mac_address && <p className="text-[10px] text-rose-400">{formErrors.mac_address}</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Group 3: Seguridad, Protocolo y Ubicación */}
+                    <div className="space-y-3 pt-2 border-t border-slate-800">
+                      <h5 className="text-[11px] font-bold uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>3. Seguridad, Protocolo de Comunicación y Ubicación</span>
+                      </h5>
+
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                        {/* 10. CommKey */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            CommKey (Clave ZK)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showCommKey ? 'text' : 'password'}
+                              value={formData.comm_key}
+                              onChange={(e) => setFormData({ ...formData, comm_key: e.target.value })}
+                              placeholder="0"
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500 pr-9"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowCommKey(!showCommKey)}
+                              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                              title={showCommKey ? 'Ocultar clave' : 'Mostrar clave'}
+                            >
+                              {showCommKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 11. Device ID */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">Device ID</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={formData.device_id_num}
+                            onChange={(e) => setFormData({ ...formData, device_id_num: Number(e.target.value) })}
+                            placeholder="1"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+
+                        {/* 12. Estado del dispositivo */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Estado del Dispositivo
+                          </label>
+                          <select
+                            value={formData.status}
+                            onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="ONLINE">Activo (ONLINE)</option>
+                            <option value="OFFLINE">Inactivo (OFFLINE)</option>
+                          </select>
+                        </div>
+
+                        {/* 13. Tipo de conexión */}
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Tipo de Conexión
+                          </label>
+                          <select
+                            value={formData.protocol}
+                            onChange={(e) => setFormData({ ...formData, protocol: e.target.value as any })}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                          >
+                            <option value="TCP">TCP Socket Directo</option>
+                            <option value="PUSH_ADMS">ADMS Push (HTTP)</option>
+                          </select>
+                        </div>
+
+                        {/* Ubicación física */}
+                        <div className="md:col-span-4 space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                            Ubicación Física Institucional
+                          </label>
+                          <input
+                            type="text"
+                            value={formData.location_detail}
+                            onChange={(e) => setFormData({ ...formData, location_detail: e.target.value })}
+                            placeholder="Entrada Principal - Sede Central DRAC Cajamarca"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Form Actions */}
+                    <div className="pt-4 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2">
+                      <div className="text-[11px] text-slate-400">
+                        Al guardar, la configuración se sincronizará con la base de datos central Supabase y el archivo local.
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveDeviceConfig}
+                          disabled={isSavingDevice}
+                          className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-md shadow-emerald-950/40"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{isSavingDevice ? 'Guardando...' : 'Guardar Cambios'}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
+                ) : (
+                  /* VIEW MODE: Complete Hardware Specifications Grid for all 13 fields */
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                      {/* 1. Nombre y Modelo */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Nombre / Modelo</span>
+                        <div className="text-slate-100 font-bold truncate">{selectedDevice.name}</div>
+                        <div className="text-[11px] text-indigo-300 font-mono">{selectedDevice.model || 'ZKTeco G3'}</div>
+                      </div>
 
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Dirección IP LAN</span>
-                    <div className="flex items-center justify-between font-mono font-bold text-slate-100">
-                      <span>{selectedDevice.ip_address}</span>
-                      <button
-                        onClick={() => handleCopy(selectedDevice.ip_address, 'ip')}
-                        className="text-slate-500 hover:text-white"
-                      >
-                        {copiedKey === 'ip' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      </button>
+                      {/* 2. Número de Serie */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Número de Serie</span>
+                        <div className="flex items-center justify-between font-mono font-bold text-slate-100">
+                          <span>{selectedDevice.serial_number}</span>
+                          <button
+                            onClick={() => handleCopy(selectedDevice.serial_number, 'sn')}
+                            className="text-slate-500 hover:text-white"
+                            title="Copiar Serial"
+                          >
+                            {copiedKey === 'sn' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3. Dirección IP */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Dirección IP LAN</span>
+                        <div className="flex items-center justify-between font-mono font-bold text-slate-100">
+                          <span className="text-cyan-300">{selectedDevice.ip_address}</span>
+                          <button
+                            onClick={() => handleCopy(selectedDevice.ip_address, 'ip')}
+                            className="text-slate-500 hover:text-white"
+                            title="Copiar IP"
+                          >
+                            {copiedKey === 'ip' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 4. Puerto TCP */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Puerto Socket TCP</span>
+                        <div className="flex items-center justify-between font-mono font-bold text-amber-300">
+                          <span>{selectedDevice.port || 7496}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/60 font-sans">
+                            {Number(selectedDevice.port) === 7496 ? 'Oficial G3' : 'Personalizado'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 5. Máscara & Gateway */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Máscara / Gateway</span>
+                        <div className="font-mono text-slate-300 text-[11px]">
+                          <div>Mask: <strong className="text-slate-100">{selectedDevice.netmask || '255.255.255.0'}</strong></div>
+                          <div className="text-slate-400">GW: {selectedDevice.gateway || '192.168.1.1'}</div>
+                        </div>
+                      </div>
+
+                      {/* 6. DNS Servidor */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Servidor DNS</span>
+                        <div className="flex items-center justify-between font-mono text-slate-200 text-[11px]">
+                          <span>{selectedDevice.dns || '200.48.225.130'}</span>
+                          <button
+                            onClick={() => handleCopy(selectedDevice.dns || '200.48.225.130', 'dns')}
+                            className="text-slate-500 hover:text-white"
+                            title="Copiar DNS"
+                          >
+                            {copiedKey === 'dns' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 7. Dirección MAC */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Dirección MAC</span>
+                        <div className="flex items-center justify-between font-mono text-slate-300 text-[11px]">
+                          <span>{selectedDevice.mac_address || '00:17:61:10:74:7F'}</span>
+                          <button
+                            onClick={() => handleCopy(selectedDevice.mac_address || '00:17:61:10:74:7F', 'mac')}
+                            className="text-slate-500 hover:text-white"
+                            title="Copiar MAC"
+                          >
+                            {copiedKey === 'mac' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 8. CommKey y Device ID */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">CommKey / Device ID</span>
+                        <div className="font-mono text-slate-300 text-[11px] flex items-center justify-between">
+                          <div>
+                            Key: <strong className="text-slate-200">{showCommKey ? selectedDevice.comm_key ?? 0 : '••••'}</strong>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowCommKey(!showCommKey)}
+                            className="text-slate-500 hover:text-white"
+                          >
+                            {showCommKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          </button>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Device ID: <strong className="text-slate-200">{selectedDevice.device_id_num ?? 1}</strong>
+                        </div>
+                      </div>
+
+                      {/* 9. Tipo de Conexión & Estado */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Protocolo / Estado</span>
+                        <div className="text-slate-200 font-semibold text-[11px]">
+                          {selectedDevice.protocol === 'PUSH_ADMS' ? 'ADMS Push HTTP' : 'TCP Socket Directo'}
+                        </div>
+                        <div className="text-[10px] text-emerald-400 font-mono">
+                          {selectedDevice.status === 'ONLINE' ? 'Activo en Producción' : 'Inactivo'}
+                        </div>
+                      </div>
+
+                      {/* 10. Ubicación Física */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Ubicación Física</span>
+                        <div className="text-slate-200 text-[11px] truncate" title={selectedDevice.location_detail}>
+                          {selectedDevice.location_detail || 'Sede Central DRAC'}
+                        </div>
+                        <div className="text-[10px] text-slate-500">Cajamarca</div>
+                      </div>
+
+                      {/* 11. Servidor BioTime */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">Servidor BioTime</span>
+                        <div className="font-mono text-slate-300 text-[11px]">
+                          <div>IP: 192.168.1.29:89</div>
+                          <div>DB: Puerto 7496</div>
+                        </div>
+                      </div>
+
+                      {/* 12. PC Operador DRAC */}
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 block">PC Operador DRAC</span>
+                        <div className="font-mono text-slate-300 text-[11px]">
+                          <div className="text-cyan-300 font-bold">{selectedDevice.operator_pc || '192.168.1.33'}</div>
+                          <div className="text-slate-500">Electron Desktop</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metadata / Audit Footer */}
+                    <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>
+                          Última modificación persistente:{' '}
+                          <strong className="text-slate-200">
+                            {selectedDevice.last_modified_by || 'Administrador DRAC'}
+                          </strong>
+                        </span>
+                      </div>
+                      <span className="font-mono text-slate-400">
+                        {selectedDevice.last_modified_at
+                          ? new Date(selectedDevice.last_modified_at).toLocaleString('es-PE')
+                          : selectedDevice.updated_at
+                          ? new Date(selectedDevice.updated_at).toLocaleString('es-PE')
+                          : 'Sincronizado'}
+                      </span>
                     </div>
                   </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Puerto Socket TCP</span>
-                    <div className="flex items-center justify-between font-mono font-bold text-amber-300">
-                      <span>{selectedDevice.port || 7496}</span>
-                      <span className="text-[10px] text-slate-500 font-sans">Configurable</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Dirección MAC</span>
-                    <div className="flex items-center justify-between font-mono text-slate-300">
-                      <span>{selectedDevice.mac_address || '00:17:61:10:74:7F'}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Máscara / Gateway</span>
-                    <div className="font-mono text-slate-300 text-[11px]">
-                      <div>{selectedDevice.netmask || '255.255.255.0'}</div>
-                      <div className="text-slate-500">{selectedDevice.gateway || '192.168.1.1'}</div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">CommKey / Device ID</span>
-                    <div className="font-mono text-slate-300 text-[11px]">
-                      <div>Key: <strong className="text-slate-200">{selectedDevice.comm_key ?? 0}</strong></div>
-                      <div>ID: <strong className="text-slate-200">{selectedDevice.device_id_num ?? 1}</strong></div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Servidor BioTime</span>
-                    <div className="font-mono text-slate-300 text-[11px]">
-                      <div>IP: 192.168.1.29:89</div>
-                      <div>DB: Puerto 7496</div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">PC Operador DRAC</span>
-                    <div className="font-mono text-slate-300 text-[11px]">
-                      <div className="text-cyan-300 font-bold">{selectedDevice.operator_pc || '192.168.1.33'}</div>
-                      <div className="text-slate-500">Electron Desktop</div>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Interactive Port Switcher & Firewall Rule Setup */}
                 <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl space-y-3">
@@ -944,7 +1689,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               <div className="flex items-end">
                 <button
                   type="button"
-                  onClick={executeSocketTest}
+                  onClick={() => executeSocketTest()}
                   disabled={isTestingSocket}
                   className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-950/30"
                 >

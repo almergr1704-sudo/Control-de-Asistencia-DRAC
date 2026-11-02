@@ -242,6 +242,7 @@ export const App: React.FC = () => {
         device_id_num: 1,
         netmask: '255.255.255.0',
         gateway: '192.168.1.1',
+        dns: '200.48.225.130',
         platform: 'ZMN220_TFT',
         model: 'ZKTeco G3',
         protocol: 'TCP',

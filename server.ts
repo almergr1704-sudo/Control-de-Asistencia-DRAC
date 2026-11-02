@@ -28,6 +28,7 @@ const ATTENDANCE_FILE = path.join(DATA_DIR, 'attendance.json');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const EMPLOYEES_FILE = path.join(DATA_DIR, 'employees.json');
 const PUSH_LOGS_FILE = path.join(DATA_DIR, 'push-logs.json');
+const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit-logs.json');
 
 // Helper to read JSON files safely
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -141,31 +142,210 @@ app.get('/api/zkteco/devices', (req, res) => {
   });
 });
 
-// PUT /api/zkteco/devices/:id - Update device configuration (port, IP, etc.)
+// PUT /api/zkteco/devices/:id - Update device configuration (IP, port, serial, MAC, etc.)
 app.put('/api/zkteco/devices/:id', (req, res) => {
   const { id } = req.params;
   const devices = readJsonFile<any[]>(DEVICES_FILE, []);
   const index = devices.findIndex((d) => d.id === id || d.serial_number === id);
 
   if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Dispositivo no encontrado' });
+    return res.status(404).json({ success: false, message: 'Dispositivo no encontrado en el sistema.' });
+  }
+
+  // 1. Role Authorization Check
+  const userRole = String(req.headers['x-user-role'] || req.body.user_role || '').trim();
+  const userId = String(req.headers['x-user-id'] || req.body.user_id || 'admin-drac').trim();
+  const userName = String(req.headers['x-user-name'] || req.body.user_name || 'Administrador DRAC').trim();
+
+  const ALLOWED_CONFIG_ROLES = [
+    'ADMIN_GENERAL',
+    'HR_ADMIN',
+    'JEFE_RRHH',
+    'CONTROL_ASISTENCIA',
+    'SUPERVISOR',
+    'DIRECTOR_GENERAL',
+  ];
+
+  if (userRole && !ALLOWED_CONFIG_ROLES.includes(userRole)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado: Solo el Administrador General o personal de control autorizado pueden modificar los parámetros del marcador biométrico.',
+    });
   }
 
   const existing = devices[index];
+  const payload = req.body || {};
+
+  // 2. Syntax & Value Validations
+  const IPV4_REGEX = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  const MAC_REGEX = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+  // IP validation
+  if (payload.ip_address !== undefined) {
+    const trimmedIp = String(payload.ip_address).trim();
+    if (!IPV4_REGEX.test(trimmedIp)) {
+      return res.status(400).json({
+        success: false,
+        message: `Dirección IP inválida ('${payload.ip_address}'). Debe ser una dirección IPv4 válida (ej: 192.168.1.180).`,
+      });
+    }
+  }
+
+  // Port validation
+  if (payload.port !== undefined) {
+    const portNum = Number(payload.port);
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      return res.status(400).json({
+        success: false,
+        message: `Puerto TCP inválido ('${payload.port}'). Debe ser un número entero entre 1 y 65535 (ej: 7496 o 4370).`,
+      });
+    }
+  }
+
+  // Netmask validation
+  if (payload.netmask !== undefined && String(payload.netmask).trim() !== '') {
+    const trimmedNetmask = String(payload.netmask).trim();
+    if (!IPV4_REGEX.test(trimmedNetmask)) {
+      return res.status(400).json({
+        success: false,
+        message: `Máscara de subred inválida ('${payload.netmask}'). Debe tener formato IPv4 (ej: 255.255.255.0).`,
+      });
+    }
+  }
+
+  // Gateway validation
+  if (payload.gateway !== undefined && String(payload.gateway).trim() !== '') {
+    const trimmedGw = String(payload.gateway).trim();
+    if (!IPV4_REGEX.test(trimmedGw)) {
+      return res.status(400).json({
+        success: false,
+        message: `Puerta de enlace inválida ('${payload.gateway}'). Debe tener formato IPv4 (ej: 192.168.1.1).`,
+      });
+    }
+  }
+
+  // DNS validation
+  if (payload.dns !== undefined && String(payload.dns).trim() !== '') {
+    const trimmedDns = String(payload.dns).trim();
+    if (!IPV4_REGEX.test(trimmedDns)) {
+      return res.status(400).json({
+        success: false,
+        message: `DNS inválido ('${payload.dns}'). Debe tener formato IPv4 (ej: 200.48.225.130).`,
+      });
+    }
+  }
+
+  // MAC address validation
+  if (payload.mac_address !== undefined && String(payload.mac_address).trim() !== '') {
+    const trimmedMac = String(payload.mac_address).trim();
+    if (!MAC_REGEX.test(trimmedMac)) {
+      return res.status(400).json({
+        success: false,
+        message: `Dirección MAC inválida ('${payload.mac_address}'). Formato esperado: 00:17:61:10:74:7F.`,
+      });
+    }
+  }
+
+  // Device ID number
+  if (payload.device_id_num !== undefined) {
+    const devIdNum = Number(payload.device_id_num);
+    if (!Number.isInteger(devIdNum) || devIdNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: `Device ID inválido ('${payload.device_id_num}'). Debe ser un entero positivo mayor o igual a 1.`,
+      });
+    }
+  }
+
+  // CommKey
+  let sanitizedCommKey = existing.comm_key;
+  if (payload.comm_key !== undefined) {
+    const commKeyStr = String(payload.comm_key).trim();
+    sanitizedCommKey = isNaN(Number(commKeyStr)) ? commKeyStr : Number(commKeyStr);
+  }
+
+  // Name and model
+  if (payload.name !== undefined && String(payload.name).trim() === '') {
+    return res.status(400).json({ success: false, message: 'El nombre del dispositivo no puede estar vacío.' });
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // 3. Assemble Updated Device Object
   const updated = {
     ...existing,
-    ...req.body,
-    port: req.body.port !== undefined ? Number(req.body.port) : existing.port,
-    comm_key: req.body.comm_key !== undefined ? Number(req.body.comm_key) : existing.comm_key,
-    updated_at: new Date().toISOString(),
+    name: payload.name !== undefined ? String(payload.name).trim() : existing.name,
+    model: payload.model !== undefined ? String(payload.model).trim() : existing.model,
+    serial_number: payload.serial_number !== undefined ? String(payload.serial_number).trim() : existing.serial_number,
+    ip_address: payload.ip_address !== undefined ? String(payload.ip_address).trim() : existing.ip_address,
+    port: payload.port !== undefined ? Number(payload.port) : existing.port,
+    netmask: payload.netmask !== undefined ? String(payload.netmask).trim() : existing.netmask,
+    gateway: payload.gateway !== undefined ? String(payload.gateway).trim() : existing.gateway,
+    dns: payload.dns !== undefined ? String(payload.dns).trim() : (existing.dns || '200.48.225.130'),
+    mac_address: payload.mac_address !== undefined ? String(payload.mac_address).trim().toUpperCase() : existing.mac_address,
+    comm_key: sanitizedCommKey,
+    device_id_num: payload.device_id_num !== undefined ? Number(payload.device_id_num) : (existing.device_id_num || 1),
+    status: payload.status !== undefined ? String(payload.status).trim() : existing.status,
+    protocol: payload.protocol !== undefined ? String(payload.protocol).trim() : existing.protocol,
+    location_detail: payload.location_detail !== undefined ? String(payload.location_detail).trim() : existing.location_detail,
+    last_modified_by: `${userName} (${userRole || 'ADMIN'})`,
+    last_modified_at: nowIso,
+    updated_at: nowIso,
   };
 
+  // 4. Persist to data/devices.json
   devices[index] = updated;
   writeJsonFile(DEVICES_FILE, devices);
 
+  // 5. Append Audit Log to data/audit-logs.json
+  const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
+  const auditEntry = {
+    id: `audit-dev-${Date.now()}`,
+    timestamp: nowIso,
+    user_id: userId,
+    user_name: userName,
+    user_role: userRole || 'ADMIN_GENERAL',
+    action: 'MODIFICACION_CONFIGURACION_DISPOSITIVO',
+    entity: 'DISPOSITIVO_ZKTECO',
+    entity_id: updated.id,
+    details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number}, MAC: ${updated.mac_address})`,
+    previous_values: {
+      name: existing.name,
+      model: existing.model,
+      serial_number: existing.serial_number,
+      ip_address: existing.ip_address,
+      port: existing.port,
+      netmask: existing.netmask,
+      gateway: existing.gateway,
+      dns: existing.dns,
+      mac_address: existing.mac_address,
+      comm_key: existing.comm_key,
+      device_id_num: existing.device_id_num,
+      status: existing.status,
+      protocol: existing.protocol,
+    },
+    new_values: {
+      name: updated.name,
+      model: updated.model,
+      serial_number: updated.serial_number,
+      ip_address: updated.ip_address,
+      port: updated.port,
+      netmask: updated.netmask,
+      gateway: updated.gateway,
+      dns: updated.dns,
+      mac_address: updated.mac_address,
+      comm_key: updated.comm_key,
+      device_id_num: updated.device_id_num,
+      status: updated.status,
+      protocol: updated.protocol,
+    },
+  };
+  auditLogs.unshift(auditEntry);
+  writeJsonFile(AUDIT_LOGS_FILE, auditLogs.slice(0, 500));
+
   return res.json({
     success: true,
-    message: `Dispositivo ${updated.name} actualizado. Puerto configurado: ${updated.port}.`,
+    message: `Configuración del dispositivo ${updated.name} guardada exitosamente en la base de datos central. Puerto activo: ${updated.port}, IP: ${updated.ip_address}.`,
     data: updated,
   });
 });

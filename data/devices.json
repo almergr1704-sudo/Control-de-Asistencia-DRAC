@@ -1,7 +1,7 @@
 [
   {
     "id": "dev-01",
-    "name": "ZKTeco G3 Sede Central (Entrada Principal)",
+    "name": "ZKTeco G3 Sede Central",
     "serial_number": "AEH2223460040",
     "ip_address": "192.168.1.180",
     "port": 7496,
@@ -10,6 +10,7 @@
     "mac_address": "00:17:61:10:74:7F",
     "netmask": "255.255.255.0",
     "gateway": "192.168.1.1",
+    "dns": "200.48.225.130",
     "model": "ZKTeco G3",
     "platform": "ZMN220_TFT",
     "device_type": "FACIAL_G3",
@@ -43,6 +44,8 @@
       "db_name": "biotime",
       "db_user": "postgres"
     },
-    "updated_at": "2026-10-30T14:50:22.193Z"
+    "updated_at": "2026-11-02T14:34:18.678Z",
+    "last_modified_by": "Administrador DRAC (ADMIN_GENERAL)",
+    "last_modified_at": "2026-11-02T14:34:18.678Z"
   }
 ]

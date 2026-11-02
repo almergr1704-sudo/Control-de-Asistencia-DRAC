@@ -515,9 +515,13 @@ export interface DispositivoZkTeco {
   push_interval?: number;
   netmask?: string;
   gateway?: string;
+  dns?: string;
   device_id_num?: number;
   platform?: string;
   operator_pc?: string;
+  last_modified_by?: string;
+  last_modified_at?: string;
+  updated_at?: string;
 }
 
 export interface BioTimeConfig {
