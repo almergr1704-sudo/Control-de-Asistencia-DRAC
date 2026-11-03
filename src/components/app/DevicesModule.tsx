@@ -86,7 +86,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     name: devices[0]?.name || 'ZKTeco G3 Sede Central',
     model: devices[0]?.model || 'ZKTeco G3',
     serial_number: devices[0]?.serial_number || 'AEH2223460040',
-    ip_address: devices[0]?.ip_address || '192.168.1.180',
+    ip_address: devices[0]?.ip_address || '192.168.1.198',
     port: devices[0]?.port || 7496,
     netmask: devices[0]?.netmask || '255.255.255.0',
     gateway: devices[0]?.gateway || '192.168.1.1',
@@ -104,7 +104,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       name: dev.name || 'ZKTeco G3 Sede Central',
       model: dev.model || 'ZKTeco G3',
       serial_number: dev.serial_number || 'AEH2223460040',
-      ip_address: dev.ip_address || '192.168.1.180',
+      ip_address: dev.ip_address || '192.168.1.198',
       port: dev.port || 7496,
       netmask: dev.netmask || '255.255.255.0',
       gateway: dev.gateway || '192.168.1.1',
@@ -129,7 +129,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [firewallMessage, setFirewallMessage] = useState<string | null>(null);
 
   // Live Ping & Socket TCP test states
-  const [testIp, setTestIp] = useState('192.168.1.180');
+  const [testIp, setTestIp] = useState(devices[0]?.ip_address || '192.168.1.198');
   const [testPort, setTestPort] = useState(7496);
   const [isTestingSocket, setIsTestingSocket] = useState(false);
   const [socketTestLog, setSocketTestLog] = useState<{
@@ -148,7 +148,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       const currentId = selectedDevice?.id || devices[0].id;
       const matching = devices.find((d) => d.id === currentId || d.serial_number === currentId) || devices[0];
       setSelectedDevice(matching);
-      setTestIp(matching.ip_address || '192.168.1.180');
+      setTestIp(matching.ip_address || '192.168.1.198');
       const devPort = matching.port || 7496;
       setTestPort(devPort);
       setPortInput(devPort);
@@ -235,7 +235,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     if (!formData.ip_address.trim()) {
       errors.ip_address = 'La dirección IP es obligatoria.';
     } else if (!ipv4Regex.test(formData.ip_address.trim())) {
-      errors.ip_address = 'Formato de IP inválido (IPv4 requerido: ej. 192.168.1.180).';
+      errors.ip_address = 'Formato de IP inválido (IPv4 requerido: ej. 192.168.1.198).';
     }
 
     const portNum = Number(formData.port);
@@ -437,7 +437,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   };
 
   const handleTestConnection = (overrideIp?: string, overridePort?: number) => {
-    const ip = overrideIp || (isEditing ? formData.ip_address : selectedDevice?.ip_address) || '192.168.1.180';
+    const ip = overrideIp || (isEditing ? formData.ip_address : selectedDevice?.ip_address) || devices[0]?.ip_address || '192.168.1.198';
     const port = Number(overridePort || (isEditing ? formData.port : selectedDevice?.port) || 7496);
 
     const ipv4Regex = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
@@ -564,7 +564,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     if (electronAPI?.isDesktop && typeof electronAPI.diagnoseZkDevice === 'function') {
       try {
         const diag = await electronAPI.diagnoseZkDevice(
-          dev.ip_address || '192.168.1.180',
+          dev.ip_address || devices[0]?.ip_address || '192.168.1.198',
           targetPort,
           4000,
           dev.model || 'ZKTeco G3',
@@ -624,7 +624,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           webPort: 89,
           dbPort: 7496,
           serial: selectedDevice?.serial_number || 'AEH2223460040',
-          deviceIp: selectedDevice?.ip_address || '192.168.1.180',
+          deviceIp: selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198',
           devicePort: selectedDevice?.port || 7496,
         });
         if (res.success) {
@@ -761,7 +761,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </h2>
                 <span className="px-2.5 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono rounded-full font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  ZKTeco G3 (192.168.1.180:{activePort}) ONLINE
+                  ZKTeco G3 ({selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198'}:{activePort}) ONLINE
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -792,7 +792,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>Marcador G3 (192.168.1.180)</span>
+            <span>Marcador G3 ({selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198'})</span>
           </button>
 
           <button
@@ -878,7 +878,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   <span>MARCADOR BIOMÉTRICO G3</span>
                 </div>
                 <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
-                  <div>IP: <strong className="text-slate-200">192.168.1.180</strong></div>
+                  <div>IP: <strong className="text-slate-200">{selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198'}</strong></div>
                   <div>Puerto TCP: <strong className="text-amber-300">{activePort}</strong> (Configurable)</div>
                   <div>Plataforma: <strong className="text-slate-200">ZMN220_TFT</strong></div>
                   <div>Serial: <strong className="text-slate-200">AEH2223460040</strong></div>
@@ -946,7 +946,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                     key={dev.id}
                     onClick={() => {
                       setSelectedDevice(dev);
-                      setTestIp(dev.ip_address || '192.168.1.180');
+                      setTestIp(dev.ip_address || devices[0]?.ip_address || '192.168.1.198');
                       const dPort = dev.port || 7496;
                       setTestPort(dPort);
                       setPortInput(dPort);
@@ -1240,7 +1240,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                             type="text"
                             value={formData.ip_address}
                             onChange={(e) => setFormData({ ...formData, ip_address: e.target.value })}
-                            placeholder="192.168.1.180"
+                            placeholder="192.168.1.198"
                             className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white font-mono text-xs font-bold focus:outline-none focus:ring-1 ${
                               formErrors.ip_address ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
                             }`}
@@ -1837,7 +1837,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   type="text"
                   value={testIp}
                   onChange={(e) => setTestIp(e.target.value)}
-                  placeholder="192.168.1.180"
+                  placeholder={selectedDevice?.ip_address || '192.168.1.198'}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -1941,24 +1941,25 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
-                        {/* Action 1: Si se probó una IP distinta a 192.168.1.180 */}
+                        {/* Action 1: IP Configurada Oficial */}
                         <div className="p-3 bg-[#090A0D] border border-amber-600/30 rounded-lg space-y-2">
-                          <span className="font-bold text-amber-300 block text-[11px]">1. IP Oficial (192.168.1.180)</span>
+                          <span className="font-bold text-amber-300 block text-[11px]">1. IP Configurada ({selectedDevice?.ip_address || '192.168.1.198'})</span>
                           <p className="text-[10px] text-slate-400">
-                            {socketTestLog.ip !== '192.168.1.180'
-                              ? `La IP probada (${socketTestLog.ip}) difiere de la IP oficial del ZKTeco G3 Sede Central.`
-                              : `La IP 192.168.1.180 es la dirección asignada oficialmente al terminal biométrico.`}
+                            {socketTestLog.ip !== (selectedDevice?.ip_address || '192.168.1.198')
+                              ? `La IP probada (${socketTestLog.ip}) difiere de la IP oficial configurada en el sistema.`
+                              : `La IP ${socketTestLog.ip} es la dirección oficial guardada para este terminal biométrico.`}
                           </p>
                           <button
                             type="button"
                             onClick={() => {
-                              setTestIp('192.168.1.180');
-                              setTimeout(() => executeSocketTest('192.168.1.180', socketTestLog.port), 100);
+                              const activeIp = selectedDevice?.ip_address || '192.168.1.198';
+                              setTestIp(activeIp);
+                              setTimeout(() => executeSocketTest(activeIp, socketTestLog.port), 100);
                             }}
                             className="w-full px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
                           >
                             <Play className="w-3 h-3" />
-                            <span>Probar con 192.168.1.180</span>
+                            <span>Probar con {selectedDevice?.ip_address || '192.168.1.198'}</span>
                           </button>
                         </div>
 

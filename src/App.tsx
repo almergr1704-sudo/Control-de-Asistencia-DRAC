@@ -236,7 +236,7 @@ export const App: React.FC = () => {
       id: 'dev-01',
       name: 'ZKTeco G3 Sede Central (Entrada Principal)',
       serial_number: 'AEH2223460040',
-      ip_address: '192.168.1.180',
+      ip_address: '192.168.1.198',
       port: 7496,
       comm_key: 0,
       device_id_num: 1,

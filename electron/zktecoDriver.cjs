@@ -467,7 +467,7 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
   const t1 = Date.now();
   if (!isValidIpv4(cleanIp)) {
     stages[0].status = 'FAILED';
-    stages[0].message = `Dirección IP inválida: "${cleanIp}". Debe tener formato IPv4 estándar (ej: 192.168.1.180).`;
+    stages[0].message = `Dirección IP inválida: "${cleanIp}". Debe tener formato IPv4 estándar (ej: 192.168.1.198).`;
     stages[0].latencyMs = Date.now() - t1;
     skipRemainingStages(1, 'Parámetros de red inválidos.');
     return buildDiagnosisResult(false, 'OFFLINE', 'Dirección IP inválida.', stages[0].message, cleanIp, targetPort, modelHint, snHint, stages, nowStr);
@@ -475,7 +475,7 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
 
   if (targetPort < 1 || targetPort > 65535) {
     stages[0].status = 'FAILED';
-    stages[0].message = `Puerto no válido: ${targetPort}. Debe estar en el rango 1 a 65535 (estándar ZKTeco: 4370).`;
+    stages[0].message = `Puerto no válido: ${targetPort}. Debe estar en el rango 1 a 65535 (estándar ZKTeco: 7496 o 4370).`;
     stages[0].latencyMs = Date.now() - t1;
     skipRemainingStages(1, 'Puerto de comunicación fuera de rango.');
     return buildDiagnosisResult(false, 'OFFLINE', 'Puerto no válido.', stages[0].message, cleanIp, targetPort, modelHint, snHint, stages, nowStr);
@@ -544,7 +544,7 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
         false,
         'OFFLINE',
         'Conexión TCP no alcanzada.',
-        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP 192.168.1.180 asignada. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows en el ordenador operador (192.168.1.33) no bloquee el puerto TCP ${targetPort} (o alternativo 4370).`,
+        `El marcador en ${cleanIp}:${targetPort} no responde. Compruebe: 1) Que el equipo esté encendido y con la IP ${cleanIp} asignada en su menú de red. 2) Que el cable de red esté conectado y las luces de red parpadeen. 3) Que el firewall de Windows en el ordenador operador no bloquee el puerto TCP ${targetPort} (o alternativo 4370).`,
         cleanIp,
         targetPort,
         modelHint,
@@ -683,13 +683,13 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
 
       let friendlyCause = authError || `El equipo respondió a la red pero rechazó el protocolo ZKTeco. Verifique la clave de comunicación (CommKey) en Menú > Comunicación > Red (actualmente probada: ${numericCommKey}).`;
       if (authError?.includes('Timeout CMD_CONNECT')) {
-        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (${tcpProbe.latency}ms), pero el host no respondió al comando binario CMD_CONNECT.
+        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (${tcpProbe.latency}ms), pero el host en ${cleanIp} no respondió al comando binario CMD_CONNECT del protocolo ZKTeco.
 
-Causas identificadas y soluciones:
-1. Dirección IP probada (${cleanIp}): La IP oficial de referencia del ZKTeco G3 Sede Central es 192.168.1.180. Si se probó 192.168.1.198, verifique si fue un error tipográfico o si el equipo fue reconfigurado físicamente.
-2. Conflicto de servicio / PostgreSQL BioTime: El puerto 7496 corresponde también al servicio PostgreSQL de BioTime (192.168.1.29:7496). Si la IP ingresada corresponde a un servidor de datos o base de datos en lugar del reloj físico, el socket TCP abrirá en 1-2ms pero no procesará paquetes ZKTeco.
-3. Terminal en modo ADMS PUSH: Cuando el marcador G3 tiene configurado el Servidor Cloud hacia BioTime (http://192.168.1.29:89/iclock/cdata), el reloj actúa como cliente HTTP y desactiva el listener de comandos SDK. En este caso, use el botón "Sincronizar desde BioTime" para descargar marcaciones sin requerir socket TCP directo.
-4. Puerto SDK 4370 de fábrica: Verifique si el biométrico mantiene el puerto estándar 4370 en Menú > Comunicaciones > Red > Ethernet.`;
+Causas técnicas y soluciones recomendadas:
+1. Terminal en modo ADMS PUSH: Cuando el marcador ZKTeco G3 tiene configurado el Servidor Cloud hacia BioTime (http://192.168.1.29:89/iclock/cdata), el reloj actúa exclusivamente como cliente HTTP saliente y desactiva el listener de comandos SDK standalone en el puerto TCP. En este modo, utilice la opción "Sincronizar Vía BioTime" para descargar marcaciones sin requerir socket TCP directo.
+2. Puerto SDK en el menú físico: Muchos marcadores ZKTeco G3 tienen su puerto SDK configurado de fábrica en 4370 (Menú > Comunicaciones > Red > Ethernet > Puerto TCP). Si el puerto configurado en el sistema es 7496, pruebe alternar a 4370 o configure 7496 en la pantalla del reloj.
+3. Clave de Comunicación (CommKey): Si en el menú físico del marcador se asignó una contraseña de comunicación distinta de 0 (Menú > Comunicaciones > Red > Clave Com), la conexión se rechaza por timeout.
+4. Conflicto de Servicio: Si la dirección ${cleanIp} o el puerto ${targetPort} están siendo atendidos por otro servicio o base de datos que no procesa el protocolo ZKTeco binario.`;
       }
 
       return buildDiagnosisResult(
@@ -1370,7 +1370,7 @@ async function checkBioTimeService(host = '192.168.1.29', webPort = 89, dbPort =
  * Sincronización real de marcaciones desde múltiples fuentes BioTime:
  * 1. Base de datos PostgreSQL de BioTime (Puerto 7496 o 5432)
  * 2. API Web de BioTime Console (Puerto 89)
- * 3. Socket TCP directo con el reloj biométrico G3-id (192.168.1.180)
+ * 3. Socket TCP directo con el reloj biométrico ZKTeco G3 (192.168.1.198)
  */
 async function syncBioTimeRecords(options = {}) {
   const {
@@ -1378,7 +1378,7 @@ async function syncBioTimeRecords(options = {}) {
     webPort = 89,
     dbPort = 7496,
     serial = 'AEH2223460040',
-    deviceIp = '192.168.1.180',
+    deviceIp = '192.168.1.198',
     devicePort = 7496,
     commKey = 0,
     dbName = 'biotime',
@@ -1388,7 +1388,7 @@ async function syncBioTimeRecords(options = {}) {
 
   const cleanHost = String(host || '192.168.1.29').trim();
   const cleanSerial = String(serial || 'AEH2223460040').trim().toUpperCase();
-  const cleanDeviceIp = String(deviceIp || '192.168.1.180').trim();
+  const cleanDeviceIp = String(deviceIp || '192.168.1.198').trim();
   const targetDbPort = Number(dbPort) || 7496;
   const targetWebPort = Number(webPort) || 89;
   const targetDevicePort = Number(devicePort) || 7496;

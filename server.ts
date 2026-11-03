@@ -191,7 +191,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
     if (!IPV4_REGEX.test(trimmedIp)) {
       return res.status(400).json({
         success: false,
-        message: `Dirección IP inválida ('${payload.ip_address}'). Debe ser una dirección IPv4 válida (ej: 192.168.1.180).`,
+        message: `Dirección IP inválida ('${payload.ip_address}'). Debe ser una dirección IPv4 válida (ej: 192.168.1.198).`,
       });
     }
   }
@@ -423,7 +423,7 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   }
 
   // Attempt real TCP socket handshake to verify IP & port reachability
-  const host = device.ip_address || '192.168.1.180';
+  const host = device.ip_address || '192.168.1.198';
   const port = Number(req.body?.port) || device.port || 7496;
 
   const checkSocket = (): Promise<{ ok: boolean; latency: number }> => {
@@ -492,7 +492,7 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
       id: `plog-${Date.now()}`,
       dispositivo: 'ZKTeco G3-id Sede Central',
       serial: sn,
-      ip_origen: String(headers['x-forwarded-for'] || '192.168.1.180'),
+      ip_origen: String(headers['x-forwarded-for'] || devices[0]?.ip_address || '192.168.1.198'),
       employeeCode: '-',
       employee_name: 'Conexión Heartbeat ZKTeco',
       employee_dni: '-',
@@ -628,7 +628,7 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
       id: `plog-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       dispositivo: 'ZKTeco G3-id Sede Central',
       serial: sn,
-      ip_origen: String(headers['x-forwarded-for'] || '192.168.1.180'),
+      ip_origen: String(headers['x-forwarded-for'] || devices[0]?.ip_address || '192.168.1.198'),
       employeeCode: pin,
       employee_name: workerName,
       employee_dni: pin,
@@ -743,9 +743,9 @@ app.post('/api/zkteco/diagnose-pipeline', (req, res) => {
 
   return res.json({
     success: true,
-    device_name: dev ? dev.name : 'ZKTeco G3-id Sede Central',
+    device_name: dev ? dev.name : 'ZKTeco G3 Sede Central',
     serial_number: dev ? dev.serial_number : 'AEH2223460040',
-    ip_address: dev ? dev.ip_address : '192.168.1.180',
+    ip_address: dev ? dev.ip_address : '192.168.1.198',
     port: dev ? dev.port : 7496,
     latency_ms: 18,
     overall_status: 'ALL_SYSTEMS_OK',

@@ -395,13 +395,22 @@ ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
 });
 
 ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
+  let fallbackIp = '192.168.1.198';
+  try {
+    const dPath = getStorageFilePath('devices.json');
+    if (fs.existsSync(dPath)) {
+      const devs = JSON.parse(fs.readFileSync(dPath, 'utf8'));
+      if (devs && devs[0] && devs[0].ip_address) fallbackIp = devs[0].ip_address;
+    }
+  } catch (_) {}
+
   const {
     host = '192.168.1.29',
     webPort = 89,
     dbPort = 7496,
     serial = 'AEH2223460040',
     deviceId = 'dev-01',
-    deviceIp = '192.168.1.180',
+    deviceIp = fallbackIp,
     devicePort = 7496,
   } = params;
   log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);

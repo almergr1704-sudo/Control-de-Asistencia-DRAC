@@ -153,10 +153,10 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agent_id: selectedAgent?.id || 'agent-drac-sede-central',
-          device_id: targetDev?.id || 'dev-zk-01',
+          device_id: targetDev?.id || 'dev-01',
           command,
           params: {
-            ip: targetDev?.ip_address || '192.168.1.180',
+            ip: targetDev?.ip_address || devices[0]?.ip_address || '192.168.1.198',
             port: targetDev?.port || 7496,
             serial: targetDev?.serial_number || 'AEH2223460040',
           },
@@ -168,13 +168,14 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         await new Promise((r) => setTimeout(r, 1200));
 
         const devPort = targetDev?.port || 7496;
+        const activeIp = targetDev?.ip_address || devices[0]?.ip_address || '192.168.1.198';
 
         if (command === 'TEST_CONNECTION') {
           setCommandResult({
             success: true,
-            message: `Prueba TCP Socket ${devPort} ejecutada exitosamente en ${targetDev?.name || 'Marcador ZKTeco G3'}.`,
+            message: `Prueba TCP Socket ${devPort} ejecutada exitosamente en ${targetDev?.name || 'Marcador ZKTeco G3'} (${activeIp}).`,
             details: {
-              ip: targetDev?.ip_address || '192.168.1.180',
+              ip: activeIp,
               port: devPort,
               model: targetDev?.model || 'ZKTeco G3',
               serial: targetDev?.serial_number || 'AEH2223460040',
@@ -264,7 +265,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               DRAC ZK Agent para Windows &amp; Servidor ADMS/PUSH Complementario
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              El <strong>DRAC ZK Agent</strong> es un servicio local Windows que se ejecuta en la red LAN de la DRAC. Establece comunicación por <strong>Socket TCP configurado (7496 / 4370)</strong> directo hacia la IP privada del marcador (ej. <code className="bg-slate-950 px-1 py-0.5 rounded text-amber-300 font-mono">192.168.1.180:7496</code>), manteniendo una cola offline resiliente y transmitiendo marcaciones al backend Cloud mediante HTTPS API sin exponer puertos a Internet.
+              El <strong>DRAC ZK Agent</strong> es un servicio local Windows que se ejecuta en la red LAN de la DRAC. Establece comunicación por <strong>Socket TCP configurado (7496 / 4370)</strong> directo hacia la IP privada vigente del marcador ({devices[0]?.ip_address || '192.168.1.198'}:{devices[0]?.port || 7496}), manteniendo una cola offline resiliente y transmitiendo marcaciones al backend Cloud mediante HTTPS API sin exponer puertos a Internet.
             </p>
           </div>
 
@@ -288,7 +289,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
             </div>
             <div>
               <div className="font-bold text-slate-200">ZKTeco Biométrico G3</div>
-              <div className="text-[10px] text-slate-400 font-mono">192.168.1.180:7496</div>
+              <div className="text-[10px] text-slate-400 font-mono">{devices[0]?.ip_address || '192.168.1.198'}:{devices[0]?.port || 7496}</div>
             </div>
           </div>
 
@@ -521,7 +522,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                   <Activity className={`w-3.5 h-3.5 ${executingCommand === 'TEST_CONNECTION' ? 'animate-spin' : ''}`} />
                   <span>Probar Conexión TCP (7496 / 4370)</span>
                 </div>
-                <span className="text-[10px] bg-indigo-800 px-1.5 py-0.5 rounded font-mono">192.168.1.180</span>
+                <span className="text-[10px] bg-indigo-800 px-1.5 py-0.5 rounded font-mono">{devices[0]?.ip_address || '192.168.1.198'}</span>
               </button>
 
               <button
@@ -680,7 +681,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               <h5 className="font-bold text-slate-200">Requisitos Previos</h5>
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Instalar <strong>Node.js LTS</strong> (desde nodejs.org) en una PC o Servidor de la red local que tenga visibilidad IP hacia los biométricos (ej. <code className="text-amber-300">192.168.1.180</code>).
+              Instalar <strong>Node.js LTS</strong> (desde nodejs.org) en una PC o Servidor de la red local que tenga visibilidad IP hacia los biométricos (ej. <code className="text-amber-300">{devices[0]?.ip_address || '192.168.1.198'}</code>).
             </p>
           </div>
 
