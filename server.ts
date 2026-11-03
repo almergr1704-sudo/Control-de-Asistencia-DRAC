@@ -4,9 +4,14 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://rfqgmoremevypexrrsyf.supabase.co';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I';
+const supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -270,6 +275,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
+  const nextVersion = (Number(existing.config_version) || 1) + 1;
 
   // 3. Assemble Updated Device Object
   const updated = {
@@ -291,6 +297,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
     last_modified_by: `${userName} (${userRole || 'ADMIN'})`,
     last_modified_at: nowIso,
     updated_at: nowIso,
+    config_version: nextVersion,
   };
 
   // 4. Persist to data/devices.json
@@ -308,7 +315,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
     action: 'MODIFICACION_CONFIGURACION_DISPOSITIVO',
     entity: 'DISPOSITIVO_ZKTECO',
     entity_id: updated.id,
-    details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number}, MAC: ${updated.mac_address})`,
+    details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number}, MAC: ${updated.mac_address}, Rev: v${nextVersion})`,
     previous_values: {
       name: existing.name,
       model: existing.model,
@@ -323,6 +330,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
       device_id_num: existing.device_id_num,
       status: existing.status,
       protocol: existing.protocol,
+      config_version: existing.config_version || 1,
     },
     new_values: {
       name: updated.name,
@@ -338,14 +346,58 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
       device_id_num: updated.device_id_num,
       status: updated.status,
       protocol: updated.protocol,
+      config_version: nextVersion,
     },
   };
   auditLogs.unshift(auditEntry);
   writeJsonFile(AUDIT_LOGS_FILE, auditLogs.slice(0, 500));
 
+  // 6. Asynchronous Sincronización con Supabase PostgreSQL
+  try {
+    Promise.resolve(
+      supabaseServer
+        .from('dispositivos_zkteco')
+        .upsert(
+          {
+            id: updated.id,
+            serial_number: updated.serial_number,
+            name: updated.name,
+            ip_address: updated.ip_address,
+            port: updated.port,
+            netmask: updated.netmask,
+            gateway: updated.gateway,
+            dns: updated.dns,
+            mac_address: updated.mac_address,
+            comm_key: String(updated.comm_key),
+            device_id_num: updated.device_id_num,
+            model: updated.model,
+            protocol: updated.protocol,
+            status: updated.status,
+            location_detail: updated.location_detail,
+            last_modified_by: updated.last_modified_by,
+            last_modified_at: updated.last_modified_at,
+            updated_at: updated.updated_at,
+          },
+          { onConflict: 'id' }
+        )
+    )
+      .then((sbRes: any) => {
+        if (sbRes?.error) {
+          console.warn('[SERVER] Aviso en Supabase upsert dispositivos_zkteco:', sbRes.error.message);
+        } else {
+          console.log(`[SERVER] Parámetros de marcador persistidos en Supabase PostgreSQL (Rev. v${nextVersion})`);
+        }
+      })
+      .catch((sbErr: any) => {
+        console.warn('[SERVER] Excepción en Supabase upsert:', sbErr?.message || sbErr);
+      });
+  } catch (syncErr: any) {
+    console.warn('[SERVER] Error despachando sincronización a Supabase:', syncErr.message);
+  }
+
   return res.json({
     success: true,
-    message: `Configuración del dispositivo ${updated.name} guardada exitosamente en la base de datos central. Puerto activo: ${updated.port}, IP: ${updated.ip_address}.`,
+    message: `Configuración oficial del dispositivo ${updated.name} guardada exitosamente (Rev. v${nextVersion}). Puerto activo: ${updated.port}, IP: ${updated.ip_address}.`,
     data: updated,
   });
 });

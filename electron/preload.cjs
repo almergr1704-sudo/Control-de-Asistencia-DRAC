@@ -34,6 +34,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateDevice: (id, payload) => {
     return ipcRenderer.invoke('device:update', { id, payload });
   },
+  onDeviceConfigChanged: (callback) => {
+    const handler = (_event, device) => callback(device);
+    ipcRenderer.on('device:config-changed', handler);
+    return () => ipcRenderer.removeListener('device:config-changed', handler);
+  },
 
   // Integración BioTime Platform Service Console (C:\BioTime)
   checkBioTimeStatus: (params = {}) => {

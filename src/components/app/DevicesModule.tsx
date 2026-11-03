@@ -142,20 +142,52 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     steps: { name: string; ok: boolean; info: string }[];
   } | null>(null);
 
-  // Sync selected device if devices list changes
+  // Mantener el dispositivo seleccionado sincronizado con la configuración vigente más reciente
   useEffect(() => {
-    if (devices.length > 0 && (!selectedDevice || !devices.find((d) => d.id === selectedDevice.id))) {
-      const dev = devices[0];
-      setSelectedDevice(dev);
-      setTestIp(dev.ip_address || '192.168.1.180');
-      const devPort = dev.port || 7496;
+    if (devices.length > 0) {
+      const currentId = selectedDevice?.id || devices[0].id;
+      const matching = devices.find((d) => d.id === currentId || d.serial_number === currentId) || devices[0];
+      setSelectedDevice(matching);
+      setTestIp(matching.ip_address || '192.168.1.180');
+      const devPort = matching.port || 7496;
       setTestPort(devPort);
       setPortInput(devPort);
       if (!isEditing) {
-        syncFormWithDevice(dev);
+        syncFormWithDevice(matching);
       }
     }
   }, [devices]);
+
+  // Suscribirse a cambios de configuración en tiempo real (Electron IPC y eventos DOM)
+  useEffect(() => {
+    const handleDeviceConfigUpdate = (updatedDev: DispositivoZkTeco) => {
+      if (!updatedDev || !updatedDev.id) return;
+      setSelectedDevice(updatedDev);
+      setTestIp(updatedDev.ip_address);
+      const newPort = updatedDev.port || 7496;
+      setTestPort(newPort);
+      setPortInput(newPort);
+      if (!isEditing) {
+        syncFormWithDevice(updatedDev);
+      }
+    };
+
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    let cleanupIpc: (() => void) | undefined;
+    if (electronAPI?.onDeviceConfigChanged) {
+      cleanupIpc = electronAPI.onDeviceConfigChanged(handleDeviceConfigUpdate);
+    }
+
+    const domHandler = (e: any) => {
+      if (e.detail) handleDeviceConfigUpdate(e.detail);
+    };
+    window.addEventListener('drac:device-config-changed', domHandler);
+
+    return () => {
+      if (typeof cleanupIpc === 'function') cleanupIpc();
+      window.removeEventListener('drac:device-config-changed', domHandler);
+    };
+  }, [isEditing]);
 
   const canManage = useMemo(() => {
     return [
@@ -274,16 +306,35 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       try {
         const ipcResult = await electronAPI.updateDevice(selectedDevice.id, payload);
         if (ipcResult.success && ipcResult.data) {
-          setSelectedDevice(ipcResult.data);
-          setTestIp(ipcResult.data.ip_address);
-          setTestPort(ipcResult.data.port);
-          setPortInput(ipcResult.data.port);
-          syncFormWithDevice(ipcResult.data);
+          const updatedDevice = ipcResult.data;
+          setSelectedDevice(updatedDevice);
+          setTestIp(updatedDevice.ip_address);
+          setTestPort(updatedDevice.port);
+          setPortInput(updatedDevice.port);
+          syncFormWithDevice(updatedDevice);
           setIsEditing(false);
           setDeviceSaveMessage({
             type: 'success',
-            text: `✓ ${ipcResult.message || 'Configuración guardada exitosamente en la base de datos local y Electron.'}`,
+            text: `✓ ${ipcResult.message || 'Configuración guardada exitosamente en la base de datos oficial.'}`,
           });
+
+          // Notificar a todos los módulos web / componentes de la interfaz
+          window.dispatchEvent(new CustomEvent('drac:device-config-changed', { detail: updatedDevice }));
+
+          // Replicar en segundo plano al servidor central HTTP si está disponible
+          try {
+            fetch(getApiUrl(`/api/zkteco/devices/${selectedDevice.id}`), {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-user-role': activeRole,
+                'x-user-name': 'Administrador DRAC',
+                'x-user-id': 'admin-drac',
+              },
+              body: JSON.stringify(payload),
+            }).catch(() => {});
+          } catch (_) {}
+
           if (onRefreshDevices) onRefreshDevices();
           setIsSavingDevice(false);
           return;
@@ -316,16 +367,18 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       const data = await res.json();
       if (data.success && data.data) {
-        setSelectedDevice(data.data);
-        setTestIp(data.data.ip_address);
-        setTestPort(data.data.port);
-        setPortInput(data.data.port);
-        syncFormWithDevice(data.data);
+        const updatedDevice = data.data;
+        setSelectedDevice(updatedDevice);
+        setTestIp(updatedDevice.ip_address);
+        setTestPort(updatedDevice.port);
+        setPortInput(updatedDevice.port);
+        syncFormWithDevice(updatedDevice);
         setIsEditing(false);
         setDeviceSaveMessage({
           type: 'success',
           text: `✓ ${data.message || 'Configuración guardada exitosamente en la base de datos central.'}`,
         });
+        window.dispatchEvent(new CustomEvent('drac:device-config-changed', { detail: updatedDevice }));
         if (onRefreshDevices) onRefreshDevices();
       } else {
         setDeviceSaveMessage({
@@ -940,9 +993,24 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           ? 'ADMS PUSH'
                           : 'TCP SOCKET'}
                       </span>
+                      <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-amber-950/80 text-amber-300 border border-amber-800 flex items-center gap-1">
+                        <span>Rev. v{selectedDevice.config_version || 1}</span>
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400">
                       Modelo: <strong className="text-slate-200">{isEditing ? formData.model : selectedDevice.model || 'ZKTeco G3'}</strong> | Serial: <strong className="text-slate-200 font-mono">{isEditing ? formData.serial_number : selectedDevice.serial_number}</strong> | Ubicación: <span className="text-slate-300">{isEditing ? formData.location_detail : selectedDevice.location_detail}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-400 font-mono flex items-center gap-2 flex-wrap">
+                      <span className="text-slate-500">Configuración Centralizada:</span>
+                      <strong className="text-emerald-400 font-semibold">{selectedDevice.ip_address}:{selectedDevice.port || 7496}</strong>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-slate-500">Por:</span>
+                      <strong className="text-slate-300">{selectedDevice.last_modified_by || 'Administrador DRAC'}</strong>
+                      {selectedDevice.last_modified_at && (
+                        <span className="text-slate-500 text-[10px]">
+                          ({new Date(selectedDevice.last_modified_at).toLocaleString('es-PE', { timeZone: 'America/Lima' })})
+                        </span>
+                      )}
                     </p>
                   </div>
 

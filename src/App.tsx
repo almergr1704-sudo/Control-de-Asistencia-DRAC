@@ -277,6 +277,7 @@ export const App: React.FC = () => {
         db_name: 'biotime',
         db_user: 'postgres',
       },
+      config_version: 1,
     };
 
     if (typeof window !== 'undefined') {
@@ -400,6 +401,41 @@ export const App: React.FC = () => {
     const interval = setInterval(loadServerData, 25000);
     return () => clearInterval(interval);
   }, [loadServerData]);
+
+  // Escuchar cambios globales y centralizados en la configuración del marcador biométrico
+  useEffect(() => {
+    const handleDeviceUpdated = (updatedDev: DispositivoZkTeco) => {
+      if (!updatedDev || !updatedDev.id) return;
+      console.log(`[DRAC-APP] Configuración global de marcador actualizada: ${updatedDev.name} (${updatedDev.ip_address}:${updatedDev.port}, Rev: v${updatedDev.config_version || 1})`);
+      setDevices((prev) => {
+        const idx = prev.findIndex((d) => d.id === updatedDev.id || d.serial_number === updatedDev.serial_number);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...prev[idx], ...updatedDev };
+          return next;
+        }
+        return [updatedDev, ...prev];
+      });
+    };
+
+    // 1. Electron IPC Push Event
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    let cleanupIpc: (() => void) | undefined;
+    if (electronAPI?.onDeviceConfigChanged) {
+      cleanupIpc = electronAPI.onDeviceConfigChanged(handleDeviceUpdated);
+    }
+
+    // 2. DOM CustomEvent para sincronización web inter-módulos
+    const domHandler = (e: any) => {
+      if (e.detail) handleDeviceUpdated(e.detail);
+    };
+    window.addEventListener('drac:device-config-changed', domHandler);
+
+    return () => {
+      if (typeof cleanupIpc === 'function') cleanupIpc();
+      window.removeEventListener('drac:device-config-changed', domHandler);
+    };
+  }, []);
 
   // Record institutional audit event
   const handleRecordAudit = (action: string, details: string, empDni?: string, empName?: string) => {

@@ -46,6 +46,54 @@ function log(msg) {
   console.log(`[DRAC-DESKTOP] ${new Date().toISOString()} - ${msg}`);
 }
 
+/**
+ * Resuelve la ruta adecuada y con permisos de escritura para los archivos JSON persistentes.
+ * En modo empaquetado (producción con app.asar), NUNCA se escribe dentro de app.asar (causaría ENOENT).
+ * En su lugar se utiliza app.getPath('userData')/data/, sembrando los datos iniciales si no existen.
+ */
+function getStorageFilePath(filename) {
+  try {
+    if (!app.isPackaged) {
+      const devPath = path.join(__dirname, '..', 'data', filename);
+      const devDir = path.dirname(devPath);
+      if (!fs.existsSync(devDir)) {
+        try { fs.mkdirSync(devDir, { recursive: true }); } catch (_) {}
+      }
+      return devPath;
+    }
+  } catch (_) {}
+
+  // En aplicación empaquetada: app.getPath('userData') (ej. %APPDATA%/drac-control-asistencia/data)
+  try {
+    const userDataDir = path.join(app.getPath('userData'), 'data');
+    if (!fs.existsSync(userDataDir)) {
+      try {
+        fs.mkdirSync(userDataDir, { recursive: true });
+      } catch (err) {
+        log(`Aviso al crear directorio userData: ${err.message}`);
+      }
+    }
+
+    const userFilePath = path.join(userDataDir, filename);
+    if (!fs.existsSync(userFilePath)) {
+      try {
+        const bundledPath = path.join(__dirname, '..', 'data', filename);
+        if (fs.existsSync(bundledPath)) {
+          const initialContent = fs.readFileSync(bundledPath, 'utf8');
+          fs.writeFileSync(userFilePath, initialContent, 'utf8');
+          log(`Inicializado ${filename} en userData (${userFilePath}) desde plantilla empaquetada.`);
+        }
+      } catch (copyErr) {
+        log(`Aviso al copiar plantilla de ${filename}: ${copyErr.message}`);
+      }
+    }
+    return userFilePath;
+  } catch (err) {
+    log(`Error resolviendo getStorageFilePath para ${filename}: ${err.message}`);
+    return path.join(__dirname, '..', 'data', filename);
+  }
+}
+
 async function createWindow() {
   log('Inicializando ventana principal de DRAC Control de Asistencia...');
 
@@ -363,7 +411,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       ? await zktecoDriver.checkBioTimeService(host, webPort, dbPort, serial)
       : { success: true };
 
-    const punchesPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+    const punchesPath = getStorageFilePath('raw-punches.json');
     let loadedPunches = [];
     try {
       if (fs.existsSync(punchesPath)) {
@@ -436,7 +484,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
 
 ipcMain.handle('punches:get-all', async () => {
   try {
-    const punchesPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+    const punchesPath = getStorageFilePath('raw-punches.json');
     if (fs.existsSync(punchesPath)) {
       return JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
     }
@@ -450,9 +498,15 @@ ipcMain.handle('punches:get-all', async () => {
 
 ipcMain.handle('device:get-all', async () => {
   try {
-    const devicesPath = path.join(__dirname, '..', 'data', 'devices.json');
+    const devicesPath = getStorageFilePath('devices.json');
     if (fs.existsSync(devicesPath)) {
-      return JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((d) => ({
+          ...d,
+          config_version: d.config_version || 1,
+        }));
+      }
     }
   } catch (err) {
     log(`Aviso al leer devices.json: ${err.message}`);
@@ -463,8 +517,8 @@ ipcMain.handle('device:get-all', async () => {
 ipcMain.handle('device:update', async (_event, { id, payload }) => {
   log(`IPC device:update -> Actualizando marcador ${id} (IP: ${payload.ip_address}, Puerto: ${payload.port})`);
   try {
-    const devicesPath = path.join(__dirname, '..', 'data', 'devices.json');
-    const auditPath = path.join(__dirname, '..', 'data', 'audit-logs.json');
+    const devicesPath = getStorageFilePath('devices.json');
+    const auditPath = getStorageFilePath('audit-logs.json');
 
     let devices = [];
     if (fs.existsSync(devicesPath)) {
@@ -482,6 +536,7 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
 
     const existing = devices[index];
     const nowIso = new Date().toISOString();
+    const nextVersion = (Number(existing.config_version) || 1) + 1;
 
     const updated = {
       ...existing,
@@ -502,12 +557,13 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
       last_modified_by: payload.user_name ? `${payload.user_name} (${payload.user_role || 'ADMIN'})` : (existing.last_modified_by || 'Administrador DRAC'),
       last_modified_at: nowIso,
       updated_at: nowIso,
+      config_version: nextVersion,
     };
 
     devices[index] = updated;
     fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
 
-    // Registrar en auditoría
+    // Registrar en auditoría de forma persistente
     try {
       let audits = [];
       if (fs.existsSync(auditPath)) {
@@ -526,18 +582,20 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
         action: 'MODIFICACION_CONFIGURACION_DISPOSITIVO',
         entity: 'DISPOSITIVO_ZKTECO',
         entity_id: updated.id,
-        details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number})`,
+        details: `Modificación de parámetros ZKTeco ${updated.name} (IP: ${existing.ip_address} -> ${updated.ip_address}, Puerto: ${existing.port} -> ${updated.port}, S/N: ${updated.serial_number}, Rev: v${nextVersion})`,
         previous_values: {
           ip_address: existing.ip_address,
           port: existing.port,
           name: existing.name,
           serial_number: existing.serial_number,
+          config_version: existing.config_version || 1,
         },
         new_values: {
           ip_address: updated.ip_address,
           port: updated.port,
           name: updated.name,
           serial_number: updated.serial_number,
+          config_version: nextVersion,
         },
       });
       fs.writeFileSync(auditPath, JSON.stringify(audits.slice(0, 500), null, 2), 'utf8');
@@ -545,10 +603,16 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
       log(`Aviso al escribir auditoría: ${auditErr.message}`);
     }
 
-    log(`Marcador ${updated.name} guardado con éxito. Nueva IP: ${updated.ip_address}, Puerto: ${updated.port}`);
+    // DIFUSIÓN GLOBAL: Notificar inmediatamente al Renderer de Electron y todos los módulos
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('device:config-changed', updated);
+      log(`Evento device:config-changed emitido hacia el frontend (Rev. v${nextVersion})`);
+    }
+
+    log(`Marcador ${updated.name} guardado con éxito (Rev. v${nextVersion}). Nueva IP: ${updated.ip_address}, Puerto: ${updated.port}`);
     return {
       success: true,
-      message: `Configuración de ${updated.name} guardada exitosamente en la base de datos local y Electron. IP activa: ${updated.ip_address}, Puerto: ${updated.port}.`,
+      message: `Configuración de ${updated.name} guardada exitosamente en la base de datos oficial (Rev. v${nextVersion}). IP activa: ${updated.ip_address}, Puerto: ${updated.port}.`,
       data: updated,
     };
   } catch (err) {

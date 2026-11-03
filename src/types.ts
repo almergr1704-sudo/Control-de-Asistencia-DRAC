@@ -522,6 +522,7 @@ export interface DispositivoZkTeco {
   last_modified_by?: string;
   last_modified_at?: string;
   updated_at?: string;
+  config_version?: number;
 }
 
 export interface BioTimeConfig {
@@ -1173,6 +1174,7 @@ declare global {
         id: string,
         payload: any
       ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
+      onDeviceConfigChanged?: (callback: (device: DispositivoZkTeco) => void) => () => void;
     };
     __DRAC_DESKTOP_CLIENT__?: boolean;
   }
