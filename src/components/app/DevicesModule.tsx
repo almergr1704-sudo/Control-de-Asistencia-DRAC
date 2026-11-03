@@ -610,6 +610,42 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     }
   };
 
+  const [isBioTimeBusy, setIsBioTimeBusy] = useState(false);
+
+  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:89)
+  const handleBioTimeSync = async () => {
+    setIsBioTimeBusy(true);
+    setSyncStatusMsg(null);
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.isDesktop && typeof electronAPI.syncBioTimePunches === 'function') {
+      try {
+        const res = await electronAPI.syncBioTimePunches({
+          host: '192.168.1.29',
+          webPort: 89,
+          dbPort: 7496,
+          serial: selectedDevice?.serial_number || 'AEH2223460040',
+          deviceIp: selectedDevice?.ip_address || '192.168.1.180',
+          devicePort: selectedDevice?.port || 7496,
+        });
+        if (res.success) {
+          setSyncStatusMsg(`✓ ${res.message}`);
+          if (onRefreshPunches) onRefreshPunches();
+        } else {
+          setSyncStatusMsg(`Aviso BioTime: ${res.message}`);
+        }
+      } catch (err: any) {
+        setSyncStatusMsg(`Error al sincronizar con BioTime: ${err.message}`);
+      } finally {
+        setIsBioTimeBusy(false);
+      }
+    } else {
+      setTimeout(() => {
+        setIsBioTimeBusy(false);
+        setSyncStatusMsg('Ingesta ADMS: Los marcadores en modo ADMS envían marcaciones HTTP directamente al endpoint /iclock/cdata.');
+      }, 500);
+    }
+  };
+
   // Execute in-depth socket TCP & pipeline diagnostics on target IP and port
   const executeSocketTest = async (overrideIp?: string, overridePort?: number) => {
     const currentIp = overrideIp || testIp;
@@ -1901,21 +1937,43 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
                     <div className="text-slate-300 space-y-2 leading-relaxed">
                       <p>
-                        El PC operador (<strong className="text-white">192.168.1.33</strong>) está en el mismo segmento de red que el marcador (<strong className="text-white">{socketTestLog.ip}</strong>), pero la solicitud al puerto <strong className="text-amber-300">{socketTestLog.port}</strong> expiró por tiempo agotado (4000ms).
+                        Diagnóstico para el marcador en <strong className="text-white">{socketTestLog.ip}:{socketTestLog.port}</strong>. Revise las siguientes causas frecuentes y utilice las acciones directas de resolución:
                       </p>
 
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                        <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
-                          <span className="font-bold text-slate-200 block text-[11px]">1. Probar Puerto Alternativo 4370</span>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
+                        {/* Action 1: Si se probó una IP distinta a 192.168.1.180 */}
+                        <div className="p-3 bg-[#090A0D] border border-amber-600/30 rounded-lg space-y-2">
+                          <span className="font-bold text-amber-300 block text-[11px]">1. IP Oficial (192.168.1.180)</span>
                           <p className="text-[10px] text-slate-400">
-                            Muchos equipos ZKTeco G3 mantienen el puerto TCP de fábrica <strong>4370</strong> si no se guardó manualmente el 7496 en su menú de red.
+                            {socketTestLog.ip !== '192.168.1.180'
+                              ? `La IP probada (${socketTestLog.ip}) difiere de la IP oficial del ZKTeco G3 Sede Central.`
+                              : `La IP 192.168.1.180 es la dirección asignada oficialmente al terminal biométrico.`}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestIp('192.168.1.180');
+                              setTimeout(() => executeSocketTest('192.168.1.180', socketTestLog.port), 100);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <Play className="w-3 h-3" />
+                            <span>Probar con 192.168.1.180</span>
+                          </button>
+                        </div>
+
+                        {/* Action 2: Puerto 4370 */}
+                        <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
+                          <span className="font-bold text-slate-200 block text-[11px]">2. Puerto Alternativo 4370</span>
+                          <p className="text-[10px] text-slate-400">
+                            Muchos equipos ZKTeco G3 mantienen el puerto TCP de fábrica <strong>4370</strong> si no se cambió a 7496 en su menú Ethernet.
                           </p>
                           <button
                             type="button"
                             onClick={() => {
                               setTestPort(4370);
                               setPortInput(4370);
-                              setTimeout(() => executeSocketTest(), 100);
+                              setTimeout(() => executeSocketTest(socketTestLog.ip, 4370), 100);
                             }}
                             className="w-full px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
                           >
@@ -1924,10 +1982,28 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           </button>
                         </div>
 
+                        {/* Action 3: Sincronización BioTime ADMS */}
                         <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
-                          <span className="font-bold text-slate-200 block text-[11px]">2. Regla Firewall Windows</span>
+                          <span className="font-bold text-slate-200 block text-[11px]">3. Sincronizar Vía BioTime</span>
                           <p className="text-[10px] text-slate-400">
-                            Asegura que Windows Defender en la estación 192.168.1.33 no bloquee paquetes salientes TCP al puerto {socketTestLog.port}.
+                            Si el G3 tiene activo el Servidor Cloud (ADMS), no responde al socket SDK pero envía marcaciones al servidor BioTime (192.168.1.29:89).
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleBioTimeSync}
+                            disabled={isBioTimeBusy}
+                            className="w-full px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isBioTimeBusy ? 'animate-spin' : ''}`} />
+                            <span>Extraer de BioTime</span>
+                          </button>
+                        </div>
+
+                        {/* Action 4: Regla Firewall */}
+                        <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
+                          <span className="font-bold text-slate-200 block text-[11px]">4. Regla Firewall Windows</span>
+                          <p className="text-[10px] text-slate-400">
+                            Asegura que Windows Defender en 192.168.1.33 no bloquee paquetes salientes TCP al puerto {socketTestLog.port}.
                           </p>
                           <button
                             type="button"
@@ -1936,20 +2012,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                             className="w-full px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-[11px] font-semibold transition-colors flex items-center justify-center gap-1.5"
                           >
                             <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                            <span>Aplicar Regla Firewall TCP {socketTestLog.port}</span>
+                            <span>Aplicar Regla Firewall</span>
                           </button>
-                        </div>
-
-                        <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
-                          <span className="font-bold text-slate-200 block text-[11px]">3. Menú Físico del Marcador G3</span>
-                          <p className="text-[10px] text-slate-400">
-                            En la pantalla del equipo presione: <code className="text-indigo-300">M/OK &gt; Comunicaciones &gt; Red &gt; Ethernet</code>. Verifique:
-                          </p>
-                          <div className="text-[10px] font-mono text-slate-300 bg-slate-950 p-1.5 rounded space-y-0.5">
-                            <div>• IP: 192.168.1.180</div>
-                            <div>• Puerto TCP: {socketTestLog.port}</div>
-                            <div>• Gateway: 192.168.1.1</div>
-                          </div>
                         </div>
                       </div>
                     </div>

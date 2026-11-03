@@ -45,27 +45,32 @@ const COMMANDS = {
   CMD_ACK_UNKNOWN: 65535,
 };
 
-// Cálculo de checksum estándar para paquetes ZKTeco
-function createChkSum(buf) {
-  let chksum = 0;
-  for (let i = 0; i < buf.length; i += 2) {
-    if (i === buf.length - 1) {
-      chksum += buf[i];
-    } else {
-      chksum += buf.readUInt16LE(i);
-    }
-    chksum %= 65536;
+// Cálculo oficial de Checksum para paquetes ZKTeco (ones' complement folding)
+function createChkSum(buffer) {
+  let checksum = 0;
+  let len = buffer.length;
+  let i = 0;
+  while (len > 1) {
+    checksum += buffer.readUInt16LE(i);
+    i += 2;
+    len -= 2;
   }
-  chksum = 65536 - chksum;
-  return chksum;
+  if (len > 0) {
+    checksum += buffer[i];
+  }
+  while (checksum >> 16) {
+    checksum = (checksum & 0xffff) + (checksum >> 16);
+  }
+  checksum = ~checksum & 0xffff;
+  return checksum;
 }
 
-// Generación de paquete ZKTeco (Encabezado Standalone con Magic TCP 0x5050827D)
+// Generación de paquete ZKTeco (Encabezado Standalone con Magic TCP 0x5050827D: [0x7d, 0x82, 0x50, 0x50])
 function createHeader(cmd, sessionId, replyId, data = '') {
   const dataBuf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
   const payload = Buffer.alloc(8 + dataBuf.length);
   payload.writeUInt16LE(cmd, 0);
-  payload.writeUInt16LE(0, 2); // Checksum inicial
+  payload.writeUInt16LE(0, 2); // Checksum inicial en 0
   payload.writeUInt16LE(sessionId, 4);
   payload.writeUInt16LE(replyId, 6);
   if (dataBuf.length > 0) {
@@ -74,10 +79,9 @@ function createHeader(cmd, sessionId, replyId, data = '') {
   const chksum = createChkSum(payload);
   payload.writeUInt16LE(chksum, 2);
 
-  // Envoltorio de transporte TCP: [0x50, 0x50, 0x82, 0x7D] + longitud 32 bits + payload
+  // Envoltorio de transporte TCP: Magic [0x7D, 0x82, 0x50, 0x50] (0x5050827d en LE) + longitud 32 bits + payload
   const tcpPacket = Buffer.alloc(8 + payload.length);
-  tcpPacket.writeUInt16LE(0x5050, 0);
-  tcpPacket.writeUInt16LE(0x7D82, 2);
+  tcpPacket.writeUInt32LE(0x5050827d, 0);
   tcpPacket.writeUInt32LE(payload.length, 4);
   payload.copy(tcpPacket, 8);
   return tcpPacket;
@@ -140,12 +144,20 @@ class ZKLibTCP {
 
       const packet = createHeader(cmd, this.sessionId, this.replyId, data);
       let rawFallbackTimer = null;
+      let settled = false;
 
       const onData = (chunk) => {
+        if (settled) return;
+        settled = true;
         if (rawFallbackTimer) clearTimeout(rawFallbackTimer);
         this.socket.removeListener('data', onData);
         let reply = chunk;
-        if (chunk.length >= 8 && chunk[0] === 0x50 && chunk[1] === 0x50) {
+        if (
+          chunk.length >= 8 &&
+          (chunk.readUInt32LE(0) === 0x5050827d ||
+            (chunk[0] === 0x7d && chunk[1] === 0x82) ||
+            (chunk[0] === 0x50 && chunk[1] === 0x50))
+        ) {
           reply = chunk.slice(8);
         }
         if (reply.length >= 8) {
@@ -161,25 +173,27 @@ class ZKLibTCP {
       this.socket.once('data', onData);
       this.socket.write(packet);
 
-      // Si no responde con el wrapper estándar en 1.5s, enviar paquete raw
+      // Si no responde con el wrapper estándar en 800ms, enviar paquete raw alternativo
       rawFallbackTimer = setTimeout(() => {
-        if (this.socket && !this.socket.destroyed) {
+        if (!settled && this.socket && !this.socket.destroyed) {
           try {
             const rawPacket = createRawHeader(cmd, this.sessionId, this.replyId, data);
             this.socket.write(rawPacket);
           } catch (_) {}
         }
-      }, 1500);
+      }, 800);
     });
   }
 
   async disconnect() {
-    if (this.socket && !this.socket.destroyed) {
-      try {
-        const exitPacket = createHeader(COMMANDS.CMD_EXIT, this.sessionId, this.replyId);
-        this.socket.write(exitPacket);
-      } catch (_) {}
-      this.socket.destroy();
+    if (this.socket) {
+      if (!this.socket.destroyed) {
+        try {
+          const exitPacket = createHeader(COMMANDS.CMD_EXIT, this.sessionId, this.replyId);
+          this.socket.write(exitPacket);
+        } catch (_) {}
+        this.socket.destroy();
+      }
     }
   }
 }
@@ -610,31 +624,52 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
       authError = tcpErr?.message || String(tcpErr);
     }
 
-    // Si falló TCP, intentar UDP con el mismo handshake y CommKey
-    if (!connected && !authError?.includes('Clave de comunicación inválida')) {
+    // Si falló TCP en targetPort, intentar puerto 4370 alternativo automáticamente
+    if (!connected && targetPort !== 4370 && !authError?.includes('Clave de comunicación inválida')) {
       try {
-        const udpZk = new ZKLibUDP(cleanIp, targetPort, timeout);
-        await withTimeout(udpZk.createSocket(), timeout, 'Timeout socket UDP');
-        const replyUdp = await withTimeout(udpZk.executeCmd(COMMANDS.CMD_CONNECT, ''), timeout, 'Timeout CMD_CONNECT UDP');
-        const responseCodeUdp = replyUdp && replyUdp.length >= 2 ? replyUdp.readUInt16LE(0) : 0;
-        const sessionIdUdp = udpZk.sessionId || (replyUdp && replyUdp.length >= 6 ? replyUdp.readUInt16LE(4) : 0);
-
-        if (responseCodeUdp === COMMANDS.CMD_ACK_UNAUTH || numericCommKey > 0) {
-          const authPacketUdp = makeCommkey(numericCommKey, sessionIdUdp);
-          const authReplyUdp = await withTimeout(udpZk.executeCmd(COMMANDS.CMD_AUTH, authPacketUdp), timeout, 'Timeout CMD_AUTH UDP');
-          const authCodeUdp = authReplyUdp && authReplyUdp.length >= 2 ? authReplyUdp.readUInt16LE(0) : 0;
-
-          if (authCodeUdp === COMMANDS.CMD_ACK_OK) {
-            connected = true;
-            zkInstance = udpZk;
-            activeProtocol = 'UDP';
-          }
-        } else if (responseCodeUdp === COMMANDS.CMD_ACK_OK || replyUdp) {
+        const altTcp = new ZKLibTCP(cleanIp, 4370, timeout);
+        await withTimeout(altTcp.createSocket(), 1500, 'Timeout 4370 socket');
+        const replyAlt = await withTimeout(altTcp.executeCmd(COMMANDS.CMD_CONNECT, ''), 1500, 'Timeout 4370 connect');
+        const altCode = replyAlt && replyAlt.length >= 2 ? replyAlt.readUInt16LE(0) : 0;
+        if (altCode === COMMANDS.CMD_ACK_OK || replyAlt) {
           connected = true;
-          zkInstance = udpZk;
-          activeProtocol = 'UDP';
+          zkInstance = altTcp;
+          activeProtocol = 'TCP (Puerto alternativo 4370)';
         }
       } catch (_) {}
+    }
+
+    // Si falló TCP, intentar UDP con el mismo handshake y CommKey
+    if (!connected && !authError?.includes('Clave de comunicación inválida')) {
+      const portsToTry = targetPort === 4370 ? [4370] : [targetPort, 4370];
+      for (const p of portsToTry) {
+        if (connected) break;
+        try {
+          const udpZk = new ZKLibUDP(cleanIp, p, timeout);
+          await withTimeout(udpZk.createSocket(), timeout, `Timeout socket UDP (${p})`);
+          const replyUdp = await withTimeout(udpZk.executeCmd(COMMANDS.CMD_CONNECT, ''), timeout, `Timeout CMD_CONNECT UDP (${p})`);
+          const responseCodeUdp = replyUdp && replyUdp.length >= 2 ? replyUdp.readUInt16LE(0) : 0;
+          const sessionIdUdp = udpZk.sessionId || (replyUdp && replyUdp.length >= 6 ? replyUdp.readUInt16LE(4) : 0);
+
+          if (responseCodeUdp === COMMANDS.CMD_ACK_UNAUTH || numericCommKey > 0) {
+            const authPacketUdp = makeCommkey(numericCommKey, sessionIdUdp);
+            const authReplyUdp = await withTimeout(udpZk.executeCmd(COMMANDS.CMD_AUTH, authPacketUdp), timeout, 'Timeout CMD_AUTH UDP');
+            const authCodeUdp = authReplyUdp && authReplyUdp.length >= 2 ? authReplyUdp.readUInt16LE(0) : 0;
+
+            if (authCodeUdp === COMMANDS.CMD_ACK_OK) {
+              connected = true;
+              zkInstance = udpZk;
+              activeProtocol = `UDP:${p}`;
+              break;
+            }
+          } else if (responseCodeUdp === COMMANDS.CMD_ACK_OK || replyUdp) {
+            connected = true;
+            zkInstance = udpZk;
+            activeProtocol = `UDP:${p}`;
+            break;
+          }
+        } catch (_) {}
+      }
     }
 
     stages[3].latencyMs = Date.now() - t4;
@@ -645,9 +680,16 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
         ? `Fallo de autenticación: ${authError}`
         : `Handshake ZKTeco fallido en puerto ${targetPort}.`;
       skipRemainingStages(4, 'Sesión del protocolo ZKTeco no autenticada.');
+
       let friendlyCause = authError || `El equipo respondió a la red pero rechazó el protocolo ZKTeco. Verifique la clave de comunicación (CommKey) en Menú > Comunicación > Red (actualmente probada: ${numericCommKey}).`;
       if (authError?.includes('Timeout CMD_CONNECT')) {
-        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (1ms), pero el reloj no respondió al comando binario CMD_CONNECT. Causa: El reloj ZKTeco G3 tiene activo el modo ADMS hacia el servidor BioTime (192.168.1.29:89). Cuando ADMS está activo, el reloj envía las marcaciones como cliente HTTP saliente y desactiva el procesador de comandos SDK local. Solución: 1) Si usa BioTime, utilice el botón "Sincronizar desde BioTime" en la tarjeta superior. 2) Si desea comandos directos por cable, en el reloj vaya a Menú > Comunicaciones > Conf. Srvr. de Nube y desactive el Servidor Cloud (OFF), cambie el puerto TCP a 4370 y reinicie el equipo.`;
+        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (${tcpProbe.latency}ms), pero el host no respondió al comando binario CMD_CONNECT.
+
+Causas identificadas y soluciones:
+1. Dirección IP probada (${cleanIp}): La IP oficial de referencia del ZKTeco G3 Sede Central es 192.168.1.180. Si se probó 192.168.1.198, verifique si fue un error tipográfico o si el equipo fue reconfigurado físicamente.
+2. Conflicto de servicio / PostgreSQL BioTime: El puerto 7496 corresponde también al servicio PostgreSQL de BioTime (192.168.1.29:7496). Si la IP ingresada corresponde a un servidor de datos o base de datos en lugar del reloj físico, el socket TCP abrirá en 1-2ms pero no procesará paquetes ZKTeco.
+3. Terminal en modo ADMS PUSH: Cuando el marcador G3 tiene configurado el Servidor Cloud hacia BioTime (http://192.168.1.29:89/iclock/cdata), el reloj actúa como cliente HTTP y desactiva el listener de comandos SDK. En este caso, use el botón "Sincronizar desde BioTime" para descargar marcaciones sin requerir socket TCP directo.
+4. Puerto SDK 4370 de fábrica: Verifique si el biométrico mantiene el puerto estándar 4370 en Menú > Comunicaciones > Red > Ethernet.`;
       }
 
       return buildDiagnosisResult(
