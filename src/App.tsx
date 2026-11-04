@@ -283,8 +283,12 @@ export const App: React.FC = () => {
     if (typeof window !== 'undefined') {
       try {
         const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
-        if (stored['dev-01']) {
-          return [{ ...defaultDev, ...stored['dev-01'] }];
+        const customDevs = Object.values(stored) as DispositivoZkTeco[];
+        if (customDevs.length > 0) {
+          const map = new Map<string, DispositivoZkTeco>();
+          map.set(defaultDev.id, defaultDev);
+          customDevs.forEach((d) => map.set(d.id, { ...(map.get(d.id) || {}), ...d }));
+          return Array.from(map.values());
         }
       } catch (_) {}
     }
@@ -386,8 +390,14 @@ export const App: React.FC = () => {
       } else if (typeof window !== 'undefined') {
         try {
           const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
-          if (stored['dev-01']) {
-            setDevices((prev) => prev.map((d) => (d.id === 'dev-01' ? { ...d, ...stored['dev-01'] } : d)));
+          const customDevs = Object.values(stored) as DispositivoZkTeco[];
+          if (customDevs.length > 0) {
+            setDevices((prev) => {
+              const map = new Map<string, DispositivoZkTeco>();
+              prev.forEach((d) => map.set(d.id, d));
+              customDevs.forEach((d) => map.set(d.id, { ...(map.get(d.id) || {}), ...d }));
+              return Array.from(map.values());
+            });
           }
         } catch (_) {}
       }

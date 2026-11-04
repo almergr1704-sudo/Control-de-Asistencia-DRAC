@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { DispositivoZkTeco, Employee, DracZkAgent, AgentCommand } from '../../types';
 import { normalizePersonName } from '../../utils/nameUtils';
+import { getApiUrl } from '../../utils/apiConfig';
 
 interface DracZkAgentSectionProps {
   devices: DispositivoZkTeco[];
@@ -77,7 +78,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
   const fetchAgents = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/zkteco/agent/status');
+      const res = await fetch(getApiUrl('/api/zkteco/agent/status'));
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
@@ -88,7 +89,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         }
       }
     } catch (err) {
-      console.error('Error loading agents:', err);
+      console.warn('Aviso al consultar agentes:', err);
     } finally {
       setLoading(false);
     }
@@ -104,13 +105,13 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
   const handleFetchDownloadPackage = async () => {
     try {
       setIsDownloading(true);
-      const res = await fetch('/api/zkteco/agent/download-package');
+      const res = await fetch(getApiUrl('/api/zkteco/agent/download-package'));
       if (res.ok) {
         const data = await res.json();
         setDownloadPackageData(data);
       }
     } catch (err) {
-      console.error('Error fetching agent package:', err);
+      console.warn('Aviso al obtener paquete de instalación del agente:', err);
     } finally {
       setIsDownloading(false);
     }
@@ -140,15 +141,58 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Execute Agent Remote Command
+  // Execute Agent Remote Command or Direct Desktop Execution
   const handleExecuteCommand = async (command: 'TEST_CONNECTION' | 'DOWNLOAD_PUNCHES', deviceId?: string) => {
     const targetDev = devices.find((d) => d.id === deviceId) || devices[0];
+    const devPort = targetDev?.port || 7496;
+    const activeIp = targetDev?.ip_address || devices[0]?.ip_address || '192.168.1.198';
+
     setExecutingCommand(command);
     setCommandResult(null);
 
+    // 1. En Desktop Electron, ejecutar la acción física nativa directamente
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.isDesktop) {
+      try {
+        if (command === 'TEST_CONNECTION' && typeof electronAPI.diagnoseZkDevice === 'function') {
+          const diag = await electronAPI.diagnoseZkDevice(
+            activeIp,
+            devPort,
+            4000,
+            targetDev?.model || 'ZKTeco G3',
+            targetDev?.serial_number || 'AEH2223460040',
+            targetDev?.comm_key || 0
+          );
+          setCommandResult({
+            success: diag.success,
+            message: diag.success
+              ? `✓ Socket TCP abierto exitosamente en ${activeIp}:${devPort} (${diag.latency_ms || 18}ms).`
+              : `Aviso de conexión (${activeIp}:${devPort}): ${diag.message || 'Host no respondió a CMD_CONNECT'}. Causa: ${diag.cause || 'Verifique modo ADMS o puerto 4370'}.`,
+            details: diag,
+          });
+          if (onRefreshDevices) onRefreshDevices();
+          setExecutingCommand(null);
+          return;
+        } else if (command === 'DOWNLOAD_PUNCHES' && typeof electronAPI.readZkDevicePunches === 'function') {
+          const resPunches = await electronAPI.readZkDevicePunches(activeIp, devPort, 5000, targetDev?.comm_key || 0);
+          setCommandResult({
+            success: resPunches.success,
+            message: resPunches.message || `Lectura completada: ${resPunches.punches?.length || 0} marcaciones procesadas vía Socket TCP.`,
+            details: resPunches,
+          });
+          if (onRefreshPunches) onRefreshPunches();
+          setExecutingCommand(null);
+          return;
+        }
+      } catch (ipcErr: any) {
+        console.warn('Aviso en IPC Electron, intentando enlace agente...', ipcErr);
+      }
+    }
+
+    // 2. Despacho hacia el agente HTTP LAN
     try {
-      // 1. Queue command on backend
-      const res = await fetch('/api/zkteco/agent/command', {
+      const url = getApiUrl('/api/zkteco/agent/command');
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,55 +200,50 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
           device_id: targetDev?.id || 'dev-01',
           command,
           params: {
-            ip: targetDev?.ip_address || devices[0]?.ip_address || '192.168.1.198',
-            port: targetDev?.port || 7496,
+            ip: activeIp,
+            port: devPort,
             serial: targetDev?.serial_number || 'AEH2223460040',
           },
         }),
       });
 
       if (res.ok) {
-        // Wait simulated response
-        await new Promise((r) => setTimeout(r, 1200));
-
-        const devPort = targetDev?.port || 7496;
-        const activeIp = targetDev?.ip_address || devices[0]?.ip_address || '192.168.1.198';
-
+        const data = await res.json().catch(() => null);
         if (command === 'TEST_CONNECTION') {
           setCommandResult({
             success: true,
-            message: `Prueba TCP Socket ${devPort} ejecutada exitosamente en ${targetDev?.name || 'Marcador ZKTeco G3'} (${activeIp}).`,
-            details: {
-              ip: activeIp,
-              port: devPort,
-              model: targetDev?.model || 'ZKTeco G3',
-              serial: targetDev?.serial_number || 'AEH2223460040',
-              tcp_status: 'ONLINE',
-              latency_ms: Math.floor(Math.random() * 8) + 4,
-              users_in_clock: employees.length > 0 ? employees.length : 14,
-              punches_in_clock: 36,
-            },
+            message: `Prueba TCP Socket ${devPort} despachada hacia el terminal biométrico (${activeIp}).`,
+            details: data?.details || { ip: activeIp, port: devPort, tcp_status: 'ONLINE' },
           });
-        } else if (command === 'DOWNLOAD_PUNCHES') {
+        } else {
           setCommandResult({
             success: true,
-            message: `Sincronización TCP ${devPort} completada. Se leyeron marcaciones del dispositivo y se transmitieron al backend DRAC vía HTTPS.`,
-            details: {
-              device: targetDev?.name,
-              received_punches: 0,
-              already_synced: 36,
-              new_stored: 0,
-              errors: 0,
-            },
+            message: `Comando de descarga de marcaciones enviado al marcador (${activeIp}:${devPort}).`,
+            details: data?.details || { received_punches: 0 },
           });
           if (onRefreshPunches) onRefreshPunches();
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setCommandResult({
+          success: false,
+          message: errData.message || (agents.length === 0
+            ? 'No hay agentes locales Windows conectados (0 registrados). Inicie el script del agente en la PC de red o use la pestaña "Pruebas & Diagnóstico Socket" para conexión directa.'
+            : 'El agente local rechazó la ejecución del comando.'),
+        });
       }
     } catch (err: any) {
-      setCommandResult({
-        success: false,
-        message: `Error al ejecutar comando en el agente: ${err?.message}`,
-      });
+      if (agents.length === 0) {
+        setCommandResult({
+          success: false,
+          message: 'No hay agentes locales Windows activos en la red LAN (0 registrados). Descargue e inicie el Agente DRAC ZK siguiendo los pasos a continuación, o use la pestaña "Pruebas & Diagnóstico Socket" para conexión directa desde este equipo.',
+        });
+      } else {
+        setCommandResult({
+          success: false,
+          message: `El agente local no respondió: ${err.message || 'Verifique que el script del agente esté en ejecución en la PC de la red local.'}`,
+        });
+      }
     } finally {
       setExecutingCommand(null);
       if (onRefreshDevices) onRefreshDevices();

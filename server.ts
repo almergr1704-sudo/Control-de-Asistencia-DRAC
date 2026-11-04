@@ -402,6 +402,184 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
   });
 });
 
+// POST /api/zkteco/devices - Register new biometric marker
+app.post('/api/zkteco/devices', (req, res) => {
+  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const payload = req.body || {};
+
+  const userRole = String(req.headers['x-user-role'] || payload.user_role || '').trim();
+  const userId = String(req.headers['x-user-id'] || payload.user_id || 'admin-drac').trim();
+  const userName = String(req.headers['x-user-name'] || payload.user_name || 'Administrador DRAC').trim();
+
+  const ALLOWED_CONFIG_ROLES = [
+    'ADMIN_GENERAL',
+    'HR_ADMIN',
+    'JEFE_RRHH',
+    'CONTROL_ASISTENCIA',
+    'SUPERVISOR',
+    'DIRECTOR_GENERAL',
+  ];
+
+  if (userRole && !ALLOWED_CONFIG_ROLES.includes(userRole)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado: Se requieren permisos administrativos para registrar un marcador.',
+    });
+  }
+
+  const IPV4_REGEX = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+  const MAC_REGEX = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+  if (!payload.name || !String(payload.name).trim()) {
+    return res.status(400).json({ success: false, message: 'El nombre del dispositivo es obligatorio.' });
+  }
+
+  if (!payload.serial_number || !String(payload.serial_number).trim()) {
+    return res.status(400).json({ success: false, message: 'El número de serie es obligatorio.' });
+  }
+
+  const cleanIp = String(payload.ip_address || '192.168.1.199').trim();
+  if (!IPV4_REGEX.test(cleanIp)) {
+    return res.status(400).json({ success: false, message: 'Dirección IP LAN inválida.' });
+  }
+
+  const portNum = Number(payload.port) || 7496;
+  if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+    return res.status(400).json({ success: false, message: 'Puerto TCP inválido (1-65535).' });
+  }
+
+  const newId = payload.id || `dev-${Date.now().toString(36)}`;
+  const nowIso = new Date().toISOString();
+
+  const newDevice = {
+    id: newId,
+    name: String(payload.name).trim(),
+    model: String(payload.model || 'ZKTeco G3').trim(),
+    serial_number: String(payload.serial_number).trim().toUpperCase(),
+    ip_address: cleanIp,
+    port: portNum,
+    netmask: String(payload.netmask || '255.255.255.0').trim(),
+    gateway: String(payload.gateway || '192.168.1.1').trim(),
+    dns: String(payload.dns || '200.48.225.130').trim(),
+    mac_address: String(payload.mac_address || '00:17:61:00:00:00').trim().toUpperCase(),
+    comm_key: payload.comm_key !== undefined ? payload.comm_key : 0,
+    device_id_num: Number(payload.device_id_num) || (devices.length + 1),
+    status: String(payload.status || 'ONLINE').trim(),
+    protocol: String(payload.protocol || 'TCP').trim(),
+    location_detail: String(payload.location_detail || 'Sede DRAC Cajamarca').trim(),
+    dependencia_id: payload.dependencia_id || 'dep-01',
+    dependencia_name: payload.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+    device_type: payload.device_type || 'FACIAL_G3',
+    firmware_version: payload.firmware_version || 'Ver 1.14.0',
+    last_activity: nowIso,
+    last_sync: nowIso,
+    last_latency_ms: 18,
+    log_count: 0,
+    enrolled_user_count: 0,
+    operator_pc: '192.168.1.33',
+    push_enabled: true,
+    push_server_address: '192.168.1.29',
+    push_server_port: 89,
+    push_endpoint: '/iclock/cdata',
+    push_protocol: 'HTTP',
+    push_interval: 5,
+    last_modified_by: `${userName} (${userRole || 'ADMIN_GENERAL'})`,
+    last_modified_at: nowIso,
+    updated_at: nowIso,
+    config_version: 1,
+  };
+
+  devices.push(newDevice);
+  writeJsonFile(DEVICES_FILE, devices);
+
+  // Auditoría
+  const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
+  auditLogs.unshift({
+    id: `audit-dev-${Date.now()}`,
+    timestamp: nowIso,
+    user_id: userId,
+    user_name: userName,
+    user_role: userRole || 'ADMIN_GENERAL',
+    action: 'CREACION_DISPOSITIVO_ZKTECO',
+    entity: 'DISPOSITIVO_ZKTECO',
+    entity_id: newDevice.id,
+    details: `Alta de nuevo marcador biométrico: ${newDevice.name} (IP: ${newDevice.ip_address}, Puerto: ${newDevice.port}, S/N: ${newDevice.serial_number})`,
+    new_values: newDevice,
+  });
+  writeJsonFile(AUDIT_LOGS_FILE, auditLogs.slice(0, 500));
+
+  // Replicar en Supabase
+  try {
+    Promise.resolve(
+      supabaseServer.from('dispositivos_zkteco').insert({
+        id: newDevice.id,
+        serial_number: newDevice.serial_number,
+        name: newDevice.name,
+        ip_address: newDevice.ip_address,
+        port: newDevice.port,
+        netmask: newDevice.netmask,
+        gateway: newDevice.gateway,
+        dns: newDevice.dns,
+        mac_address: newDevice.mac_address,
+        comm_key: String(newDevice.comm_key),
+        device_id_num: newDevice.device_id_num,
+        model: newDevice.model,
+        protocol: newDevice.protocol,
+        status: newDevice.status,
+        location_detail: newDevice.location_detail,
+        last_modified_by: newDevice.last_modified_by,
+        last_modified_at: newDevice.last_modified_at,
+        updated_at: newDevice.updated_at,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
+  return res.status(201).json({
+    success: true,
+    message: `Marcador biométrico ${newDevice.name} registrado exitosamente.`,
+    data: newDevice,
+  });
+});
+
+// DELETE /api/zkteco/devices/:id - Remove secondary biometric marker
+app.delete('/api/zkteco/devices/:id', (req, res) => {
+  const { id } = req.params;
+  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const index = devices.findIndex((d) => d.id === id || d.serial_number === id);
+
+  if (index === -1) {
+    return res.status(404).json({ success: false, message: 'Dispositivo no encontrado.' });
+  }
+
+  if (devices.length <= 1) {
+    return res.status(400).json({ success: false, message: 'No se puede eliminar el único marcador registrado del sistema.' });
+  }
+
+  const removed = devices.splice(index, 1)[0];
+  writeJsonFile(DEVICES_FILE, devices);
+
+  const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
+  auditLogs.unshift({
+    id: `audit-dev-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    user_id: 'admin-drac',
+    user_name: 'Administrador DRAC',
+    user_role: 'ADMIN_GENERAL',
+    action: 'ELIMINACION_DISPOSITIVO_ZKTECO',
+    entity: 'DISPOSITIVO_ZKTECO',
+    entity_id: removed.id,
+    details: `Eliminación de marcador biométrico: ${removed.name} (IP: ${removed.ip_address}, S/N: ${removed.serial_number})`,
+    previous_values: removed,
+  });
+  writeJsonFile(AUDIT_LOGS_FILE, auditLogs.slice(0, 500));
+
+  return res.json({
+    success: true,
+    message: `Marcador biométrico ${removed.name} eliminado del sistema.`,
+    data: removed,
+  });
+});
+
 // GET /api/employees
 app.get('/api/employees', (req, res) => {
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);

@@ -1174,6 +1174,12 @@ declare global {
         id: string,
         payload: any
       ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
+      createDevice?: (
+        payload: any
+      ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
+      deleteDevice?: (
+        id: string
+      ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
       onDeviceConfigChanged?: (callback: (device: DispositivoZkTeco) => void) => () => void;
     };
     __DRAC_DESKTOP_CLIENT__?: boolean;

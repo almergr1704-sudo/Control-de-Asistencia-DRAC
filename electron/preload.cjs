@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateDevice: (id, payload) => {
     return ipcRenderer.invoke('device:update', { id, payload });
   },
+  createDevice: (payload) => {
+    return ipcRenderer.invoke('device:create', payload);
+  },
+  deleteDevice: (id) => {
+    return ipcRenderer.invoke('device:delete', id);
+  },
   onDeviceConfigChanged: (callback) => {
     const handler = (_event, device) => callback(device);
     ipcRenderer.on('device:config-changed', handler);

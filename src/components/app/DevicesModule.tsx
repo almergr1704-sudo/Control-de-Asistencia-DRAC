@@ -36,6 +36,9 @@ import {
   EyeOff,
   Key,
   Globe,
+  Plus,
+  Trash2,
+  Building2,
 } from 'lucide-react';
 
 interface DevicesModuleProps {
@@ -81,6 +84,32 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   const [isSavingDevice, setIsSavingDevice] = useState(false);
   const [deviceSaveMessage, setDeviceSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // New Device Registration Modal & State
+  const [isAddingDevice, setIsAddingDevice] = useState(false);
+  const [isCreatingDevice, setIsCreatingDevice] = useState(false);
+  const [newDeviceErrors, setNewDeviceErrors] = useState<Record<string, string>>({});
+  const [newDeviceData, setNewDeviceData] = useState({
+    name: 'ZKTeco G3 - Entrada Secundaria',
+    model: 'ZKTeco G3',
+    serial_number: '',
+    ip_address: '192.168.1.199',
+    port: 7496,
+    netmask: '255.255.255.0',
+    gateway: '192.168.1.1',
+    dns: '200.48.225.130',
+    mac_address: '',
+    comm_key: 0,
+    device_id_num: 2,
+    status: 'ONLINE',
+    protocol: 'TCP',
+    dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
+    location_detail: 'Entrada Secundaria - Sede Central DRAC Cajamarca',
+  });
+
+  // Delete device confirmation state
+  const [deviceToDelete, setDeviceToDelete] = useState<DispositivoZkTeco | null>(null);
+  const [isDeletingDevice, setIsDeletingDevice] = useState(false);
 
   const [formData, setFormData] = useState({
     name: devices[0]?.name || 'ZKTeco G3 Sede Central',
@@ -434,6 +463,216 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         setDeviceSaveMessage((prev) => (prev?.type === 'success' ? null : prev));
       }, 6000);
     }
+  };
+
+  const DRAC_SEDES_LIST = [
+    'SEDE CENTRAL - DRAC CAJAMARCA',
+    'AGENCIA AGRARIA CHOTA',
+    'AGENCIA AGRARIA CUTERVO',
+    'AGENCIA AGRARIA JAÉN',
+    'AGENCIA AGRARIA SAN IGNACIO',
+    'AGENCIA AGRARIA CELENDÍN',
+    'AGENCIA AGRARIA CAJABAMBA',
+    'AGENCIA AGRARIA CONTUMAZÁ',
+    'AGENCIA AGRARIA HUALGAYOC - BAMBAMARCA',
+    'AGENCIA AGRARIA SAN MARCOS',
+    'AGENCIA AGRARIA SAN MIGUEL',
+    'AGENCIA AGRARIA SAN PABLO',
+    'AGENCIA AGRARIA SANTA CRUZ',
+  ];
+
+  const MODELOS_ZKTECO_LIST = [
+    'ZKTeco G3',
+    'ZKTeco G4 Pro',
+    'ZKTeco SilkBio-101TC',
+    'ZKTeco MB360',
+    'ZKTeco uFace800',
+    'ZKTeco Horus TL1',
+    'ZKTeco IN01-A',
+    'ZKTeco SpeedFace-V5L',
+  ];
+
+  const validateNewDeviceForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    const ipv4Regex = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+
+    if (!newDeviceData.name.trim()) errors.name = 'El nombre del dispositivo es obligatorio.';
+    if (!newDeviceData.model.trim()) errors.model = 'El modelo del marcador es obligatorio.';
+    if (!newDeviceData.serial_number.trim()) errors.serial_number = 'El número de serie es obligatorio.';
+
+    if (!newDeviceData.ip_address.trim()) {
+      errors.ip_address = 'La dirección IP es obligatoria.';
+    } else if (!ipv4Regex.test(newDeviceData.ip_address.trim())) {
+      errors.ip_address = 'Formato de IP inválido (IPv4 requerido: ej. 192.168.1.199).';
+    }
+
+    const portNum = Number(newDeviceData.port);
+    if (!newDeviceData.port || isNaN(portNum) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      errors.port = 'Puerto TCP inválido (debe ser un número entero entre 1 y 65535).';
+    }
+
+    if (newDeviceData.netmask && newDeviceData.netmask.trim() && !ipv4Regex.test(newDeviceData.netmask.trim())) {
+      errors.netmask = 'Máscara inválida (IPv4 requerida: ej. 255.255.255.0).';
+    }
+
+    if (newDeviceData.gateway && newDeviceData.gateway.trim() && !ipv4Regex.test(newDeviceData.gateway.trim())) {
+      errors.gateway = 'Puerta de enlace inválida (IPv4 requerida: ej. 192.168.1.1).';
+    }
+
+    if (newDeviceData.dns && newDeviceData.dns.trim() && !ipv4Regex.test(newDeviceData.dns.trim())) {
+      errors.dns = 'DNS institucional inválido (ej. 200.48.225.130).';
+    }
+
+    if (newDeviceData.mac_address && newDeviceData.mac_address.trim() && !macRegex.test(newDeviceData.mac_address.trim())) {
+      errors.mac_address = 'Dirección MAC inválida (formato: 00:17:61:10:74:7F).';
+    }
+
+    setNewDeviceErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreateNewDevice = async () => {
+    if (!validateNewDeviceForm()) return;
+    setIsCreatingDevice(true);
+
+    const newId = `dev-${Date.now().toString(36)}`;
+    const nowIso = new Date().toISOString();
+
+    const payload: DispositivoZkTeco = {
+      id: newId,
+      name: newDeviceData.name.trim(),
+      model: newDeviceData.model.trim(),
+      serial_number: newDeviceData.serial_number.trim().toUpperCase(),
+      ip_address: newDeviceData.ip_address.trim(),
+      port: Number(newDeviceData.port),
+      netmask: newDeviceData.netmask.trim() || '255.255.255.0',
+      gateway: newDeviceData.gateway.trim() || '192.168.1.1',
+      dns: newDeviceData.dns.trim() || '200.48.225.130',
+      mac_address: (newDeviceData.mac_address || '00:17:61:00:00:00').trim().toUpperCase(),
+      comm_key: Number(newDeviceData.comm_key) || 0,
+      device_id_num: Number(newDeviceData.device_id_num) || (devices.length + 1),
+      status: newDeviceData.status as any,
+      protocol: newDeviceData.protocol as any,
+      dependencia_id: 'dep-01',
+      dependencia_name: newDeviceData.dependencia_name,
+      dependencia_tipo: newDeviceData.dependencia_name.includes('SEDE CENTRAL') ? 'SEDE_CENTRAL' : 'AGENCIA_AGRARIA',
+      location_detail: newDeviceData.location_detail.trim() || newDeviceData.dependencia_name,
+      platform: 'ZMN220_TFT',
+      device_type: 'FACIAL_G3',
+      firmware_version: 'Ver 1.14.0',
+      last_activity: nowIso,
+      last_sync: nowIso,
+      last_latency_ms: 18,
+      log_count: 0,
+      enrolled_user_count: 0,
+      operator_pc: '192.168.1.33',
+      push_enabled: true,
+      push_server_address: '192.168.1.29',
+      push_server_port: 89,
+      push_endpoint: '/iclock/cdata',
+      push_protocol: 'HTTP',
+      push_interval: 5,
+      last_modified_by: `Administrador DRAC (${activeRole})`,
+      last_modified_at: nowIso,
+      updated_at: nowIso,
+      config_version: 1,
+    };
+
+    // 1. Electron Desktop IPC si se ejecuta en app de escritorio
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.isDesktop && typeof electronAPI.createDevice === 'function') {
+      try {
+        const res = await electronAPI.createDevice(payload);
+        if (res.success && res.data) {
+          payload.id = res.data.id;
+        }
+      } catch (ipcErr) {
+        console.warn('Aviso en IPC Electron createDevice:', ipcErr);
+      }
+    }
+
+    // 2. HTTP Server Endpoint
+    try {
+      fetch(getApiUrl('/api/zkteco/devices'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': activeRole,
+          'x-user-name': 'Administrador DRAC',
+          'x-user-id': 'admin-drac',
+        },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } catch (_) {}
+
+    // 3. Persistencia local resiliente (localStorage)
+    try {
+      const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
+      stored[payload.id] = payload;
+      localStorage.setItem('drac_custom_devices', JSON.stringify(stored));
+    } catch (_) {}
+
+    window.dispatchEvent(new CustomEvent('drac:device-config-changed', { detail: payload }));
+    if (onRefreshDevices) onRefreshDevices();
+
+    setSelectedDevice(payload);
+    setTestIp(payload.ip_address);
+    setTestPort(payload.port);
+    setPortInput(payload.port);
+    syncFormWithDevice(payload);
+
+    setIsCreatingDevice(false);
+    setIsAddingDevice(false);
+    setDeviceSaveMessage({
+      type: 'success',
+      text: `✓ Nuevo marcador biométrico "${payload.name}" registrado exitosamente en IP: ${payload.ip_address}:${payload.port}.`,
+    });
+  };
+
+  const handleDeleteDeviceConfirmed = async () => {
+    if (!deviceToDelete) return;
+    setIsDeletingDevice(true);
+
+    const devId = deviceToDelete.id;
+    const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+    if (electronAPI?.isDesktop && typeof electronAPI.deleteDevice === 'function') {
+      try {
+        await electronAPI.deleteDevice(devId);
+      } catch (err) {
+        console.warn('Aviso eliminando en electron:', err);
+      }
+    }
+
+    try {
+      fetch(getApiUrl(`/api/zkteco/devices/${devId}`), {
+        method: 'DELETE',
+        headers: {
+          'x-user-role': activeRole,
+          'x-user-name': 'Administrador DRAC',
+        },
+      }).catch(() => {});
+    } catch (_) {}
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('drac_custom_devices') || '{}');
+      delete stored[devId];
+      localStorage.setItem('drac_custom_devices', JSON.stringify(stored));
+    } catch (_) {}
+
+    if (onRefreshDevices) onRefreshDevices();
+    const remaining = devices.filter((d) => d.id !== devId);
+    if (remaining.length > 0) {
+      setSelectedDevice(remaining[0]);
+      syncFormWithDevice(remaining[0]);
+    }
+
+    setDeviceSaveMessage({
+      type: 'success',
+      text: `✓ Marcador biométrico "${deviceToDelete.name}" eliminado correctamente.`,
+    });
+    setDeviceToDelete(null);
+    setIsDeletingDevice(false);
   };
 
   const handleTestConnection = (overrideIp?: string, overridePort?: number) => {
@@ -931,10 +1170,42 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Device Cards List */}
           <div className="lg:col-span-1 space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Server className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Terminales Registrados</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Server className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Terminales Registrados ({devices.length})</span>
+              </h3>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewDeviceErrors({});
+                    setNewDeviceData({
+                      name: `ZKTeco G3 - Terminal ${devices.length + 1}`,
+                      model: 'ZKTeco G3',
+                      serial_number: '',
+                      ip_address: `192.168.1.${198 + devices.length}`,
+                      port: 7496,
+                      netmask: '255.255.255.0',
+                      gateway: '192.168.1.1',
+                      dns: '200.48.225.130',
+                      mac_address: '',
+                      comm_key: 0,
+                      device_id_num: devices.length + 1,
+                      status: 'ONLINE',
+                      protocol: 'TCP',
+                      dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
+                      location_detail: '',
+                    });
+                    setIsAddingDevice(true);
+                  }}
+                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Agregar Marcador</span>
+                </button>
+              )}
+            </div>
 
             <div className="space-y-3">
               {devices.map((dev) => {
@@ -986,6 +1257,37 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                   </div>
                 );
               })}
+
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewDeviceErrors({});
+                    setNewDeviceData({
+                      name: `ZKTeco G3 - Terminal ${devices.length + 1}`,
+                      model: 'ZKTeco G3',
+                      serial_number: '',
+                      ip_address: `192.168.1.${198 + devices.length}`,
+                      port: 7496,
+                      netmask: '255.255.255.0',
+                      gateway: '192.168.1.1',
+                      dns: '200.48.225.130',
+                      mac_address: '',
+                      comm_key: 0,
+                      device_id_num: devices.length + 1,
+                      status: 'ONLINE',
+                      protocol: 'TCP',
+                      dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
+                      location_detail: '',
+                    });
+                    setIsAddingDevice(true);
+                  }}
+                  className="w-full py-3 px-4 border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl bg-slate-900/40 hover:bg-indigo-950/20 text-slate-300 hover:text-indigo-300 text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 text-indigo-400" />
+                  <span>+ Registrar Nuevo Marcador Biométrico</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1083,6 +1385,18 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                           <span>{isSyncing ? 'Conectando...' : `Sincronizar Socket (${selectedDevice.port || 7496})`}</span>
                         </button>
+
+                        {devices.length > 1 && canManage && (
+                          <button
+                            type="button"
+                            onClick={() => setDeviceToDelete(selectedDevice)}
+                            title="Eliminar este marcador secundario"
+                            className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 font-semibold text-xs rounded-xl border border-rose-800/60 transition-colors flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Eliminar</span>
+                          </button>
+                        )}
                       </>
                     ) : (
                       <>
@@ -2073,6 +2387,367 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
       {/* TAB 5: ZKTECO SPECIFICATION */}
       {activeTab === 'spec' && <ZkTecoSpec />}
+
+      {/* MODAL: REGISTRAR NUEVO MARCADOR BIOMÉTRICO */}
+      {isAddingDevice && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
+                  <Plus className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-white tracking-tight">
+                    Registrar Nuevo Marcador Biométrico ZKTeco
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Alta de terminal físico en la red institucional y base de datos oficial DRAC Cajamarca.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddingDevice(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body Form */}
+            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* Sección 1: Identificación y Ubicación */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 pb-1 border-b border-slate-800">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>1. Identificación y Ubicación Institucional</span>
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Dependencia / Agencia Agraria <span className="text-rose-400">*</span>
+                    </label>
+                    <select
+                      value={newDeviceData.dependencia_name}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, dependencia_name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      {DRAC_SEDES_LIST.map((sede) => (
+                        <option key={sede} value={sede}>
+                          {sede}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Nombre del Dispositivo <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.name}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, name: e.target.value })}
+                      placeholder="ej. ZKTeco G3 - Entrada Secundaria"
+                      className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white text-xs focus:outline-none ${
+                        newDeviceErrors.name ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                      }`}
+                    />
+                    {newDeviceErrors.name && <p className="text-[10px] text-rose-400">{newDeviceErrors.name}</p>}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Modelo del Terminal <span className="text-rose-400">*</span>
+                    </label>
+                    <select
+                      value={newDeviceData.model}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, model: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      {MODELOS_ZKTECO_LIST.map((mod) => (
+                        <option key={mod} value={mod}>
+                          {mod}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Número de Serie (S/N) <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.serial_number}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, serial_number: e.target.value })}
+                      placeholder="ej. AEH2223460041"
+                      className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white font-mono text-xs focus:outline-none ${
+                        newDeviceErrors.serial_number ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                      }`}
+                    />
+                    {newDeviceErrors.serial_number && <p className="text-[10px] text-rose-400">{newDeviceErrors.serial_number}</p>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 2: Red Institucional y Puertos */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 pb-1 border-b border-slate-800">
+                  <Network className="w-3.5 h-3.5" />
+                  <span>2. Red Institucional y Puertos de Comunicación</span>
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Dirección IP LAN <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.ip_address}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, ip_address: e.target.value })}
+                      placeholder="ej. 192.168.1.199"
+                      className={`w-full px-3 py-2 bg-slate-900 border rounded-lg text-white font-mono text-xs focus:outline-none ${
+                        newDeviceErrors.ip_address ? 'border-rose-500 focus:ring-rose-500' : 'border-slate-700 focus:border-indigo-500'
+                      }`}
+                    />
+                    {newDeviceErrors.ip_address && <p className="text-[10px] text-rose-400">{newDeviceErrors.ip_address}</p>}
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                        Puerto TCP <span className="text-rose-400">*</span>
+                      </label>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setNewDeviceData({ ...newDeviceData, port: 7496 })}
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                            Number(newDeviceData.port) === 7496 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          7496
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewDeviceData({ ...newDeviceData, port: 4370 })}
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                            Number(newDeviceData.port) === 4370 ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          4370
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      value={newDeviceData.port}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, port: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Máscara de Subred
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.netmask}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, netmask: e.target.value })}
+                      placeholder="255.255.255.0"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Puerta de Enlace (Gateway)
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.gateway}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, gateway: e.target.value })}
+                      placeholder="192.168.1.1"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Servidor DNS Institucional
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.dns}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, dns: e.target.value })}
+                      placeholder="200.48.225.130"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Dirección MAC Física
+                    </label>
+                    <input
+                      type="text"
+                      value={newDeviceData.mac_address}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, mac_address: e.target.value })}
+                      placeholder="ej. 00:17:61:10:74:80"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Seguridad, Protocolo y Ubicación */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 pb-1 border-b border-slate-800">
+                  <Key className="w-3.5 h-3.5" />
+                  <span>3. Protocolo, Seguridad y Ubicación Física</span>
+                </h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      CommKey (Clave ZK)
+                    </label>
+                    <input
+                      type="number"
+                      value={newDeviceData.comm_key}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, comm_key: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Device ID (Número)
+                    </label>
+                    <input
+                      type="number"
+                      value={newDeviceData.device_id_num}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, device_id_num: Number(e.target.value) })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Estado Inicial
+                    </label>
+                    <select
+                      value={newDeviceData.status}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, status: e.target.value as any })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="ONLINE">Activo (ONLINE)</option>
+                      <option value="OFFLINE">Inactivo (OFFLINE)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                      Tipo de Conexión
+                    </label>
+                    <select
+                      value={newDeviceData.protocol}
+                      onChange={(e) => setNewDeviceData({ ...newDeviceData, protocol: e.target.value as any })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="TCP">TCP Socket Directo</option>
+                      <option value="PUSH_ADMS">ADMS Push (HTTP)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-300 block">
+                    Ubicación Física Institucional
+                  </label>
+                  <input
+                    type="text"
+                    value={newDeviceData.location_detail}
+                    onChange={(e) => setNewDeviceData({ ...newDeviceData, location_detail: e.target.value })}
+                    placeholder="ej. Puerta de Ingreso Lateral - Almacén Central DRAC Cajamarca"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-900/80 border-t border-slate-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsAddingDevice(false)}
+                disabled={isCreatingDevice}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCreateNewDevice}
+                disabled={isCreatingDevice}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-emerald-950/40"
+              >
+                <Plus className={`w-4 h-4 ${isCreatingDevice ? 'animate-spin' : ''}`} />
+                <span>{isCreatingDevice ? 'Registrando...' : 'Registrar Marcador'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR ELIMINACIÓN DE MARCADOR */}
+      {deviceToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-600/20 text-rose-400 rounded-xl border border-rose-500/30">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">Eliminar Marcador Biométrico</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Acción administrativa de retiro</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              ¿Está seguro de que desea eliminar el marcador <strong className="text-white">{deviceToDelete.name}</strong> ({deviceToDelete.ip_address})? El equipo será retirado de la supervisión activa.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeviceToDelete(null)}
+                disabled={isDeletingDevice}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteDeviceConfirmed}
+                disabled={isDeletingDevice}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2"
+              >
+                <Trash2 className={`w-4 h-4 ${isDeletingDevice ? 'animate-spin' : ''}`} />
+                <span>{isDeletingDevice ? 'Eliminando...' : 'Sí, Eliminar Marcador'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

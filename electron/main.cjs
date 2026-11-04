@@ -633,6 +633,175 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
   }
 });
 
+// Registrar nuevo marcador biométrico en la base de datos local
+ipcMain.handle('device:create', async (_event, payload = {}) => {
+  log(`IPC device:create -> Registrando nuevo marcador: ${payload.name || 'Nuevo Marcador'} (${payload.ip_address}:${payload.port})`);
+  try {
+    const devicesPath = getStorageFilePath('devices.json');
+    const auditPath = getStorageFilePath('audit-logs.json');
+
+    let devices = [];
+    if (fs.existsSync(devicesPath)) {
+      try {
+        devices = JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+      } catch (_) {
+        devices = [];
+      }
+    }
+
+    const newId = payload.id || `dev-${Date.now().toString(36)}`;
+    const nowIso = new Date().toISOString();
+
+    const newDevice = {
+      id: newId,
+      name: String(payload.name || 'Nuevo Marcador ZKTeco').trim(),
+      model: String(payload.model || 'ZKTeco G3').trim(),
+      serial_number: String(payload.serial_number || `ZK-${Date.now()}`).trim().toUpperCase(),
+      ip_address: String(payload.ip_address || '192.168.1.199').trim(),
+      port: Number(payload.port) || 7496,
+      netmask: String(payload.netmask || '255.255.255.0').trim(),
+      gateway: String(payload.gateway || '192.168.1.1').trim(),
+      dns: String(payload.dns || '200.48.225.130').trim(),
+      mac_address: String(payload.mac_address || '00:17:61:00:00:00').trim().toUpperCase(),
+      comm_key: payload.comm_key !== undefined ? payload.comm_key : 0,
+      device_id_num: Number(payload.device_id_num) || (devices.length + 1),
+      status: String(payload.status || 'ONLINE').trim(),
+      protocol: String(payload.protocol || 'TCP').trim(),
+      location_detail: String(payload.location_detail || 'Sede DRAC Cajamarca').trim(),
+      dependencia_id: payload.dependencia_id || 'dep-01',
+      dependencia_name: payload.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+      device_type: payload.device_type || 'FACIAL_G3',
+      firmware_version: payload.firmware_version || 'Ver 1.14.0',
+      last_activity: nowIso,
+      last_sync: nowIso,
+      last_latency_ms: 18,
+      log_count: 0,
+      enrolled_user_count: 0,
+      operator_pc: '192.168.1.33',
+      push_enabled: true,
+      push_server_address: '192.168.1.29',
+      push_server_port: 89,
+      push_endpoint: '/iclock/cdata',
+      push_protocol: 'HTTP',
+      push_interval: 5,
+      last_modified_by: payload.user_name ? `${payload.user_name} (${payload.user_role || 'ADMIN'})` : 'Administrador DRAC',
+      last_modified_at: nowIso,
+      updated_at: nowIso,
+      config_version: 1,
+    };
+
+    devices.push(newDevice);
+    fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+
+    // Registrar en auditoría
+    try {
+      let audits = [];
+      if (fs.existsSync(auditPath)) {
+        try {
+          audits = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
+        } catch (_) {
+          audits = [];
+        }
+      }
+      audits.unshift({
+        id: `audit-dev-${Date.now()}`,
+        timestamp: nowIso,
+        user_id: payload.user_id || 'admin-drac',
+        user_name: payload.user_name || 'Administrador DRAC',
+        user_role: payload.user_role || 'ADMIN_GENERAL',
+        action: 'CREACION_DISPOSITIVO_ZKTECO',
+        entity: 'DISPOSITIVO_ZKTECO',
+        entity_id: newDevice.id,
+        details: `Alta de nuevo marcador biométrico: ${newDevice.name} (IP: ${newDevice.ip_address}, Puerto: ${newDevice.port}, S/N: ${newDevice.serial_number})`,
+        new_values: newDevice,
+      });
+      fs.writeFileSync(auditPath, JSON.stringify(audits.slice(0, 500), null, 2), 'utf8');
+    } catch (_) {}
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('device:config-changed', newDevice);
+      log(`Evento device:config-changed emitido tras registrar ${newDevice.name}`);
+    }
+
+    log(`Nuevo marcador ${newDevice.name} registrado con ID ${newDevice.id}`);
+    return {
+      success: true,
+      message: `Marcador biométrico ${newDevice.name} registrado exitosamente en la base de datos oficial.`,
+      data: newDevice,
+    };
+  } catch (err) {
+    log(`Error al registrar nuevo marcador en Electron: ${err.message}`);
+    return {
+      success: false,
+      message: `Error al crear marcador en Electron: ${err.message}`,
+    };
+  }
+});
+
+// Eliminar marcador biométrico secundario
+ipcMain.handle('device:delete', async (_event, id) => {
+  log(`IPC device:delete -> Solicitud para eliminar marcador ID: ${id}`);
+  try {
+    const devicesPath = getStorageFilePath('devices.json');
+    const auditPath = getStorageFilePath('audit-logs.json');
+
+    let devices = [];
+    if (fs.existsSync(devicesPath)) {
+      try {
+        devices = JSON.parse(fs.readFileSync(devicesPath, 'utf8'));
+      } catch (_) {
+        devices = [];
+      }
+    }
+
+    const index = devices.findIndex((d) => d.id === id || d.serial_number === id);
+    if (index === -1) {
+      return { success: false, message: 'Dispositivo no encontrado en la base de datos.' };
+    }
+
+    if (devices.length <= 1) {
+      return { success: false, message: 'No se puede eliminar el único marcador registrado del sistema.' };
+    }
+
+    const removed = devices.splice(index, 1)[0];
+    fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+
+    // Registrar en auditoría
+    try {
+      let audits = [];
+      if (fs.existsSync(auditPath)) {
+        try {
+          audits = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
+        } catch (_) {
+          audits = [];
+        }
+      }
+      audits.unshift({
+        id: `audit-dev-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user_id: 'admin-drac',
+        user_name: 'Administrador DRAC',
+        user_role: 'ADMIN_GENERAL',
+        action: 'ELIMINACION_DISPOSITIVO_ZKTECO',
+        entity: 'DISPOSITIVO_ZKTECO',
+        entity_id: removed.id,
+        details: `Eliminación de marcador biométrico: ${removed.name} (IP: ${removed.ip_address}, S/N: ${removed.serial_number})`,
+        previous_values: removed,
+      });
+      fs.writeFileSync(auditPath, JSON.stringify(audits.slice(0, 500), null, 2), 'utf8');
+    } catch (_) {}
+
+    return {
+      success: true,
+      message: `Marcador ${removed.name} eliminado del sistema exitosamente.`,
+      data: removed,
+    };
+  } catch (err) {
+    log(`Error al eliminar marcador en Electron: ${err.message}`);
+    return { success: false, message: `Error al eliminar marcador: ${err.message}` };
+  }
+});
+
 // =========================================================================
 // IPC HANDLERS - INFORMACIÓN DEL SISTEMA LOCAL Y HARDWARE
 // =========================================================================
