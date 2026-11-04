@@ -1075,13 +1075,21 @@ declare global {
         ip: string,
         port?: number,
         timeoutMs?: number,
-        commKey?: number | string
+        commKey?: number | string,
+        model?: string,
+        serial?: string
       ) => Promise<{
         success: boolean;
         message?: string;
         serial_number?: string;
+        serial?: string;
+        model?: string;
         ip?: string;
         port?: number;
+        latency_ms?: number;
+        users_in_clock?: number;
+        source?: string;
+        cause?: string;
         total_clock_punches?: number;
         punches?: Array<{
           punch_id: string;

@@ -17,8 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   diagnoseZkDevice: (ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
     return ipcRenderer.invoke('zk:diagnose-device', { ip, port, timeoutMs, model, serial, commKey });
   },
-  readZkDevicePunches: (ip, port = 7496, timeoutMs = 5000, commKey = 0) => {
-    return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs, commKey });
+  readZkDevicePunches: (ip, port = 7496, timeoutMs = 5000, commKey = 0, model = 'ZKTeco G3', serial = 'AEH2223460040') => {
+    return ipcRenderer.invoke('zk:read-punches', { ip, port, timeoutMs, commKey, model, serial });
   },
   runIndependentDiagnostics: (ip, port = 7496, timeoutMs = 3000, model = 'G3-id', serial = '', commKey = 0) => {
     return ipcRenderer.invoke('zk:run-independent-diagnostics', { ip, port, timeoutMs, model, serial, commKey });
