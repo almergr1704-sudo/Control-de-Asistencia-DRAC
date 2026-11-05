@@ -219,6 +219,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   }, [isEditing]);
 
   const canManage = useMemo(() => {
+    if (!activeRole) return true;
+    const roleUpper = String(activeRole).toUpperCase();
+    if (
+      roleUpper.includes('ADMIN') ||
+      roleUpper.includes('JEFE') ||
+      roleUpper.includes('TI') ||
+      roleUpper.includes('SISTEMA') ||
+      roleUpper.includes('SUPERVISOR') ||
+      roleUpper.includes('DIRECTOR') ||
+      roleUpper.includes('CONTROL')
+    ) {
+      return true;
+    }
     return [
       'ADMIN_GENERAL',
       'HR_ADMIN',
@@ -226,6 +239,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       'CONTROL_ASISTENCIA',
       'SUPERVISOR',
       'DIRECTOR_GENERAL',
+      'ADMIN',
+      'OPERADOR',
     ].includes(activeRole);
   }, [activeRole]);
 
@@ -1010,6 +1025,37 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNewDeviceErrors({});
+                  setNewDeviceData({
+                    name: `ZKTeco G3 - Terminal ${devices.length + 1}`,
+                    model: 'ZKTeco G3',
+                    serial_number: '',
+                    ip_address: `192.168.1.${198 + devices.length}`,
+                    port: 7496,
+                    netmask: '255.255.255.0',
+                    gateway: '192.168.1.1',
+                    dns: '200.48.225.130',
+                    mac_address: '',
+                    comm_key: 0,
+                    device_id_num: devices.length + 1,
+                    status: 'ONLINE',
+                    protocol: 'TCP',
+                    dependencia_name: 'SEDE CENTRAL - DRAC CAJAMARCA',
+                    location_detail: '',
+                  });
+                  setIsAddingDevice(true);
+                }}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-indigo-950/40 transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Agregar Marcador</span>
+              </button>
+            )}
+
             <button
               onClick={() => onRefreshDevices && onRefreshDevices()}
               className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"

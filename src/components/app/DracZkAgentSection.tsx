@@ -675,33 +675,65 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         {/* Right Col: Quick Actions Console */}
         <div className="space-y-4">
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-4">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-indigo-400" />
-              Consola de Comandos DRAC ZK Agent
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-indigo-400" />
+                Consola de Comandos DRAC ZK Agent
+              </h4>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {devices.length} marcadores
+              </span>
+            </div>
             <p className="text-xs text-slate-400">
               Despacha comandos remotos hacia el agente en ejecución en la red LAN.
             </p>
 
+            {/* Selector de Marcador Destino */}
+            <div className="space-y-1 bg-[#090A0D]/90 p-2.5 rounded-lg border border-slate-800">
+              <label className="text-[10px] uppercase font-bold text-slate-400 block">
+                Marcador Biométrico Destino:
+              </label>
+              <select
+                value={selectedDeviceForUserSync}
+                onChange={(e) => setSelectedDeviceForUserSync(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 font-medium"
+              >
+                {devices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.ip_address}:{d.port || 7496})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Botones de Comando */}
             <div className="space-y-2">
               <button
                 type="button"
-                onClick={() => handleExecuteCommand('TEST_CONNECTION')}
+                onClick={() => {
+                  const targetDev = devices.find((d) => d.id === selectedDeviceForUserSync) || devices[0];
+                  handleExecuteCommand('TEST_CONNECTION', targetDev?.id);
+                }}
                 disabled={executingCommand !== null}
-                className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs flex items-center justify-between transition-colors shadow-sm"
+                className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg text-xs flex items-center justify-between transition-colors shadow-sm cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <Activity className={`w-3.5 h-3.5 ${executingCommand === 'TEST_CONNECTION' ? 'animate-spin' : ''}`} />
                   <span>Probar Conexión TCP (7496 / 4370)</span>
                 </div>
-                <span className="text-[10px] bg-indigo-800 px-1.5 py-0.5 rounded font-mono">{devices[0]?.ip_address || '192.168.1.198'}</span>
+                <span className="text-[10px] bg-indigo-800 px-1.5 py-0.5 rounded font-mono">
+                  {(devices.find((d) => d.id === selectedDeviceForUserSync) || devices[0])?.ip_address || '192.168.1.198'}
+                </span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleExecuteCommand('DOWNLOAD_PUNCHES')}
+                onClick={() => {
+                  const targetDev = devices.find((d) => d.id === selectedDeviceForUserSync) || devices[0];
+                  handleExecuteCommand('DOWNLOAD_PUNCHES', targetDev?.id);
+                }}
                 disabled={executingCommand !== null}
-                className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs flex items-center justify-between transition-colors border border-slate-700"
+                className="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs flex items-center justify-between transition-colors border border-slate-700 cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <Download className={`w-3.5 h-3.5 ${executingCommand === 'DOWNLOAD_PUNCHES' ? 'animate-bounce' : ''}`} />

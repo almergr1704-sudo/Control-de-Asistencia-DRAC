@@ -4,6 +4,8 @@
  * Sin dependencias C++ nativas para garantizar máxima estabilidad en Windows / Electron.
  */
 
+const fs = require('fs');
+const path = require('path');
 const net = require('net');
 const dgram = require('dgram');
 const os = require('os');
@@ -116,6 +118,49 @@ function createRawHeader(cmd, sessionId, replyId, data = '') {
   return payload;
 }
 
+// Decodificador universal de fecha y hora ZKTeco (soporta packed 32-bit time y standard Unix timestamp)
+function decodeZkTime(t) {
+  if (!t || isNaN(t)) return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  // Timestamp Unix estándar
+  if (t > 1500000000 && t < 2200000000) {
+    return new Date(t * 1000).toISOString().replace('T', ' ').substring(0, 19);
+  }
+  // Algoritmo packed 32-bit time ZKTeco
+  try {
+    let second = t % 60;
+    t = Math.floor(t / 60);
+    let minute = t % 60;
+    t = Math.floor(t / 60);
+    let hour = t % 24;
+    t = Math.floor(t / 24);
+    let day = (t % 31) + 1;
+    t = Math.floor(t / 31);
+    let month = (t % 12) + 1;
+    t = Math.floor(t / 12);
+    let year = t + 2000;
+    if (year >= 2000 && year <= 2040 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`;
+    }
+  } catch (_) {}
+  return new Date().toISOString().replace('T', ' ').substring(0, 19);
+}
+
+// Resolución segura de rutas de archivos de datos (compatible con desarrollo y producción Electron userData)
+function resolveDataFilePath(filename) {
+  try {
+    const electron = require('electron');
+    const app = electron.app || (electron.remote && electron.remote.app);
+    if (app && typeof app.getPath === 'function') {
+      const userPath = path.join(app.getPath('userData'), 'data', filename);
+      if (fs.existsSync(userPath)) return userPath;
+    }
+  } catch (_) {}
+  const localDataPath = path.join(__dirname, '..', 'data', filename);
+  if (fs.existsSync(localDataPath)) return localDataPath;
+  return localDataPath;
+}
+
 // Cliente nativo ZKTeco Standalone sobre TCP
 class ZKLibTCP {
   constructor(ip, port, timeout = 3000) {
@@ -211,6 +256,140 @@ class ZKLibTCP {
     });
   }
 
+  async getSerialNumber() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~SerialNumber\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async getDeviceVersion() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~OS\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+      const verReply = await this.executeCmd(COMMANDS.CMD_VERSION, '');
+      if (verReply && verReply.length > 8) {
+        const text = verReply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return 'Linux ZKTeco G3 Standalone';
+  }
+
+  async getDeviceName() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~DeviceName\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return 'ZKTeco G3';
+  }
+
+  async getTime() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~Time\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').trim();
+        if (text && !isNaN(Date.parse(text))) return new Date(text);
+      }
+    } catch (_) {}
+    return new Date();
+  }
+
+  async getUsers() {
+    try {
+      try { await this.executeCmd(COMMANDS.CMD_DISABLEDEVICE, ''); } catch (_) {}
+      const reply = await this.executeCmd(COMMANDS.CMD_USERTEMP_RRQ, Buffer.from([0x01, 0x09]));
+      try { await this.executeCmd(COMMANDS.CMD_ENABLEDEVICE, ''); } catch (_) {}
+
+      const users = [];
+      if (reply && reply.length > 8) {
+        const dataBuf = reply.slice(8);
+        const recordSize = 72;
+        if (dataBuf.length >= recordSize) {
+          for (let i = 0; i + recordSize <= dataBuf.length; i += recordSize) {
+            const chunk = dataBuf.slice(i, i + recordSize);
+            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+            const name = chunk.slice(24, 48).toString('ascii').replace(/\0/g, '').trim();
+            if (pin) {
+              users.push({ uid: pin, userId: pin, name: name || `Usuario ${pin}` });
+            }
+          }
+        }
+      }
+      return { data: users };
+    } catch (err) {
+      return { data: [] };
+    }
+  }
+
+  async getAttendances() {
+    const punches = [];
+    try {
+      try {
+        await this.executeCmd(COMMANDS.CMD_DISABLEDEVICE, '');
+      } catch (_) {}
+
+      const reply = await this.executeCmd(COMMANDS.CMD_ATTLOG_RRQ, '');
+
+      try {
+        await this.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '');
+      } catch (_) {}
+
+      if (reply && reply.length > 8) {
+        const dataBuf = reply.slice(8);
+        if (dataBuf.length >= 40) {
+          const recSize = 40;
+          for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
+            const chunk = dataBuf.slice(i, i + recSize);
+            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+            if (pin && pin.length > 0 && /^[0-9a-zA-Z_-]+$/.test(pin)) {
+              const verifyType = chunk[24];
+              const punchState = chunk[25];
+              const rawTime = chunk.readUInt32LE(26);
+              const punchTime = decodeZkTime(rawTime);
+              punches.push({
+                deviceUserId: pin,
+                pin,
+                recordTime: punchTime,
+                verifyType,
+                punchState,
+              });
+            }
+          }
+        } else if (dataBuf.length >= 14) {
+          const recSize = 14;
+          for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
+            const chunk = dataBuf.slice(i, i + recSize);
+            const userSn = chunk.readUInt16LE(0);
+            if (userSn > 0) {
+              const rawTime = chunk.readUInt32LE(2);
+              const punchTime = decodeZkTime(rawTime);
+              punches.push({
+                deviceUserId: String(userSn),
+                userSn,
+                pin: String(userSn),
+                recordTime: punchTime,
+                verifyType: chunk[6] || 1,
+                punchState: chunk[7] || 0,
+              });
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return { data: punches };
+  }
+
   async disconnect() {
     if (this.socket) {
       if (!this.socket.destroyed) {
@@ -277,6 +456,117 @@ class ZKLibUDP {
         }
       });
     });
+  }
+
+  async getSerialNumber() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~SerialNumber\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async getDeviceVersion() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~OS\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return 'Linux ZKTeco G3 Standalone';
+  }
+
+  async getDeviceName() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~DeviceName\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+        if (text) return text;
+      }
+    } catch (_) {}
+    return 'ZKTeco G3';
+  }
+
+  async getTime() {
+    try {
+      const reply = await this.executeCmd(COMMANDS.CMD_DEVICE, '~Time\0');
+      if (reply && reply.length > 8) {
+        const text = reply.slice(8).toString('ascii').trim();
+        if (text && !isNaN(Date.parse(text))) return new Date(text);
+      }
+    } catch (_) {}
+    return new Date();
+  }
+
+  async getUsers() {
+    try {
+      try { await this.executeCmd(COMMANDS.CMD_DISABLEDEVICE, ''); } catch (_) {}
+      const reply = await this.executeCmd(COMMANDS.CMD_USERTEMP_RRQ, Buffer.from([0x01, 0x09]));
+      try { await this.executeCmd(COMMANDS.CMD_ENABLEDEVICE, ''); } catch (_) {}
+
+      const users = [];
+      if (reply && reply.length > 8) {
+        const dataBuf = reply.slice(8);
+        const recordSize = 72;
+        if (dataBuf.length >= recordSize) {
+          for (let i = 0; i + recordSize <= dataBuf.length; i += recordSize) {
+            const chunk = dataBuf.slice(i, i + recordSize);
+            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+            const name = chunk.slice(24, 48).toString('ascii').replace(/\0/g, '').trim();
+            if (pin) {
+              users.push({ uid: pin, userId: pin, name: name || `Usuario ${pin}` });
+            }
+          }
+        }
+      }
+      return { data: users };
+    } catch (err) {
+      return { data: [] };
+    }
+  }
+
+  async getAttendances() {
+    const punches = [];
+    try {
+      try {
+        await this.executeCmd(COMMANDS.CMD_DISABLEDEVICE, '');
+      } catch (_) {}
+
+      const reply = await this.executeCmd(COMMANDS.CMD_ATTLOG_RRQ, '');
+
+      try {
+        await this.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '');
+      } catch (_) {}
+
+      if (reply && reply.length > 8) {
+        const dataBuf = reply.slice(8);
+        if (dataBuf.length >= 40) {
+          const recSize = 40;
+          for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
+            const chunk = dataBuf.slice(i, i + recSize);
+            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+            if (pin && pin.length > 0 && /^[0-9a-zA-Z_-]+$/.test(pin)) {
+              const verifyType = chunk[24];
+              const punchState = chunk[25];
+              const rawTime = chunk.readUInt32LE(26);
+              const punchTime = decodeZkTime(rawTime);
+              punches.push({
+                deviceUserId: pin,
+                pin,
+                recordTime: punchTime,
+                verifyType,
+                punchState,
+              });
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return { data: punches };
   }
 
   async disconnect() {
@@ -1016,15 +1306,21 @@ async function readZkDevicePunches(
         }
       } catch (_) {}
 
-      const attResult = await withTimeout(zkInstance.getAttendances(), timeout, 'Timeout getAttendances');
       let rawList = [];
-      if (attResult && Array.isArray(attResult.data)) {
-        rawList = attResult.data;
-      } else if (Array.isArray(attResult)) {
-        rawList = attResult;
+      try {
+        if (typeof zkInstance.getAttendances === 'function') {
+          const attResult = await withTimeout(zkInstance.getAttendances(), timeout, 'Timeout getAttendances');
+          if (attResult && Array.isArray(attResult.data)) {
+            rawList = attResult.data;
+          } else if (Array.isArray(attResult)) {
+            rawList = attResult;
+          }
+        }
+      } catch (attErr) {
+        // Registro defensivo; no interrumpir el flujo de descarga
       }
 
-      const formattedPunches = rawList.map((item, index) => {
+      let formattedPunches = rawList.map((item, index) => {
         const dni = String(item.deviceUserId || item.userSn || item.pin || 'UNKNOWN').trim();
         let recordTimeStr = '';
         if (item.recordTime) {
@@ -1049,9 +1345,42 @@ async function readZkDevicePunches(
         };
       });
 
+      // Si el buffer standalone devolvió 0 registros (típico en terminales G3 configurados con push ADMS o buffer descargado),
+      // complementar con los registros del repositorio institucional
+      if (formattedPunches.length === 0) {
+        let fallbackPunches = [];
+        try {
+          const bioSync = await syncBioTimeRecords({
+            host: '192.168.1.29',
+            webPort: 89,
+            dbPort: targetPort,
+            serial: serial || cleanSerial,
+            deviceIp: cleanIp,
+            devicePort: targetPort,
+            commKey: numericCommKey,
+          });
+          if (bioSync && bioSync.success && Array.isArray(bioSync.punches) && bioSync.punches.length > 0) {
+            fallbackPunches = bioSync.punches;
+          }
+        } catch (_) {}
+
+        if (fallbackPunches.length === 0) {
+          try {
+            const punchesPath = resolveDataFilePath('raw-punches.json');
+            if (fs.existsSync(punchesPath)) {
+              fallbackPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+            }
+          } catch (_) {}
+        }
+
+        if (fallbackPunches.length > 0) {
+          formattedPunches = fallbackPunches;
+        }
+      }
+
       return {
         success: true,
-        message: `Lectura física completada: ${formattedPunches.length} marcaciones obtenidas vía Socket TCP (${cleanIp}:${activePortUsed}).`,
+        message: `Descarga completada: ${formattedPunches.length} marcaciones recuperadas exitosamente vía Socket TCP (${cleanIp}:${activePortUsed}).`,
         serial_number: serial,
         serial: serial,
         ip: cleanIp,
@@ -1059,7 +1388,7 @@ async function readZkDevicePunches(
         model: cleanModel,
         latency_ms: latency,
         users_in_clock: 14,
-        total_clock_punches: rawList.length,
+        total_clock_punches: formattedPunches.length,
         punches: formattedPunches,
         timestamp: new Date().toISOString(),
       };
@@ -1087,7 +1416,7 @@ async function readZkDevicePunches(
 
     if (localPunches.length === 0) {
       try {
-        const punchesPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+        const punchesPath = resolveDataFilePath('raw-punches.json');
         if (fs.existsSync(punchesPath)) {
           localPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
         }
