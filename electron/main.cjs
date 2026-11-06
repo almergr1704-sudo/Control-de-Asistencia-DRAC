@@ -243,6 +243,31 @@ ipcMain.handle(
     log(`IPC zk:read-punches -> ${ip}:${targetPort} (CommKey: ${commKey}, Model: ${cleanModel}, SN: ${cleanSerial})`);
     try {
       const res = await zktecoDriver.readZkDevicePunches(ip, targetPort, timeoutMs, commKey, cleanModel, cleanSerial);
+      if (res && res.success && Array.isArray(res.punches) && res.punches.length > 0) {
+        try {
+          const punchesPath = getStorageFilePath('raw-punches.json');
+          let currentList = [];
+          if (fs.existsSync(punchesPath)) {
+            try { currentList = JSON.parse(fs.readFileSync(punchesPath, 'utf8')); } catch (_) {}
+          }
+          const existingKeys = new Set(currentList.map((p) => `${p.employee_dni || p.pin}_${p.timestamp}`));
+          const newlyAdded = [];
+          for (const p of res.punches) {
+            const key = `${p.employee_dni || p.pin}_${p.timestamp}`;
+            if (!existingKeys.has(key)) {
+              existingKeys.add(key);
+              newlyAdded.push(p);
+            }
+          }
+          const merged = [...newlyAdded, ...currentList];
+          if (merged.length > 0) {
+            fs.writeFileSync(punchesPath, JSON.stringify(merged, null, 2), 'utf8');
+            log(`IPC zk:read-punches: Persistidas ${merged.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
+          }
+        } catch (saveErr) {
+          log(`Aviso guardando marcaciones descargadas: ${saveErr.message}`);
+        }
+      }
       return {
         ...res,
         ip: res.ip || ip,
@@ -517,7 +542,13 @@ ipcMain.handle('punches:get-all', async () => {
   try {
     const punchesPath = getStorageFilePath('raw-punches.json');
     if (fs.existsSync(punchesPath)) {
-      return JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+    const bundledPath = path.join(__dirname, '..', 'data', 'raw-punches.json');
+    if (fs.existsSync(bundledPath)) {
+      const data = JSON.parse(fs.readFileSync(bundledPath, 'utf8'));
+      if (Array.isArray(data) && data.length > 0) return data;
     }
   } catch (_) {}
   return [];

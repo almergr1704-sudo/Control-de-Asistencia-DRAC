@@ -229,9 +229,9 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           <div className="p-12 border border-dashed border-slate-800 rounded-xl text-center space-y-3 bg-[#0C0D11]">
             <Clock className="w-10 h-10 text-slate-600 mx-auto" />
             <div className="space-y-1 max-w-md mx-auto">
-              <h4 className="font-bold text-sm text-slate-200">0 Marcaciones Reales Registradas</h4>
+              <h4 className="font-bold text-sm text-slate-200">No se encontraron marcaciones recibidas del dispositivo.</h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Por política institucional estricta, no se exhiben marcaciones simuladas ni datos ficticios. Las marcaciones se registrarán automáticamente en cuanto el personal marque en el terminal físico ZKTeco G3-id o se ejecute la sincronización por red TCP/IP.
+                El sistema no genera ni simula marcaciones ficticias. Las marcaciones se registrarán y mostrarán únicamente cuando sean descargadas o recibidas directamente desde el terminal biométrico ZKTeco G3 (192.168.1.198:7496) o vía ADMS Push.
               </p>
             </div>
           </div>
@@ -289,9 +289,9 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           <div className="p-12 border border-dashed border-slate-800 rounded-xl text-center space-y-3 bg-[#0C0D11]">
             <Calendar className="w-10 h-10 text-slate-600 mx-auto" />
             <div className="space-y-1 max-w-md mx-auto">
-              <h4 className="font-bold text-sm text-slate-200">0 Registros de Asistencia Procesados</h4>
+              <h4 className="font-bold text-sm text-slate-200">No se encontraron registros de asistencia procesados</h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                El consolidador institucional de asistencia genera los cálculos de jornada, puntualidad y tardanzas únicamente en base a marcaciones reales recibidas.
+                El consolidador institucional de asistencia calcula jornada, puntualidad y tardanzas exclusivamente sobre marcaciones reales efectivamente transmitidas por el marcador.
               </p>
             </div>
           </div>

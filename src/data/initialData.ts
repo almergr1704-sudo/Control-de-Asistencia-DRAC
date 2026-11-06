@@ -28,9 +28,154 @@ export const INITIAL_CARGOS: Cargo[] = [];
 
 export const INITIAL_RESPONSABLES: ResponsableDesignation[] = [];
 
-export const INITIAL_TURNOS: Turno[] = [];
+export const INITIAL_TURNOS: Turno[] = [
+  {
+    id: "turno-01",
+    code: "T-01",
+    name: "Turno Mañana Institucional",
+    description: "Jornada matutina ordinaria de lunes a viernes según RIS DRAC",
+    start_time: "08:00",
+    end_time: "13:00",
+    window_entry_start: "07:00",
+    window_exit_limit: "13:30",
+    tolerance_minutes: 10,
+    tolerance_exit_minutes: 0,
+    is_overnight: false,
+    active: true,
+    created_at: "2026-01-01T08:00:00.000Z"
+  },
+  {
+    id: "turno-02",
+    code: "T-02",
+    name: "Turno Tarde Institucional",
+    description: "Jornada vespertina ordinaria posterior al refrigerio institucional",
+    start_time: "14:00",
+    end_time: "17:00",
+    window_entry_start: "13:30",
+    window_exit_limit: "17:30",
+    tolerance_minutes: 5,
+    tolerance_exit_minutes: 0,
+    is_overnight: false,
+    active: true,
+    created_at: "2026-01-01T08:00:00.000Z"
+  },
+  {
+    id: "turno-03",
+    code: "T-03",
+    name: "Jornada Continua Sede Central",
+    description: "Horario corrido de 8 horas con refrigerio intercalado",
+    start_time: "07:30",
+    end_time: "15:30",
+    window_entry_start: "06:45",
+    window_exit_limit: "16:00",
+    tolerance_minutes: 10,
+    tolerance_exit_minutes: 0,
+    is_overnight: false,
+    active: true,
+    created_at: "2026-01-01T08:00:00.000Z"
+  },
+  {
+    id: "turno-04",
+    code: "T-04",
+    name: "Turno Especial Campo y Riego",
+    description: "Jornada temprana para inspectores y técnicos de agencias agrarias",
+    start_time: "06:00",
+    end_time: "14:00",
+    window_entry_start: "05:30",
+    window_exit_limit: "14:30",
+    tolerance_minutes: 15,
+    tolerance_exit_minutes: 0,
+    is_overnight: false,
+    active: true,
+    created_at: "2026-01-01T08:00:00.000Z"
+  },
+  {
+    id: "turno-05",
+    code: "T-05",
+    name: "Turno Vigilancia Diurno",
+    description: "Servicio de resguardo institucional y control de accesos sede",
+    start_time: "07:00",
+    end_time: "19:00",
+    window_entry_start: "06:30",
+    window_exit_limit: "19:30",
+    tolerance_minutes: 10,
+    tolerance_exit_minutes: 0,
+    is_overnight: false,
+    active: true,
+    created_at: "2026-01-01T08:00:00.000Z"
+  }
+];
 
-export const INITIAL_HORARIOS: Horario[] = [];
+export const INITIAL_HORARIOS: Horario[] = [
+  {
+    id: "hor-01",
+    code: "HOR-01",
+    name: "Jornada Partida Institucional DRAC",
+    turn_count: 2,
+    turno1_id: "turno-01",
+    turno1_name: "Turno Mañana Institucional (08:00 - 13:00)",
+    turno2_id: "turno-02",
+    turno2_name: "Turno Tarde Institucional (14:00 - 17:00)",
+    working_days: ["MON", "TUE", "WED", "THU", "FRI"],
+    active: true,
+    effective_start_date: "2026-01-01",
+    effective_end_date: null,
+    version: 1,
+    total_hours: 8,
+    total_duration_text: "8 horas diarias (2 turnos: 5h mañana + 3h tarde)"
+  },
+  {
+    id: "hor-02",
+    code: "HOR-02",
+    name: "Jornada Continua Sede Central",
+    turn_count: 1,
+    turno1_id: "turno-03",
+    turno1_name: "Jornada Continua Sede Central (07:30 - 15:30)",
+    turno2_id: null,
+    turno2_name: undefined,
+    working_days: ["MON", "TUE", "WED", "THU", "FRI"],
+    active: true,
+    effective_start_date: "2026-01-01",
+    effective_end_date: null,
+    version: 1,
+    total_hours: 8,
+    total_duration_text: "8 horas diarias continuas"
+  },
+  {
+    id: "hor-03",
+    code: "HOR-03",
+    name: "Horario Especial de Campo y Agencias Agrarias",
+    turn_count: 1,
+    turno1_id: "turno-04",
+    turno1_name: "Turno Especial Campo y Riego (06:00 - 14:00)",
+    turno2_id: null,
+    turno2_name: undefined,
+    working_days: ["MON", "TUE", "WED", "THU", "FRI"],
+    active: true,
+    effective_start_date: "2026-01-01",
+    effective_end_date: null,
+    version: 1,
+    total_hours: 8,
+    total_duration_text: "8 horas en jornada de campo matutina"
+  },
+  {
+    id: "hor-04",
+    code: "HOR-04",
+    name: "Horario de Seguridad y Vigilancia",
+    turn_count: 1,
+    turno1_id: "turno-05",
+    turno1_name: "Turno Vigilancia Diurno (07:00 - 19:00)",
+    turno2_id: null,
+    turno2_name: undefined,
+    working_days: ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+    active: true,
+    effective_start_date: "2026-01-01",
+    effective_end_date: null,
+    version: 1,
+    total_hours: 12,
+    total_duration_text: "12 horas diurnas"
+  }
+];
 
 /**
  * ÚNICA CUENTA INICIAL PERMITIDA:
@@ -78,7 +223,8 @@ export const INITIAL_EMPLOYEES: Employee[] = [
 
 export const INITIAL_DEVICES: DispositivoZkTeco[] = [];
 
-export const INITIAL_RAW_PUNCHES: MarcacionRaw[] = [];
+import { INITIAL_RAW_PUNCHES } from './initialRawPunches';
+export { INITIAL_RAW_PUNCHES };
 
 export const INITIAL_PAPELETAS: PapeletaSalida[] = [];
 

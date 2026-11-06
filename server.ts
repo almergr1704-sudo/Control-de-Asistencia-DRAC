@@ -34,6 +34,9 @@ const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const EMPLOYEES_FILE = path.join(DATA_DIR, 'employees.json');
 const PUSH_LOGS_FILE = path.join(DATA_DIR, 'push-logs.json');
 const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit-logs.json');
+const TURNOS_FILE = path.join(DATA_DIR, 'turnos.json');
+const HORARIOS_FILE = path.join(DATA_DIR, 'horarios.json');
+const ASIGNACIONES_FILE = path.join(DATA_DIR, 'asignacion-horarios.json');
 
 // Helper to read JSON files safely
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -590,6 +593,300 @@ app.get('/api/employees', (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// TURNOS LABORALES API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/turnos', (req, res) => {
+  const turnos = readJsonFile<any[]>(TURNOS_FILE, []);
+  return res.json({ success: true, count: turnos.length, data: turnos });
+});
+
+app.post('/api/turnos', (req, res) => {
+  const turnos = readJsonFile<any[]>(TURNOS_FILE, []);
+  const newTurno = {
+    id: req.body.id || `turno-${Date.now()}`,
+    code: String(req.body.code || `T-0${turnos.length + 1}`).trim().toUpperCase(),
+    name: String(req.body.name || 'Nuevo Turno').trim(),
+    description: String(req.body.description || '').trim(),
+    start_time: String(req.body.start_time || '08:00').trim(),
+    end_time: String(req.body.end_time || '13:00').trim(),
+    window_entry_start: String(req.body.window_entry_start || '07:00').trim(),
+    window_exit_limit: String(req.body.window_exit_limit || '13:30').trim(),
+    tolerance_minutes: Number(req.body.tolerance_minutes ?? 10),
+    tolerance_exit_minutes: Number(req.body.tolerance_exit_minutes ?? 0),
+    is_overnight: Boolean(req.body.is_overnight),
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const existingIdx = turnos.findIndex((t) => t.id === newTurno.id || t.code === newTurno.code);
+  if (existingIdx >= 0) {
+    turnos[existingIdx] = { ...turnos[existingIdx], ...newTurno };
+  } else {
+    turnos.push(newTurno);
+  }
+  writeJsonFile(TURNOS_FILE, turnos);
+  return res.status(201).json({ success: true, message: 'Turno guardado correctamente.', data: newTurno });
+});
+
+app.put('/api/turnos/:id', (req, res) => {
+  const { id } = req.params;
+  const turnos = readJsonFile<any[]>(TURNOS_FILE, []);
+  const idx = turnos.findIndex((t) => t.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Turno no encontrado.' });
+  }
+
+  turnos[idx] = {
+    ...turnos[idx],
+    ...req.body,
+    tolerance_minutes: req.body.tolerance_minutes !== undefined ? Number(req.body.tolerance_minutes) : turnos[idx].tolerance_minutes,
+    active: req.body.active !== undefined ? Boolean(req.body.active) : turnos[idx].active,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(TURNOS_FILE, turnos);
+  return res.json({ success: true, message: 'Turno actualizado exitosamente.', data: turnos[idx] });
+});
+
+app.delete('/api/turnos/:id', (req, res) => {
+  const { id } = req.params;
+  const turnos = readJsonFile<any[]>(TURNOS_FILE, []);
+  const idx = turnos.findIndex((t) => t.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Turno no encontrado.' });
+  }
+  const removed = turnos.splice(idx, 1)[0];
+  writeJsonFile(TURNOS_FILE, turnos);
+  return res.json({ success: true, message: 'Turno eliminado correctamente.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// HORARIOS LABORALES API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/horarios', (req, res) => {
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+  return res.json({ success: true, count: horarios.length, data: horarios });
+});
+
+app.post('/api/horarios', (req, res) => {
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+  const turnos = readJsonFile<any[]>(TURNOS_FILE, []);
+
+  const t1 = turnos.find((t) => t.id === req.body.turno1_id);
+  const t2 = req.body.turno2_id ? turnos.find((t) => t.id === req.body.turno2_id) : null;
+
+  const newHorario = {
+    id: req.body.id || `hor-${Date.now()}`,
+    code: String(req.body.code || `HOR-0${horarios.length + 1}`).trim().toUpperCase(),
+    name: String(req.body.name || 'Nuevo Horario').trim(),
+    turn_count: Number(req.body.turn_count || 1) as 1 | 2,
+    turno1_id: req.body.turno1_id || (turnos[0]?.id || 'turno-01'),
+    turno1_name: req.body.turno1_name || (t1 ? `${t1.name} (${t1.start_time} - ${t1.end_time})` : 'Turno 1'),
+    turno2_id: req.body.turn_count === 2 ? (req.body.turno2_id || null) : null,
+    turno2_name: req.body.turn_count === 2 ? (req.body.turno2_name || (t2 ? `${t2.name} (${t2.start_time} - ${t2.end_time})` : null)) : null,
+    working_days: Array.isArray(req.body.working_days) && req.body.working_days.length > 0 ? req.body.working_days : ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    effective_start_date: req.body.effective_start_date || '2026-01-01',
+    effective_end_date: req.body.effective_end_date || null,
+    version: Number(req.body.version || 1),
+    total_hours: Number(req.body.total_hours || (req.body.turn_count === 2 ? 8 : 8)),
+    total_duration_text: req.body.total_duration_text || (req.body.turn_count === 2 ? '8 horas diarias (2 turnos)' : '8 horas continuas'),
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const existingIdx = horarios.findIndex((h) => h.id === newHorario.id || h.code === newHorario.code);
+  if (existingIdx >= 0) {
+    horarios[existingIdx] = { ...horarios[existingIdx], ...newHorario };
+  } else {
+    horarios.push(newHorario);
+  }
+  writeJsonFile(HORARIOS_FILE, horarios);
+  return res.status(201).json({ success: true, message: 'Horario guardado correctamente.', data: newHorario });
+});
+
+app.put('/api/horarios/:id', (req, res) => {
+  const { id } = req.params;
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+  const idx = horarios.findIndex((h) => h.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Horario no encontrado.' });
+  }
+
+  horarios[idx] = {
+    ...horarios[idx],
+    ...req.body,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(HORARIOS_FILE, horarios);
+  return res.json({ success: true, message: 'Horario actualizado exitosamente.', data: horarios[idx] });
+});
+
+app.delete('/api/horarios/:id', (req, res) => {
+  const { id } = req.params;
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+  const idx = horarios.findIndex((h) => h.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Horario no encontrado.' });
+  }
+  const removed = horarios.splice(idx, 1)[0];
+  writeJsonFile(HORARIOS_FILE, horarios);
+  return res.json({ success: true, message: 'Horario eliminado exitosamente.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// ASIGNACIONES DE HORARIOS (PERMANENTES Y TEMPORALES) API
+// ---------------------------------------------------------------------------
+app.get('/api/asignacion-horarios', (req, res) => {
+  const asignaciones = readJsonFile<any[]>(ASIGNACIONES_FILE, []);
+  const { employee_dni, tipo, activo } = req.query;
+
+  let filtered = [...asignaciones];
+  if (employee_dni) {
+    filtered = filtered.filter((a) => a.employee_dni === String(employee_dni));
+  }
+  if (tipo) {
+    filtered = filtered.filter((a) => a.tipo_asignacion === String(tipo));
+  }
+  if (activo !== undefined) {
+    const isAct = String(activo) === 'true';
+    filtered = filtered.filter((a) => a.activo === isAct);
+  }
+
+  return res.json({ success: true, count: filtered.length, data: filtered });
+});
+
+app.post('/api/asignacion-horarios', (req, res) => {
+  const asignaciones = readJsonFile<any[]>(ASIGNACIONES_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+
+  const emp = employees.find((e) => e.dni === req.body.employee_dni || e.id === req.body.employee_id);
+  const hor = horarios.find((h) => h.id === req.body.horario_id || h.code === req.body.horario_id);
+
+  const newAsignacion = {
+    id: req.body.id || `asig-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    employee_id: emp?.id || req.body.employee_id || `emp-${req.body.employee_dni}`,
+    employee_dni: String(req.body.employee_dni || emp?.dni || '').trim(),
+    employee_name: emp ? `${emp.first_name} ${emp.last_name}` : (req.body.employee_name || 'Trabajador'),
+    employee_cargo: emp?.cargo || emp?.position || req.body.employee_cargo || 'Servidor DRAC',
+    dependencia_name: emp?.dependencia_name || req.body.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+    area_name: emp?.area_name || req.body.area_name || 'General',
+    horario_id: hor?.id || req.body.horario_id || 'hor-01',
+    horario_name: hor?.name || req.body.horario_name || 'Jornada Partida Institucional DRAC',
+    horario_code: hor?.code || req.body.horario_code || 'HOR-01',
+    fecha_inicio: String(req.body.fecha_inicio || new Date().toISOString().substring(0, 10)).trim(),
+    fecha_fin: req.body.fecha_fin ? String(req.body.fecha_fin).trim() : null,
+    tipo_asignacion: (req.body.tipo_asignacion || (req.body.fecha_fin ? 'TEMPORAL' : 'PERMANENTE')) as any,
+    motivo: String(req.body.motivo || (req.body.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por requerimiento de servicio' : 'Horario regular institucional')).trim(),
+    documento_sustento: req.body.documento_sustento ? String(req.body.documento_sustento).trim() : 'Memorando Institucional',
+    activo: req.body.activo !== undefined ? Boolean(req.body.activo) : true,
+    created_at: new Date().toISOString(),
+  };
+
+  // Si es permanente o nueva asignación activa para el mismo trabajador, desactivar la anterior
+  if (newAsignacion.activo && newAsignacion.tipo_asignacion === 'PERMANENTE') {
+    asignaciones.forEach((a) => {
+      if (a.employee_dni === newAsignacion.employee_dni && a.tipo_asignacion === 'PERMANENTE') {
+        a.activo = false;
+        a.fecha_fin = newAsignacion.fecha_inicio;
+      }
+    });
+  }
+
+  asignaciones.unshift(newAsignacion);
+  writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  return res.status(201).json({
+    success: true,
+    message: `Asignación de horario ${newAsignacion.tipo_asignacion.toLowerCase()} registrada exitosamente.`,
+    data: newAsignacion,
+  });
+});
+
+app.put('/api/asignacion-horarios/:id', (req, res) => {
+  const { id } = req.params;
+  const asignaciones = readJsonFile<any[]>(ASIGNACIONES_FILE, []);
+  const idx = asignaciones.findIndex((a) => a.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Asignación no encontrada.' });
+  }
+
+  asignaciones[idx] = {
+    ...asignaciones[idx],
+    ...req.body,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+  return res.json({ success: true, message: 'Asignación actualizada exitosamente.', data: asignaciones[idx] });
+});
+
+app.delete('/api/asignacion-horarios/:id', (req, res) => {
+  const { id } = req.params;
+  const asignaciones = readJsonFile<any[]>(ASIGNACIONES_FILE, []);
+  const idx = asignaciones.findIndex((a) => a.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Asignación no encontrada.' });
+  }
+  const removed = asignaciones.splice(idx, 1)[0];
+  writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+  return res.json({ success: true, message: 'Asignación eliminada correctamente.', data: removed });
+});
+
+// POST /api/asignacion-horarios/bulk - Asignación masiva a área o dependencia
+app.post('/api/asignacion-horarios/bulk', (req, res) => {
+  const { employee_dnis, horario_id, tipo_asignacion, fecha_inicio, fecha_fin, motivo, documento_sustento } = req.body;
+  const asignaciones = readJsonFile<any[]>(ASIGNACIONES_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const horarios = readJsonFile<any[]>(HORARIOS_FILE, []);
+
+  const hor = horarios.find((h) => h.id === horario_id || h.code === horario_id) || horarios[0];
+  const dnis: string[] = Array.isArray(employee_dnis) ? employee_dnis : [];
+  let addedCount = 0;
+
+  for (const dni of dnis) {
+    const emp = employees.find((e) => e.dni === dni);
+    if (!emp) continue;
+
+    const newAsig = {
+      id: `asig-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      employee_id: emp.id,
+      employee_dni: emp.dni,
+      employee_name: `${emp.first_name} ${emp.last_name}`,
+      employee_cargo: emp.cargo || emp.position || 'Servidor DRAC',
+      dependencia_name: emp.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+      area_name: emp.area_name || 'General',
+      horario_id: hor.id,
+      horario_name: hor.name,
+      horario_code: hor.code,
+      fecha_inicio: fecha_inicio || new Date().toISOString().substring(0, 10),
+      fecha_fin: fecha_fin || null,
+      tipo_asignacion: (tipo_asignacion || 'TEMPORAL') as any,
+      motivo: motivo || 'Asignación masiva institucional',
+      documento_sustento: documento_sustento || 'Disposición de Servicio',
+      activo: true,
+      created_at: new Date().toISOString(),
+    };
+
+    if (newAsig.tipo_asignacion === 'PERMANENTE') {
+      asignaciones.forEach((a) => {
+        if (a.employee_dni === emp.dni && a.tipo_asignacion === 'PERMANENTE') {
+          a.activo = false;
+        }
+      });
+    }
+
+    asignaciones.unshift(newAsig);
+    addedCount++;
+  }
+
+  writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+  return res.json({
+    success: true,
+    message: `Se asignó el horario "${hor.name}" a ${addedCount} trabajadores exitosamente.`,
+    count: addedCount,
+  });
+});
+
 // POST /api/zkteco/devices/:id/sync - Genuine Hardware Handshake
 app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   const { id } = req.params;
@@ -604,11 +901,11 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   const host = device.ip_address || '192.168.1.198';
   const port = Number(req.body?.port) || device.port || 7496;
 
-  const checkSocket = (): Promise<{ ok: boolean; latency: number }> => {
+  const checkSocket = (): Promise<{ ok: boolean; latency: number; errorMsg?: string }> => {
     return new Promise((resolve) => {
       const startTime = Date.now();
       const socket = new net.Socket();
-      socket.setTimeout(1200);
+      socket.setTimeout(2500);
 
       socket.connect(port, host, () => {
         const latency = Date.now() - startTime;
@@ -616,20 +913,33 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
         resolve({ ok: true, latency });
       });
 
-      socket.on('error', () => {
+      socket.on('error', (err) => {
         socket.destroy();
-        // If local private LAN is not directly routable from cloud container, return simulated ping response with 0 new records
-        resolve({ ok: true, latency: 18 });
+        resolve({ ok: false, latency: 0, errorMsg: err.message });
       });
 
       socket.on('timeout', () => {
         socket.destroy();
-        resolve({ ok: true, latency: 25 });
+        resolve({ ok: false, latency: 0, errorMsg: `Timeout de conexión en ${host}:${port}` });
       });
     });
   };
 
-  const { ok, latency } = await checkSocket();
+  const { ok, latency, errorMsg } = await checkSocket();
+
+  if (!ok) {
+    device.status = 'OFFLINE';
+    device.tcp_status = 'OFFLINE';
+    writeJsonFile(DEVICES_FILE, devices);
+    return res.status(503).json({
+      success: false,
+      imported_count: 0,
+      new_count: 0,
+      device_id: device.id,
+      serial_number: device.serial_number,
+      message: `No se pudo conectar con el marcador ZKTeco G3 en ${host}:${port}. Dispositivo desconectado (${errorMsg || 'Error TCP'}). No se generaron marcaciones.`,
+    });
+  }
 
   device.last_sync = new Date().toISOString();
   device.last_activity = new Date().toISOString();
@@ -638,14 +948,13 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   device.last_latency_ms = latency;
   writeJsonFile(DEVICES_FILE, devices);
 
-  // Return truthful message: 0 new punches unless physical equipment delivered new logs
   return res.json({
     success: true,
     imported_count: 0,
     new_count: 0,
     device_id: device.id,
     serial_number: device.serial_number,
-    message: `Enlace Socket TCP verificado (${host}:${port}). Estado: ONLINE (Latencia: ${latency}ms). 0 marcaciones nuevas en buffer del reloj.`,
+    message: `Enlace Socket TCP verificado (${host}:${port}). Estado: ONLINE (${latency}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
   });
 });
 
@@ -749,9 +1058,12 @@ app.post('/api/zkteco/agent/command', async (req, res) => {
 
   // DOWNLOAD_PUNCHES o SYNC_BIOTIME
   const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+  const count = rawPunches.length;
   return res.json({
     success: true,
-    message: `Descarga de marcaciones ejecutada vía Agente LAN (${activeIp}:${devPort}): ${rawPunches.length} marcaciones recuperadas.`,
+    message: count > 0
+      ? `Descarga de marcaciones ejecutada vía Agente LAN (${activeIp}:${devPort}): ${count} marcaciones recuperadas.`
+      : `Descarga de marcaciones ejecutada vía Agente LAN (${activeIp}:${devPort}): 0 marcaciones recuperadas. No se encontraron nuevas marcaciones en el dispositivo.`,
     details: {
       ip: activeIp,
       port: devPort,
@@ -760,7 +1072,7 @@ app.post('/api/zkteco/agent/command', async (req, res) => {
       serial_number: cleanSerial,
       latency_ms: 2,
       users_in_clock: 14,
-      total_clock_punches: rawPunches.length,
+      total_clock_punches: count,
       punches: rawPunches.slice(0, 100),
     },
   });

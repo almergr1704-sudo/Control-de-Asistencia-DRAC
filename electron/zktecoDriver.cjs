@@ -148,15 +148,20 @@ function decodeZkTime(t) {
 
 // Resolución segura de rutas de archivos de datos (compatible con desarrollo y producción Electron userData)
 function resolveDataFilePath(filename) {
+  const localDataPath = path.join(__dirname, '..', 'data', filename);
   try {
     const electron = require('electron');
     const app = electron.app || (electron.remote && electron.remote.app);
     if (app && typeof app.getPath === 'function') {
       const userPath = path.join(app.getPath('userData'), 'data', filename);
-      if (fs.existsSync(userPath)) return userPath;
+      if (fs.existsSync(userPath)) {
+        try {
+          const stats = fs.statSync(userPath);
+          if (stats.size > 20) return userPath;
+        } catch (_) {}
+      }
     }
   } catch (_) {}
-  const localDataPath = path.join(__dirname, '..', 'data', filename);
   if (fs.existsSync(localDataPath)) return localDataPath;
   return localDataPath;
 }
@@ -1345,42 +1350,27 @@ async function readZkDevicePunches(
         };
       });
 
-      // Si el buffer standalone devolvió 0 registros (típico en terminales G3 configurados con push ADMS o buffer descargado),
-      // complementar con los registros del repositorio institucional
-      if (formattedPunches.length === 0) {
-        let fallbackPunches = [];
-        try {
-          const bioSync = await syncBioTimeRecords({
-            host: '192.168.1.29',
-            webPort: 89,
-            dbPort: targetPort,
-            serial: serial || cleanSerial,
-            deviceIp: cleanIp,
-            devicePort: targetPort,
-            commKey: numericCommKey,
-          });
-          if (bioSync && bioSync.success && Array.isArray(bioSync.punches) && bioSync.punches.length > 0) {
-            fallbackPunches = bioSync.punches;
-          }
-        } catch (_) {}
-
-        if (fallbackPunches.length === 0) {
-          try {
-            const punchesPath = resolveDataFilePath('raw-punches.json');
-            if (fs.existsSync(punchesPath)) {
-              fallbackPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
-            }
-          } catch (_) {}
-        }
-
-        if (fallbackPunches.length > 0) {
-          formattedPunches = fallbackPunches;
-        }
+      if (formattedPunches.length > 0) {
+        return {
+          success: true,
+          message: `Descarga completada: ${formattedPunches.length} marcaciones reales recuperadas exitosamente vía Socket TCP (${cleanIp}:${activePortUsed}).`,
+          serial_number: serial,
+          serial: serial,
+          ip: cleanIp,
+          port: activePortUsed,
+          model: cleanModel,
+          latency_ms: latency,
+          users_in_clock: 14,
+          total_clock_punches: formattedPunches.length,
+          punches: formattedPunches,
+          timestamp: new Date().toISOString(),
+        };
       }
 
+      // Conexión real exitosa pero sin registros nuevos en el buffer del reloj
       return {
         success: true,
-        message: `Descarga completada: ${formattedPunches.length} marcaciones recuperadas exitosamente vía Socket TCP (${cleanIp}:${activePortUsed}).`,
+        message: `Conexión verificada con el marcador ZKTeco G3 (${cleanIp}:${activePortUsed}, ${latency}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
         serial_number: serial,
         serial: serial,
         ip: cleanIp,
@@ -1388,45 +1378,17 @@ async function readZkDevicePunches(
         model: cleanModel,
         latency_ms: latency,
         users_in_clock: 14,
-        total_clock_punches: formattedPunches.length,
-        punches: formattedPunches,
+        total_clock_punches: 0,
+        punches: [],
         timestamp: new Date().toISOString(),
       };
     }
 
-    // 3. Si no respondió a comando binario standalone pero el socket TCP en targetPort está abierto (ej. 1ms):
-    // El terminal ZKTeco G3 se encuentra operando en modo ADMS PUSH (Cliente HTTP saliente)
-    // Sincronizar desde la base de datos PostgreSQL BioTime o el repositorio local de marcaciones
-    let localPunches = [];
-    try {
-      const bioSync = await syncBioTimeRecords({
-        host: '192.168.1.29',
-        webPort: 89,
-        dbPort: targetPort,
-        serial: cleanSerial,
-        deviceIp: cleanIp,
-        devicePort: targetPort,
-        commKey: numericCommKey,
-      });
-
-      if (bioSync && bioSync.success && Array.isArray(bioSync.punches) && bioSync.punches.length > 0) {
-        localPunches = bioSync.punches;
-      }
-    } catch (_) {}
-
-    if (localPunches.length === 0) {
-      try {
-        const punchesPath = resolveDataFilePath('raw-punches.json');
-        if (fs.existsSync(punchesPath)) {
-          localPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
-        }
-      } catch (_) {}
-    }
-
+    // 3. Si no se pudo establecer comunicación binaria con el marcador físico:
+    // NUNCA generar marcaciones simuladas ni aparentar éxito si no se obtuvieron registros reales.
     return {
-      success: true,
-      message: `Descarga completada: ${localPunches.length} marcaciones sincronizadas exitosamente. Marcador ZKTeco G3 en ${cleanIp}:${targetPort} ONLINE (${latency}ms, modo ADMS PUSH activo).`,
-      source: 'ADMS_PUSH',
+      success: false,
+      message: `No se pudo descargar marcaciones: El marcador ZKTeco G3 en ${cleanIp}:${targetPort} no respondió a comandos binarios TCP (${lastError?.message || 'Timeout o conexión rechazada'}). Verifique la conectividad de red LAN.`,
       serial_number: cleanSerial,
       serial: cleanSerial,
       ip: cleanIp,
@@ -1434,8 +1396,8 @@ async function readZkDevicePunches(
       model: cleanModel,
       latency_ms: latency,
       users_in_clock: 14,
-      total_clock_punches: localPunches.length,
-      punches: localPunches,
+      total_clock_punches: 0,
+      punches: [],
       timestamp: new Date().toISOString(),
     };
   } finally {

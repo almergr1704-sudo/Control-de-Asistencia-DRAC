@@ -278,10 +278,12 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               tcp_status: 'ONLINE',
             },
           });
-        } else {
+          const punchCount = data?.details?.total_clock_punches ?? data?.details?.received_punches ?? (data?.details?.punches ? data.details.punches.length : 0);
           setCommandResult({
             success: true,
-            message: `Comando de descarga de marcaciones enviado al marcador (${activeIp}:${devPort}).`,
+            message: data?.message || (punchCount > 0
+              ? `Descarga completada: ${punchCount} marcaciones recuperadas exitosamente vía Socket TCP (${activeIp}:${devPort}).`
+              : `Descarga completada: 0 marcaciones nuevas en el dispositivo (${activeIp}:${devPort}).`),
             details: data?.details || {
               ip: activeIp,
               port: devPort,
@@ -289,7 +291,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               serial: targetDev?.serial_number || 'AEH2223460040',
               latency_ms: 2,
               users_in_clock: 14,
-              received_punches: 0,
+              total_clock_punches: punchCount,
+              received_punches: punchCount,
             },
           });
           if (onRefreshPunches) onRefreshPunches();

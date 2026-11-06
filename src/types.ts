@@ -325,6 +325,29 @@ export interface Horario {
   total_duration_text?: string;
 }
 
+export type TipoAsignacionHorario = 'PERMANENTE' | 'TEMPORAL' | 'ROTATIVO' | 'EXCEPCIONAL';
+
+export interface AsignacionHorario {
+  id: string;
+  employee_id: string;
+  employee_dni: string;
+  employee_name: string;
+  employee_cargo?: string;
+  dependencia_name?: string;
+  area_name?: string;
+  horario_id: string;
+  horario_name: string;
+  horario_code?: string;
+  fecha_inicio: string; // YYYY-MM-DD
+  fecha_fin?: string | null; // YYYY-MM-DD (null si indefinido / permanente)
+  tipo_asignacion: TipoAsignacionHorario;
+  motivo?: string; // Justificación institucional (ej: "Campaña Agraria", "Horario regular", "Reemplazo")
+  documento_sustento?: string; // Ej: "Memorando N° 102-2026-DRAC"
+  activo: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface MarcacionCorrection {
   id: string;
   raw_marcacion_id?: string;
@@ -646,6 +669,7 @@ export interface MarcacionRaw {
   
   // Compatibilidad
   fecha?: string;
+  hora?: string;
   source?: string;
   deviceId?: string;
   pin?: string;
@@ -909,6 +933,7 @@ export interface Vacacion {
 
 export type AsistenciaEstado =
   | 'PUNCTUAL'
+  | 'TOLERANCE'
   | 'LATE'
   | 'ABSENT'
   | 'VACATION'

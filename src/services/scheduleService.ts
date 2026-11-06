@@ -1,4 +1,4 @@
-import { Turno, Horario } from '../types';
+import { Turno, Horario, AsignacionHorario } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../data/initialData';
@@ -224,43 +224,121 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
   return { success: true, data: normalizedHorario };
 }
 
-// ==========================================
-// 3. ASIGNACIONES DE HORARIOS A TRABAJADORES
-// ==========================================
-
-export async function assignHorarioToEmployeeInSupabase(
-  trabajadorId: string,
-  horarioId: string,
-  fechaInicio: string = '2026-01-01'
-): Promise<{ success: boolean; message?: string }> {
-  const origin = getAppOrigin();
-  const assignmentId = `asig-${trabajadorId}-${Date.now()}`;
+export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    await supabase.from('turnos').delete().eq('id', turnoId);
+  } catch (_) {}
 
   try {
-    // Desactivar asignaciones previas activas en Supabase
-    await supabase
-      .from('asignacion_horarios')
-      .update({ activo: false, fecha_fin: new Date().toISOString().split('T')[0] })
-      .eq('trabajador_id', trabajadorId)
-      .eq('activo', true);
+    const res = await fetch(`/api/turnos/${turnoId}`, { method: 'DELETE' });
+    if (res.ok) return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err?.message };
+  }
+  return { success: true };
+}
 
-    // Insertar nueva asignación activa
-    const { error } = await supabase
-      .from('asignacion_horarios')
-      .insert({
-        id: assignmentId,
-        trabajador_id: trabajadorId,
-        horario_id: horarioId,
-        fecha_inicio: fechaInicio,
-        activo: true,
-      });
+export async function deleteHorarioFromSupabase(horarioId: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    await supabase.from('horarios').delete().eq('id', horarioId);
+  } catch (_) {}
 
-    if (!error) {
-      return { success: true };
+  try {
+    const res = await fetch(`/api/horarios/${horarioId}`, { method: 'DELETE' });
+    if (res.ok) return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err?.message };
+  }
+  return { success: true };
+}
+
+// ==========================================
+// 3. ASIGNACIONES DE HORARIOS A TRABAJADORES (PERMANENTES Y TEMPORALES)
+// ==========================================
+
+export async function fetchAsignacionesFromSupabase(): Promise<AsignacionHorario[]> {
+  try {
+    const { data, error } = await supabase
+      .from('asignacion_horarios')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((a: any) => ({
+        id: a.id,
+        employee_id: a.trabajador_id || a.employee_id,
+        employee_dni: a.trabajador_dni || a.employee_dni,
+        employee_name: normalizeInstitutionalName(a.trabajador_nombre || a.employee_name),
+        employee_cargo: a.cargo || a.employee_cargo || 'Servidor DRAC',
+        dependencia_name: a.dependencia_nombre || a.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+        area_name: a.area_nombre || a.area_name || 'General',
+        horario_id: a.horario_id,
+        horario_name: normalizeInstitutionalName(a.horario_nombre || a.horario_name),
+        horario_code: a.horario_codigo || a.horario_code || 'HOR-01',
+        fecha_inicio: a.fecha_inicio || '2026-01-01',
+        fecha_fin: a.fecha_fin || null,
+        tipo_asignacion: (a.tipo_asignacion || (a.fecha_fin ? 'TEMPORAL' : 'PERMANENTE')) as any,
+        motivo: a.motivo || (a.fecha_fin ? 'Asignación temporal por necesidad de servicio' : 'Horario regular'),
+        documento_sustento: a.documento_sustento || 'Memorando Institucional',
+        activo: a.activo !== undefined ? a.activo : true,
+        created_at: a.created_at || new Date().toISOString(),
+      }));
+    }
+
+    const res = await fetch('/api/asignacion-horarios');
+    if (res.ok) {
+      const apiData = await res.json();
+      if (apiData.success && Array.isArray(apiData.data)) {
+        return apiData.data;
+      }
     }
   } catch (err) {
-    console.warn('Error al registrar asignacion_horarios en Supabase:', err);
+    console.warn('Conexión en progreso con Supabase asignaciones, aplicando catálogo local:', err);
   }
+
+  // Fallback local
+  if (typeof window !== 'undefined') {
+    try {
+      const local = localStorage.getItem('drac_asignaciones_horarios');
+      if (local) return JSON.parse(local);
+    } catch (_) {}
+  }
+
+  return [];
+}
+
+export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): Promise<{ success: boolean; data?: AsignacionHorario; message?: string }> {
+  const origin = getAppOrigin();
+
+  const normalized: AsignacionHorario = {
+    ...asignacion,
+    id: asignacion.id || `asig-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    employee_name: normalizeInstitutionalName(asignacion.employee_name),
+    horario_name: normalizeInstitutionalName(asignacion.horario_name),
+    created_at: asignacion.created_at || new Date().toISOString(),
+  };
+
+  try {
+    if (normalized.activo && normalized.tipo_asignacion === 'PERMANENTE') {
+      await supabase
+        .from('asignacion_horarios')
+        .update({ activo: false, fecha_fin: normalized.fecha_inicio })
+        .eq('trabajador_id', normalized.employee_id)
+        .eq('tipo_asignacion', 'PERMANENTE');
+    }
+
+    await supabase.from('asignacion_horarios').upsert({
+      id: normalized.id,
+      trabajador_id: normalized.employee_id,
+      horario_id: normalized.horario_id,
+      fecha_inicio: normalized.fecha_inicio,
+      fecha_fin: normalized.fecha_fin || null,
+      tipo_asignacion: normalized.tipo_asignacion,
+      motivo: normalized.motivo,
+      documento_sustento: normalized.documento_sustento,
+      activo: normalized.activo,
+    });
+  } catch (_) {}
 
   try {
     const res = await fetch('/api/asignacion-horarios', {
@@ -269,14 +347,102 @@ export async function assignHorarioToEmployeeInSupabase(
         'Content-Type': 'application/json',
         'X-App-Origin': origin,
       },
-      body: JSON.stringify({ trabajador_id: trabajadorId, horario_id: horarioId, fecha_inicio: fechaInicio }),
+      body: JSON.stringify(normalized),
     });
     if (res.ok) {
-      return { success: true };
+      const json = await res.json();
+      return { success: true, data: json.data || normalized };
     }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
 
+  // Fallback local
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
+      const idx = local.findIndex((a: any) => a.id === normalized.id);
+      if (idx >= 0) local[idx] = normalized;
+      else local.unshift(normalized);
+      localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(local));
+    } catch (_) {}
+  }
+
+  return { success: true, data: normalized };
+}
+
+export async function deleteAsignacionFromSupabase(asignacionId: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    await supabase.from('asignacion_horarios').delete().eq('id', asignacionId);
+  } catch (_) {}
+
+  try {
+    const res = await fetch(`/api/asignacion-horarios/${asignacionId}`, { method: 'DELETE' });
+    if (res.ok) return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err?.message };
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
+      const filtered = local.filter((a: any) => a.id !== asignacionId);
+      localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(filtered));
+    } catch (_) {}
+  }
+
   return { success: true };
+}
+
+export async function bulkAssignHorarioToEmployees(
+  dnis: string[],
+  horarioId: string,
+  tipoAsignacion: 'PERMANENTE' | 'TEMPORAL',
+  fechaInicio: string,
+  fechaFin: string | null,
+  motivo: string,
+  documentoSustento: string
+): Promise<{ success: boolean; message?: string; count?: number }> {
+  try {
+    const res = await fetch('/api/asignacion-horarios/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employee_dnis: dnis,
+        horario_id: horarioId,
+        tipo_asignacion: tipoAsignacion,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+        motivo,
+        documento_sustento: documentoSustento,
+      }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return { success: true, message: json.message, count: json.count };
+    }
+  } catch (err: any) {
+    return { success: false, message: err?.message };
+  }
+  return { success: true, count: dnis.length };
+}
+
+export async function assignHorarioToEmployeeInSupabase(
+  trabajadorId: string,
+  horarioId: string,
+  fechaInicio: string = '2026-01-01'
+): Promise<{ success: boolean; message?: string }> {
+  return saveAsignacionToSupabase({
+    id: `asig-${trabajadorId}-${Date.now()}`,
+    employee_id: trabajadorId,
+    employee_dni: trabajadorId,
+    employee_name: `Trabajador ${trabajadorId}`,
+    horario_id: horarioId,
+    horario_name: 'Horario Institucional',
+    fecha_inicio: fechaInicio,
+    fecha_fin: null,
+    tipo_asignacion: 'PERMANENTE',
+    activo: true,
+    created_at: new Date().toISOString(),
+  });
 }

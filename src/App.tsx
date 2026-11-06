@@ -619,7 +619,14 @@ export const App: React.FC = () => {
               />
             )}
 
-            {activeView.startsWith('shifts_') && <ShiftsSchedulesModule />}
+            {activeView.startsWith('shifts_') && (
+              <ShiftsSchedulesModule
+                activeSubView={activeView}
+                activeRole={activeRole}
+                employees={employees}
+                onRecordAudit={handleRecordAudit}
+              />
+            )}
 
             {activeView.startsWith('attendance_') && (
               <AttendanceModule
