@@ -86,7 +86,7 @@ import { AdvancedSearchFilter, FilterField, FilterSelect, FilterDateRange } from
 import { DataTablePagination } from '../common/DataTablePagination';
 import { SortableHeader, SortOrder } from '../common/SortableHeader';
 import { EmptyState } from '../common/EmptyState';
-import { normalizePersonName, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
+import { normalizePersonName, normalizeInstitutionalName, normalizeText, buildNormalizedFullName, matchesSearch } from '../../utils/nameUtils';
 
 export interface SystemRoleDef {
   role: RoleType;
@@ -1100,17 +1100,17 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     if (editingDep) {
       onEditDependencia({
         ...editingDep,
-        code: depCode.trim(),
-        name: depName.trim(),
+        code: depCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(depName.trim()),
         type: depType,
-        address: depAddress.trim(),
+        address: normalizeText(depAddress.trim()),
       });
     } else {
       onAddDependencia({
-        code: depCode.trim(),
-        name: depName.trim(),
+        code: depCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(depName.trim()),
         type: depType,
-        address: depAddress.trim(),
+        address: normalizeText(depAddress.trim()),
         active: true,
       });
     }
@@ -1129,19 +1129,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     if (editingDir) {
       onEditDireccionOrgano({
         ...editingDir,
-        code: dirCode.trim(),
-        name: dirName.trim(),
+        code: dirCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(dirName.trim()),
         type: dirType,
         dependencia_id: dirDepId,
-        dependencia_name: selectedDep ? selectedDep.name : 'Sede Central DRAC',
+        dependencia_name: selectedDep ? normalizeInstitutionalName(selectedDep.name) : 'Sede Central DRAC',
       });
     } else {
       onAddDireccionOrgano({
-        code: dirCode.trim(),
-        name: dirName.trim(),
+        code: dirCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(dirName.trim()),
         type: dirType,
         dependencia_id: dirDepId,
-        dependencia_name: selectedDep ? selectedDep.name : 'Sede Central DRAC',
+        dependencia_name: selectedDep ? normalizeInstitutionalName(selectedDep.name) : 'Sede Central DRAC',
         active: true,
       });
     }
@@ -1151,7 +1151,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   // Area submit
   const handleSubmitArea = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = areaName.trim();
+    const cleanName = normalizeInstitutionalName(areaName.trim());
     if (!cleanName) {
       alert('⚠️ Error de Validación:\nEl Nombre del Área / Oficina es obligatorio.');
       return;
@@ -1168,7 +1168,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       return;
     }
 
-    const cleanCode = areaCode.trim() || `ARE-${String(areas.length + 1).padStart(3, '0')}`;
+    const cleanCode = areaCode.trim().toUpperCase() || `ARE-${String(areas.length + 1).padStart(3, '0')}`;
     const selectedDep = dependencias.find((d) => d.id === (selectedDir.dependencia_id || areaDepId)) || dependencias[0];
     const parentArea = areas.find((a) => a.id === parentAreaId);
 
@@ -1178,14 +1178,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         code: cleanCode,
         name: cleanName,
         tipo: areaTipo,
-        description: areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`,
+        description: normalizeText(areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`),
         dependencia_id: selectedDir.dependencia_id || selectedDep?.id,
-        dependencia_name: selectedDir.dependencia_name || selectedDep?.name,
+        dependencia_name: normalizeInstitutionalName(selectedDir.dependencia_name || selectedDep?.name),
         direccion_organo_id: selectedDir.id,
-        direccion_organo_name: selectedDir.name,
+        direccion_organo_name: normalizeInstitutionalName(selectedDir.name),
         unidad_superior_id: selectedDir.id,
         parent_area_id: parentAreaId || null,
-        parent_area_name: parentArea?.name,
+        parent_area_name: parentArea ? normalizeInstitutionalName(parentArea.name) : undefined,
         active: areaActive,
       });
     } else {
@@ -1193,14 +1193,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
         code: cleanCode,
         name: cleanName,
         tipo: areaTipo,
-        description: areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`,
+        description: normalizeText(areaDesc.trim() || `${areaTipo === 'OFICINA' ? 'Oficina' : 'Área'} adscrita a ${selectedDir.name}`),
         dependencia_id: selectedDir.dependencia_id || selectedDep?.id,
-        dependencia_name: selectedDir.dependencia_name || selectedDep?.name,
+        dependencia_name: normalizeInstitutionalName(selectedDir.dependencia_name || selectedDep?.name),
         direccion_organo_id: selectedDir.id,
-        direccion_organo_name: selectedDir.name,
+        direccion_organo_name: normalizeInstitutionalName(selectedDir.name),
         unidad_superior_id: selectedDir.id,
         parent_area_id: parentAreaId || null,
-        parent_area_name: parentArea?.name,
+        parent_area_name: parentArea ? normalizeInstitutionalName(parentArea.name) : undefined,
         active: areaActive,
       });
     }
@@ -1215,14 +1215,14 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
     if (editingCargo) {
       onEditCargo({
         ...editingCargo,
-        code: cargoCode.trim(),
-        name: cargoName.trim(),
+        code: cargoCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(cargoName.trim()),
         nivel: cargoNivel,
       });
     } else {
       onAddCargo({
-        code: cargoCode.trim(),
-        name: cargoName.trim(),
+        code: cargoCode.trim().toUpperCase(),
+        name: normalizeInstitutionalName(cargoName.trim()),
         nivel: cargoNivel,
         active: true,
       });

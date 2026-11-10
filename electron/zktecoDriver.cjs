@@ -337,6 +337,101 @@ class ZKLibTCP {
     }
   }
 
+  async readDataStream(cmd, data = '', timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || this.socket.destroyed) {
+        return reject(new Error('Socket no conectado'));
+      }
+
+      const packet = createHeader(cmd, this.sessionId, this.replyId, data);
+      let settled = false;
+      let totalExpectedBytes = 0;
+      let collectedBuffers = [];
+      let totalReceived = 0;
+      let idleTimer = null;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (idleTimer) clearTimeout(idleTimer);
+        this.socket.removeListener('data', onDataStream);
+        const combined = Buffer.concat(collectedBuffers);
+        resolve(combined);
+      };
+
+      const resetIdleTimer = (ms = 1200) => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          finish();
+        }, ms);
+      };
+
+      const onDataStream = (chunk) => {
+        resetIdleTimer(900);
+
+        // Remover envoltorio TCP 0x5050827D si está presente
+        let payload = chunk;
+        if (
+          chunk.length >= 8 &&
+          (chunk.readUInt32LE(0) === 0x5050827d ||
+            chunk.readUInt32BE(0) === 0x5050827d ||
+            (chunk[0] === 0x7d && chunk[1] === 0x82) ||
+            (chunk[0] === 0x50 && chunk[1] === 0x50))
+        ) {
+          payload = chunk.slice(8);
+        }
+
+        if (payload.length >= 8) {
+          const respCmd = payload.readUInt16LE(0);
+          const sessId = payload.readUInt16LE(4);
+          if (sessId && !this.sessionId) this.sessionId = sessId;
+          this.replyId = payload.readUInt16LE(6);
+
+          // Si el biométrico responde con CMD_PREPARE_DATA (1500)
+          if (respCmd === 1500 && payload.length >= 12) {
+            totalExpectedBytes = payload.readUInt32LE(8);
+            if (payload.length > 12) {
+              const dataPart = payload.slice(12);
+              collectedBuffers.push(dataPart);
+              totalReceived += dataPart.length;
+            }
+            return;
+          }
+
+          // Si el biométrico envía CMD_ACK_DATA (2002)
+          if (respCmd === 2002) {
+            const dataPart = payload.slice(8);
+            collectedBuffers.push(dataPart);
+            totalReceived += dataPart.length;
+            if (totalExpectedBytes > 0 && totalReceived >= totalExpectedBytes) {
+              finish();
+            }
+            return;
+          }
+
+          // Si el biométrico envía CMD_ACK_OK (2000)
+          if (respCmd === 2000) {
+            if (totalReceived > 0 || collectedBuffers.length > 0) {
+              finish();
+              return;
+            }
+          }
+        }
+
+        // Chunks directos de datos binarios
+        collectedBuffers.push(payload);
+        totalReceived += payload.length;
+        if (totalExpectedBytes > 0 && totalReceived >= totalExpectedBytes) {
+          finish();
+        }
+      };
+
+      this.socket.on('data', onDataStream);
+      this.socket.write(packet);
+      resetIdleTimer(timeoutMs);
+    });
+  }
+
   async getAttendances() {
     const punches = [];
     try {
@@ -344,14 +439,16 @@ class ZKLibTCP {
         await this.executeCmd(COMMANDS.CMD_DISABLEDEVICE, '');
       } catch (_) {}
 
-      const reply = await this.executeCmd(COMMANDS.CMD_ATTLOG_RRQ, '');
+      // Leer el stream de marcaciones completo desde el buffer del marcador biométrico
+      const dataBuf = await this.readDataStream(COMMANDS.CMD_ATTLOG_RRQ, '', 4000);
 
       try {
         await this.executeCmd(COMMANDS.CMD_ENABLEDEVICE, '');
       } catch (_) {}
 
-      if (reply && reply.length > 8) {
-        const dataBuf = reply.slice(8);
+      if (dataBuf && dataBuf.length > 0) {
+        // Intento 1: Formato extendido ZKTeco G3 / SilkID / TFT (40 bytes por marcación)
+        // [0-23: PIN ASCII] [24: verifyType] [25: punchState] [26-29: rawTime (packed 32-bit)]
         if (dataBuf.length >= 40) {
           const recSize = 40;
           for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
@@ -371,7 +468,10 @@ class ZKLibTCP {
               });
             }
           }
-        } else if (dataBuf.length >= 14) {
+        }
+
+        // Intento 2: Si no coincidió formato de 40 bytes, probar formato estándar de 14 bytes
+        if (punches.length === 0 && dataBuf.length >= 14) {
           const recSize = 14;
           for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
             const chunk = dataBuf.slice(i, i + recSize);
@@ -1338,19 +1438,46 @@ async function readZkDevicePunches(
           recordTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
         }
 
+        const [fechaPart, horaPart] = recordTimeStr.split(' ');
         return {
+          id: `zk_${serial}_${dni}_${recordTimeStr.replace(/[- :]/g, '')}_${index}`,
           punch_id: `zk_${serial}_${dni}_${recordTimeStr.replace(/[- :]/g, '')}_${index}`,
           device_sn: serial,
           device_ip: cleanIp,
           employee_dni: dni,
+          employee_code: dni,
+          fecha: fechaPart,
+          hora: horaPart,
           timestamp: recordTimeStr,
           verify_mode: item.verifyType === 15 ? 'FACE' : (item.verifyType === 2 ? 'PASSWORD' : 'FINGERPRINT'),
           punch_type: 'AUTO',
+          punch_state: item.punchState || 0,
           raw_record: JSON.stringify(item),
         };
       });
 
       if (formattedPunches.length > 0) {
+        try {
+          const rawPath = resolveDataFilePath('raw-punches.json');
+          let currentList = [];
+          if (fs.existsSync(rawPath)) {
+            try { currentList = JSON.parse(fs.readFileSync(rawPath, 'utf8')); } catch (_) {}
+          }
+          const existingKeys = new Set(currentList.map((p) => `${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`));
+          const newlyAdded = [];
+          for (const p of formattedPunches) {
+            const key = `${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`;
+            if (!existingKeys.has(key)) {
+              existingKeys.add(key);
+              newlyAdded.push(p);
+            }
+          }
+          if (newlyAdded.length > 0) {
+            const merged = [...newlyAdded, ...currentList];
+            fs.writeFileSync(rawPath, JSON.stringify(merged, null, 2), 'utf8');
+          }
+        } catch (_) {}
+
         return {
           success: true,
           message: `Descarga completada: ${formattedPunches.length} marcaciones reales recuperadas exitosamente vía Socket TCP (${cleanIp}:${activePortUsed}).`,

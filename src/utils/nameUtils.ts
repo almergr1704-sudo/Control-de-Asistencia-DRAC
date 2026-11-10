@@ -57,12 +57,36 @@ const PRESERVED_ACRONYMS = new Map<string, string>([
   ['VIII', 'VIII'],
   ['IX', 'IX'],
   ['X', 'X'],
+  ['MIDAGRI', 'MIDAGRI'],
+  ['POSTGRESQL', 'PostgreSQL'],
+  ['SUPABASE', 'Supabase'],
+]);
+
+// Partículas gramaticales en español que deben permanecer en minúscula (salvo al inicio de la frase)
+const SPANISH_LOWERCASE_PARTICLES = new Set<string>([
+  'de',
+  'del',
+  'la',
+  'las',
+  'los',
+  'el',
+  'e',
+  'y',
+  'en',
+  'para',
+  'por',
+  'con',
+  'o',
+  'u',
+  'a',
+  'al',
 ]);
 
 /**
  * Capitaliza un único token o palabra simple respetando caracteres del español
+ * y partículas gramaticales.
  */
-function capitalizeWord(word: string): string {
+function capitalizeWord(word: string, isFirstWord: boolean = false): string {
   if (!word) return '';
 
   // Verificar si es un acrónimo preservado
@@ -74,9 +98,15 @@ function capitalizeWord(word: string): string {
     return PRESERVED_ACRONYMS.get(upperKey) + punctuation;
   }
 
-  // Si es un código técnico tipo DRAC-0001 o TUR-001 o similar, no modificar
+  // Si es un código técnico tipo DRAC-0001, TUR-001 o números, no modificar
   if (/^[A-Z]{2,4}-\d+$/i.test(word) || /^\d+$/.test(word)) {
     return word.toUpperCase();
+  }
+
+  const cleanLower = word.toLowerCase().replace(/[.,;:]+$/, '');
+  // Si es una partícula gramatical y NO es la primera palabra, mantener en minúscula
+  if (!isFirstWord && SPANISH_LOWERCASE_PARTICLES.has(cleanLower)) {
+    return cleanLower + punctuation;
   }
 
   const lower = word.toLocaleLowerCase('es-PE');
@@ -88,7 +118,7 @@ function capitalizeWord(word: string): string {
 /**
  * Procesa un fragmento de palabra que pueda contener delimitadores (guiones, barras, paréntesis, etc.)
  */
-function processWordWithSubdelimiters(word: string): string {
+function processWordWithSubdelimiters(word: string, isFirstWord: boolean = false): string {
   if (!word) return '';
 
   // Preservar acrónimos directos
@@ -100,14 +130,14 @@ function processWordWithSubdelimiters(word: string): string {
   // Manejo de paréntesis ej: "(DRAC)" o "(RRHH)"
   if (word.startsWith('(') && word.endsWith(')')) {
     const inner = word.substring(1, word.length - 1);
-    return `(${processWordWithSubdelimiters(inner)})`;
+    return `(${processWordWithSubdelimiters(inner, true)})`;
   }
 
   // Manejo de guiones ej: "María-José" o "Baños-Inka"
   if (word.includes('-') && !/^[A-Za-z]+-\d+$/.test(word)) {
     return word
       .split('-')
-      .map((sub) => capitalizeWord(sub))
+      .map((sub, idx) => capitalizeWord(sub, isFirstWord && idx === 0))
       .join('-');
   }
 
@@ -116,7 +146,7 @@ function processWordWithSubdelimiters(word: string): string {
     if (upperKey === 'TCP/IP') return 'TCP/IP';
     return word
       .split('/')
-      .map((sub) => capitalizeWord(sub))
+      .map((sub, idx) => capitalizeWord(sub, isFirstWord && idx === 0))
       .join('/');
   }
 
@@ -124,21 +154,21 @@ function processWordWithSubdelimiters(word: string): string {
   if (word.includes("'")) {
     return word
       .split("'")
-      .map((sub) => capitalizeWord(sub))
+      .map((sub, idx) => capitalizeWord(sub, isFirstWord && idx === 0))
       .join("'");
   }
 
-  return capitalizeWord(word);
+  return capitalizeWord(word, isFirstWord);
 }
 
 /**
- * Normaliza cualquier texto a formato Título (Title Case)
+ * Normaliza cualquier texto a formato Título (Title Case) con reglas del español
  * Ejemplo:
- *   "   ALMER   EDUAR   GAONA   RODRIGUEZ  " -> "Almer Eduar Gaona Rodriguez"
- *   "DIRECCION REGIONAL DE AGRICULTURA" -> "Direccion Regional De Agricultura"
- *   "OFICINA DE ADMINISTRACION" -> "Oficina De Administracion"
- *   "OFICINA AGRARIA CHOTA" -> "Oficina Agraria Chota"
- *   "JOSÉ MARÍA PEÑA MUÑOZ" -> "José María Peña Muñoz"
+ *   "ALMER EDUAR GAONA RODRÍGUEZ" -> "Almer Eduar Gaona Rodríguez"
+ *   "MARÍA DEL CARMEN" -> "María del Carmen"
+ *   "DIRECCIÓN DE ESTADÍSTICA E INFORMÁTICA" -> "Dirección de Estadística e Informática"
+ *   "AGENCIA AGRARIA DE CHOTA" -> "Agencia Agraria de Chota"
+ *   "OFICINA DE RECURSOS HUMANOS" -> "Oficina de Recursos Humanos"
  */
 export function normalizeText(text: string | null | undefined): string {
   if (!text || typeof text !== 'string') {
@@ -149,9 +179,9 @@ export function normalizeText(text: string | null | undefined): string {
   const cleaned = text.trim().replace(/\s+/g, ' ');
   if (!cleaned) return '';
 
-  // 2. Procesar palabra por palabra
+  // 2. Procesar palabra por palabra respetando la primera posición
   const words = cleaned.split(' ');
-  const normalizedWords = words.map((word) => processWordWithSubdelimiters(word));
+  const normalizedWords = words.map((word, idx) => processWordWithSubdelimiters(word, idx === 0));
 
   return normalizedWords.join(' ');
 }

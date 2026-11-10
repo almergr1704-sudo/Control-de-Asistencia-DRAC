@@ -1,0 +1,30 @@
+[
+  {
+    "id": "c-01",
+    "code": "ADM-SIS",
+    "name": "Administrador General del Sistema",
+    "nivel_jerarquico": "DIRECTIVO",
+    "active": true
+  },
+  {
+    "id": "c-02",
+    "code": "ESP-AGR",
+    "name": "Especialista Agrícola Principal",
+    "nivel_jerarquico": "PROFESIONAL",
+    "active": true
+  },
+  {
+    "id": "c-03",
+    "code": "ANA-RRHH",
+    "name": "Analista de Recursos Humanos",
+    "nivel_jerarquico": "PROFESIONAL",
+    "active": true
+  },
+  {
+    "id": "c-04",
+    "code": "TEC-MEC",
+    "name": "Técnico de Maquinaria Agropecuaria",
+    "nivel_jerarquico": "TECNICO",
+    "active": true
+  }
+]

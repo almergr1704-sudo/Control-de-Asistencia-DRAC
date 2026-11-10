@@ -36,7 +36,7 @@ import {
   deleteAsignacionFromSupabase,
 } from '../../services/scheduleService';
 import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../../data/initialData';
-import { normalizeInstitutionalName, normalizePersonName } from '../../utils/nameUtils';
+import { normalizeInstitutionalName, normalizePersonName, normalizeText } from '../../utils/nameUtils';
 
 interface ShiftsSchedulesModuleProps {
   activeSubView?: string;
@@ -462,17 +462,17 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       employee_name: emp
         ? normalizePersonName(`${emp.first_name} ${emp.last_name}`)
         : (editingAsignacion?.employee_name || 'Servidor DRAC'),
-      employee_cargo: emp?.position || editingAsignacion?.employee_cargo || 'Servidor DRAC',
-      dependencia_name: emp?.dependencia_name || editingAsignacion?.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
-      area_name: emp?.area_name || editingAsignacion?.area_name || 'General',
+      employee_cargo: normalizeInstitutionalName(emp?.position || editingAsignacion?.employee_cargo || 'Servidor DRAC'),
+      dependencia_name: normalizeInstitutionalName(emp?.dependencia_name || editingAsignacion?.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+      area_name: normalizeInstitutionalName(emp?.area_name || editingAsignacion?.area_name || 'General'),
       horario_id: asignacionForm.horario_id,
-      horario_name: hor ? hor.name : (editingAsignacion?.horario_name || 'Horario Institucional'),
+      horario_name: normalizeInstitutionalName(hor ? hor.name : (editingAsignacion?.horario_name || 'Horario Institucional')),
       horario_code: hor?.code || editingAsignacion?.horario_code || 'HOR-01',
       fecha_inicio: asignacionForm.fecha_inicio,
       fecha_fin: asignacionForm.tipo_asignacion === 'TEMPORAL' ? asignacionForm.fecha_fin : null,
       tipo_asignacion: asignacionForm.tipo_asignacion,
-      motivo: asignacionForm.motivo.trim() || (asignacionForm.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por servicio' : 'Horario regular'),
-      documento_sustento: asignacionForm.documento_sustento.trim() || 'Memorando Institucional',
+      motivo: normalizeText(asignacionForm.motivo.trim() || (asignacionForm.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por servicio' : 'Horario regular')),
+      documento_sustento: normalizeText(asignacionForm.documento_sustento.trim() || 'Memorando Institucional'),
       activo: asignacionForm.activo,
       created_at: editingAsignacion?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),

@@ -65,6 +65,7 @@ import { ApiConsole } from './components/ApiConsole';
 import { attendanceService } from './services/attendanceService';
 import { VIEW_TO_HASH, HASH_TO_VIEW } from './utils/router';
 import { getApiUrl } from './utils/apiConfig';
+import { normalizePersonName, normalizeInstitutionalName, normalizeText } from './utils/nameUtils';
 
 export const App: React.FC = () => {
   // Navigation & View Routing State
@@ -327,17 +328,15 @@ export const App: React.FC = () => {
   // Sync data from server
   const loadServerData = useCallback(async () => {
     try {
-      // 1. Punches
-      const punches = await attendanceService.getRawPunches();
-      if (Array.isArray(punches)) {
-        setRawPunches(punches);
-      }
-      // 2. Attendance
-      const atts = await attendanceService.getAttendanceRecords();
-      if (Array.isArray(atts)) {
-        setAttendance(atts);
-      }
-      // 3. Employees
+      // 1. Punches & Attendance
+      const [punches, atts] = await Promise.all([
+        attendanceService.getRawPunches().catch(() => []),
+        attendanceService.getAttendanceRecords().catch(() => []),
+      ]);
+      if (Array.isArray(punches)) setRawPunches(punches);
+      if (Array.isArray(atts)) setAttendance(atts);
+
+      // 2. Employees
       const resEmps = await fetch('/api/employees').then((r) => r.json()).catch(() => null);
       if (resEmps?.success && Array.isArray(resEmps.data) && resEmps.data.length > 0) {
         setEmployees((prev) => {
@@ -346,34 +345,156 @@ export const App: React.FC = () => {
           prev.forEach((e) => map.set(e.dni, e));
           resEmps.data.forEach((e: any) => {
             const existing = map.get(e.dni);
+            const normFirst = normalizePersonName(e.first_name || '');
+            const normLast = normalizePersonName(e.last_name || '');
             map.set(e.dni, {
               id: e.id || `emp-${e.dni}`,
               codigo_trabajador: e.codigo_trabajador || `DRAC-${e.dni}`,
               dni: e.dni,
-              first_name: e.first_name || '',
-              last_name: e.last_name || '',
+              first_name: normFirst,
+              last_name: normLast,
+              apellido_paterno: normalizePersonName(e.apellido_paterno || ''),
+              apellido_materno: normalizePersonName(e.apellido_materno || ''),
               email: e.email || '',
               phone: e.phone || '',
               dependencia_id: e.dependencia_id || 'dep-01',
-              dependencia_name: e.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
-              direccion_organo_name: e.direccion_organo_name || '',
+              dependencia_name: normalizeInstitutionalName(e.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+              direccion_organo_id: e.direccion_organo_id || '',
+              direccion_organo_name: normalizeInstitutionalName(e.direccion_organo_name || ''),
               area_id: e.area_id || 'area-01',
-              area_name: e.area_name || '',
-              position: e.cargo || e.position || 'Servidor Público',
+              area_name: normalizeInstitutionalName(e.area_name || ''),
+              position: normalizeInstitutionalName(e.cargo || e.position || 'Servidor Público'),
               regimen_laboral: (e.regimen_laboral as any) || 'D.L. 276',
               condicion_laboral: (existing?.condicion_laboral || e.condicion || 'NOMBRADO') as any,
-              role: existing?.role || 'TRABAJADOR',
-              assigned_roles: existing?.assigned_roles || ['TRABAJADOR'],
-              has_system_access: true,
-              account_status: 'ACTIVE',
-              active: true,
+              role: existing?.role || e.role || 'TRABAJADOR',
+              assigned_roles: existing?.assigned_roles || e.assigned_roles || ['TRABAJADOR'],
+              has_system_access: e.has_system_access !== undefined ? e.has_system_access : true,
+              account_status: e.account_status || 'ACTIVE',
+              active: e.active !== undefined ? e.active : true,
               zkteco_pin: e.zkteco_pin || e.dni,
             });
           });
           return Array.from(map.values());
         });
       }
-      // 4. Devices
+
+      // 3. Dependencias
+      const resDeps = await fetch('/api/dependencias').then((r) => r.json()).catch(() => null);
+      if (resDeps?.success && Array.isArray(resDeps.data) && resDeps.data.length > 0) {
+        setDependencias(resDeps.data.map((d: any) => ({
+          ...d,
+          name: normalizeInstitutionalName(d.name),
+          address: normalizeText(d.address),
+        })));
+      }
+
+      // 4. Direcciones u Órganos
+      const resDirs = await fetch('/api/direcciones').then((r) => r.json()).catch(() => null);
+      if (resDirs?.success && Array.isArray(resDirs.data) && resDirs.data.length > 0) {
+        setDireccionesOrganos(resDirs.data.map((d: any) => ({
+          ...d,
+          name: normalizeInstitutionalName(d.name),
+          dependencia_name: normalizeInstitutionalName(d.dependencia_name),
+        })));
+      }
+
+      // 5. Áreas u Oficinas
+      const resAreas = await fetch('/api/areas').then((r) => r.json()).catch(() => null);
+      if (resAreas?.success && Array.isArray(resAreas.data) && resAreas.data.length > 0) {
+        setAreas(resAreas.data.map((a: any) => ({
+          ...a,
+          name: normalizeInstitutionalName(a.name),
+          description: normalizeText(a.description),
+          dependencia_name: normalizeInstitutionalName(a.dependencia_name),
+          direccion_organo_name: normalizeInstitutionalName(a.direccion_organo_name),
+          parent_area_name: normalizeInstitutionalName(a.parent_area_name),
+        })));
+      }
+
+      // 6. Cargos
+      const resCargos = await fetch('/api/cargos').then((r) => r.json()).catch(() => null);
+      if (resCargos?.success && Array.isArray(resCargos.data) && resCargos.data.length > 0) {
+        setCargos(resCargos.data.map((c: any) => ({
+          ...c,
+          name: normalizeInstitutionalName(c.name),
+        })));
+      }
+
+      // 7. Responsables
+      const resResp = await fetch('/api/responsables').then((r) => r.json()).catch(() => null);
+      if (resResp?.success && Array.isArray(resResp.data) && resResp.data.length > 0) {
+        setResponsables(resResp.data.map((r: any) => ({
+          ...r,
+          employee_name: normalizePersonName(r.employee_name),
+          unit_name: normalizeInstitutionalName(r.unit_name),
+          title: normalizeInstitutionalName(r.title),
+        })));
+      }
+
+      // 8. Turnos Laborales
+      const resTurnos = await fetch('/api/turnos').then((r) => r.json()).catch(() => null);
+      if (resTurnos?.success && Array.isArray(resTurnos.data) && resTurnos.data.length > 0) {
+        setTurnos(resTurnos.data.map((t: any) => ({
+          ...t,
+          name: normalizeInstitutionalName(t.name),
+          description: normalizeText(t.description),
+        })));
+      }
+
+      // 9. Horarios Laborales
+      const resHorarios = await fetch('/api/horarios').then((r) => r.json()).catch(() => null);
+      if (resHorarios?.success && Array.isArray(resHorarios.data) && resHorarios.data.length > 0) {
+        setHorarios(resHorarios.data.map((h: any) => ({
+          ...h,
+          name: normalizeInstitutionalName(h.name),
+          turno1_name: normalizeInstitutionalName(h.turno1_name),
+          turno2_name: normalizeInstitutionalName(h.turno2_name),
+        })));
+      }
+
+      // 10. Papeletas de Salida
+      const resPapeletas = await fetch('/api/papeletas').then((r) => r.json()).catch(() => null);
+      if (resPapeletas?.success && Array.isArray(resPapeletas.data)) {
+        setPapeletas(resPapeletas.data.map((p: any) => ({
+          ...p,
+          employee_name: normalizePersonName(p.employee_name),
+          dependencia_name: normalizeInstitutionalName(p.dependencia_name),
+          direccion_organo_name: normalizeInstitutionalName(p.direccion_organo_name),
+          area_name: normalizeInstitutionalName(p.area_name),
+          supervisor_name: normalizePersonName(p.supervisor_name),
+          destino: normalizeText(p.destino),
+        })));
+      }
+
+      // 11. Vacaciones
+      const resVacaciones = await fetch('/api/vacaciones').then((r) => r.json()).catch(() => null);
+      if (resVacaciones?.success && Array.isArray(resVacaciones.data)) {
+        setVacaciones(resVacaciones.data.map((v: any) => ({
+          ...v,
+          employee_name: normalizePersonName(v.employee_name),
+          dependencia_name: normalizeInstitutionalName(v.dependencia_name),
+          direccion_organo_name: normalizeInstitutionalName(v.direccion_organo_name),
+          area_name: normalizeInstitutionalName(v.area_name),
+          boss_approver_name: normalizePersonName(v.boss_approver_name),
+          hr_approver_name: normalizePersonName(v.hr_approver_name),
+        })));
+      }
+
+      // 12. Encargaturas
+      const resEncargaturas = await fetch('/api/encargaturas').then((r) => r.json()).catch(() => null);
+      if (resEncargaturas?.success && Array.isArray(resEncargaturas.data)) {
+        setEncargaturas(resEncargaturas.data.map((e: any) => ({
+          ...e,
+          titular_name: normalizePersonName(e.titular_name),
+          encargado_name: normalizePersonName(e.encargado_name),
+          dependencia_name: normalizeInstitutionalName(e.dependencia_name),
+          direccion_organo_name: normalizeInstitutionalName(e.direccion_organo_name),
+          area_name: normalizeInstitutionalName(e.area_name),
+          cargo_name: normalizeInstitutionalName(e.cargo_name),
+        })));
+      }
+
+      // 13. Marcadores Biométricos
       if (typeof window !== 'undefined' && (window as any).electronAPI?.getDevices) {
         try {
           const electronDevs = await (window as any).electronAPI.getDevices();
@@ -575,43 +696,205 @@ export const App: React.FC = () => {
                 encargaturas={encargaturas}
                 papeletas={papeletas}
                 devices={devices}
-                onAddDependencia={(dep) => {
-                  const newDep: Dependencia = { ...dep, id: `dep-${Date.now()}`, created_at: new Date().toISOString() };
+                onAddDependencia={async (dep) => {
+                  const newDep: Dependencia = {
+                    ...dep,
+                    id: `dep-${Date.now()}`,
+                    name: normalizeInstitutionalName(dep.name),
+                    address: normalizeText(dep.address),
+                    created_at: new Date().toISOString(),
+                  };
                   setDependencias((prev) => [...prev, newDep]);
+                  await fetch('/api/dependencias', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newDep),
+                  }).catch(() => {});
+                  handleRecordAudit('CREAR_DEPENDENCIA', `Dependencia creada: ${newDep.name}`);
                 }}
-                onEditDependencia={(dep) => setDependencias((prev) => prev.map((d) => (d.id === dep.id ? dep : d)))}
-                onDeleteDependencia={(id) => setDependencias((prev) => prev.filter((d) => d.id !== id))}
-                onAddDireccionOrgano={(dir) => {
-                  const newDir: DireccionOrgano = { ...dir, id: `dir-${Date.now()}`, created_at: new Date().toISOString() };
+                onEditDependencia={async (dep) => {
+                  const normDep: Dependencia = {
+                    ...dep,
+                    name: normalizeInstitutionalName(dep.name),
+                    address: normalizeText(dep.address),
+                  };
+                  setDependencias((prev) => prev.map((d) => (d.id === normDep.id ? normDep : d)));
+                  await fetch(`/api/dependencias/${normDep.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normDep),
+                  }).catch(() => {});
+                  handleRecordAudit('EDITAR_DEPENDENCIA', `Dependencia actualizada: ${normDep.name}`);
+                }}
+                onDeleteDependencia={async (id) => {
+                  const found = dependencias.find((d) => d.id === id);
+                  setDependencias((prev) => prev.filter((d) => d.id !== id));
+                  await fetch(`/api/dependencias/${id}`, { method: 'DELETE' }).catch(() => {});
+                  if (found) handleRecordAudit('ELIMINAR_DEPENDENCIA', `Dependencia eliminada: ${found.name}`);
+                }}
+                onAddDireccionOrgano={async (dir) => {
+                  const newDir: DireccionOrgano = {
+                    ...dir,
+                    id: `dir-${Date.now()}`,
+                    name: normalizeInstitutionalName(dir.name),
+                    dependencia_name: normalizeInstitutionalName(dir.dependencia_name),
+                    created_at: new Date().toISOString(),
+                  };
                   setDireccionesOrganos((prev) => [...prev, newDir]);
+                  await fetch('/api/direcciones', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newDir),
+                  }).catch(() => {});
+                  handleRecordAudit('CREAR_DIRECCION', `Dirección/Órgano registrado: ${newDir.name}`);
                 }}
-                onEditDireccionOrgano={(dir) => setDireccionesOrganos((prev) => prev.map((d) => (d.id === dir.id ? dir : d)))}
-                onDeleteDireccionOrgano={(id) => setDireccionesOrganos((prev) => prev.filter((d) => d.id !== id))}
-                onAddArea={(area) => {
-                  const newArea: Area = { ...area, id: `area-${Date.now()}`, created_at: new Date().toISOString() };
+                onEditDireccionOrgano={async (dir) => {
+                  const normDir: DireccionOrgano = {
+                    ...dir,
+                    name: normalizeInstitutionalName(dir.name),
+                    dependencia_name: normalizeInstitutionalName(dir.dependencia_name),
+                  };
+                  setDireccionesOrganos((prev) => prev.map((d) => (d.id === normDir.id ? normDir : d)));
+                  await fetch(`/api/direcciones/${normDir.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normDir),
+                  }).catch(() => {});
+                  handleRecordAudit('EDITAR_DIRECCION', `Dirección/Órgano actualizado: ${normDir.name}`);
+                }}
+                onDeleteDireccionOrgano={async (id) => {
+                  const found = direccionesOrganos.find((d) => d.id === id);
+                  setDireccionesOrganos((prev) => prev.filter((d) => d.id !== id));
+                  await fetch(`/api/direcciones/${id}`, { method: 'DELETE' }).catch(() => {});
+                  if (found) handleRecordAudit('ELIMINAR_DIRECCION', `Dirección/Órgano eliminado: ${found.name}`);
+                }}
+                onAddArea={async (area) => {
+                  const newArea: Area = {
+                    ...area,
+                    id: `area-${Date.now()}`,
+                    name: normalizeInstitutionalName(area.name),
+                    description: normalizeText(area.description),
+                    dependencia_name: normalizeInstitutionalName(area.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(area.direccion_organo_name),
+                    created_at: new Date().toISOString(),
+                  };
                   setAreas((prev) => [...prev, newArea]);
+                  await fetch('/api/areas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newArea),
+                  }).catch(() => {});
+                  handleRecordAudit('CREAR_AREA', `Área u oficina registrada: ${newArea.name}`);
                 }}
-                onEditArea={(area) => setAreas((prev) => prev.map((a) => (a.id === area.id ? area : a)))}
-                onDeleteArea={(id) => setAreas((prev) => prev.filter((a) => a.id !== id))}
-                onAddCargo={(cargo) => {
-                  const newCargo: Cargo = { ...cargo, id: `cargo-${Date.now()}` };
+                onEditArea={async (area) => {
+                  const normArea: Area = {
+                    ...area,
+                    name: normalizeInstitutionalName(area.name),
+                    description: normalizeText(area.description),
+                    dependencia_name: normalizeInstitutionalName(area.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(area.direccion_organo_name),
+                  };
+                  setAreas((prev) => prev.map((a) => (a.id === normArea.id ? normArea : a)));
+                  await fetch(`/api/areas/${normArea.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normArea),
+                  }).catch(() => {});
+                  handleRecordAudit('EDITAR_AREA', `Área u oficina actualizada: ${normArea.name}`);
+                }}
+                onDeleteArea={async (id) => {
+                  const found = areas.find((a) => a.id === id);
+                  setAreas((prev) => prev.filter((a) => a.id !== id));
+                  await fetch(`/api/areas/${id}`, { method: 'DELETE' }).catch(() => {});
+                  if (found) handleRecordAudit('ELIMINAR_AREA', `Área eliminada: ${found.name}`);
+                }}
+                onAddCargo={async (cargo) => {
+                  const newCargo: Cargo = {
+                    ...cargo,
+                    id: `cargo-${Date.now()}`,
+                    name: normalizeInstitutionalName(cargo.name),
+                  };
                   setCargos((prev) => [...prev, newCargo]);
+                  await fetch('/api/cargos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newCargo),
+                  }).catch(() => {});
+                  handleRecordAudit('CREAR_CARGO', `Cargo registrado: ${newCargo.name}`);
                 }}
-                onEditCargo={(cargo) => setCargos((prev) => prev.map((c) => (c.id === cargo.id ? cargo : c)))}
-                onDeleteCargo={(id) => setCargos((prev) => prev.filter((c) => c.id !== id))}
-                onAddEmployee={(emp) => {
-                  const newEmp: Employee = { ...emp, id: `emp-${Date.now()}` };
-                  setEmployees((prev) => [...prev, newEmp]);
+                onEditCargo={async (cargo) => {
+                  const normCargo: Cargo = {
+                    ...cargo,
+                    name: normalizeInstitutionalName(cargo.name),
+                  };
+                  setCargos((prev) => prev.map((c) => (c.id === normCargo.id ? normCargo : c)));
+                  await fetch(`/api/cargos/${normCargo.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normCargo),
+                  }).catch(() => {});
+                  handleRecordAudit('EDITAR_CARGO', `Cargo actualizado: ${normCargo.name}`);
+                }}
+                onDeleteCargo={async (id) => {
+                  const found = cargos.find((c) => c.id === id);
+                  setCargos((prev) => prev.filter((c) => c.id !== id));
+                  await fetch(`/api/cargos/${id}`, { method: 'DELETE' }).catch(() => {});
+                  if (found) handleRecordAudit('ELIMINAR_CARGO', `Cargo eliminado: ${found.name}`);
+                }}
+                onAddEmployee={async (emp) => {
+                  const newEmp: Employee = {
+                    ...emp,
+                    id: `emp-${emp.dni || Date.now()}`,
+                    first_name: normalizePersonName(emp.first_name),
+                    last_name: normalizePersonName(emp.last_name),
+                    apellido_paterno: normalizePersonName(emp.apellido_paterno),
+                    apellido_materno: normalizePersonName(emp.apellido_materno),
+                    dependencia_name: normalizeInstitutionalName(emp.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(emp.area_name),
+                    position: normalizeInstitutionalName(emp.position),
+                  };
+                  setEmployees((prev) => {
+                    const idx = prev.findIndex((e) => e.dni === newEmp.dni || e.id === newEmp.id);
+                    if (idx >= 0) {
+                      const next = [...prev];
+                      next[idx] = newEmp;
+                      return next;
+                    }
+                    return [...prev, newEmp];
+                  });
+                  await fetch('/api/employees', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newEmp),
+                  }).catch(() => {});
                   handleRecordAudit('CREAR_EMPLEADO', `Registro de servidor: ${newEmp.first_name} ${newEmp.last_name} (DNI ${newEmp.dni})`);
                 }}
-                onEditEmployee={(emp) => {
-                  setEmployees((prev) => prev.map((e) => (e.id === emp.id ? emp : e)));
-                  if (currentUser?.id === emp.id) setCurrentUser(emp);
-                  handleRecordAudit('EDITAR_EMPLEADO', `Actualización de servidor: ${emp.first_name} ${emp.last_name} (DNI ${emp.dni})`);
+                onEditEmployee={async (emp) => {
+                  const normEmp: Employee = {
+                    ...emp,
+                    first_name: normalizePersonName(emp.first_name),
+                    last_name: normalizePersonName(emp.last_name),
+                    apellido_paterno: normalizePersonName(emp.apellido_paterno),
+                    apellido_materno: normalizePersonName(emp.apellido_materno),
+                    dependencia_name: normalizeInstitutionalName(emp.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(emp.area_name),
+                    position: normalizeInstitutionalName(emp.position),
+                  };
+                  setEmployees((prev) => prev.map((e) => (e.id === normEmp.id || e.dni === normEmp.dni ? normEmp : e)));
+                  if (currentUser?.id === normEmp.id || currentUser?.dni === normEmp.dni) setCurrentUser(normEmp);
+                  await fetch(`/api/employees/${normEmp.id || normEmp.dni}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normEmp),
+                  }).catch(() => {});
+                  handleRecordAudit('EDITAR_EMPLEADO', `Actualización de servidor: ${normEmp.first_name} ${normEmp.last_name} (DNI ${normEmp.dni})`);
                 }}
-                onDeleteEmployee={(id) => {
-                  const found = employees.find((e) => e.id === id);
-                  setEmployees((prev) => prev.filter((e) => e.id !== id));
+                onDeleteEmployee={async (id) => {
+                  const found = employees.find((e) => e.id === id || e.dni === id);
+                  setEmployees((prev) => prev.filter((e) => e.id !== id && e.dni !== id));
+                  await fetch(`/api/employees/${id}`, { method: 'DELETE' }).catch(() => {});
                   if (found) {
                     handleRecordAudit('ELIMINAR_EMPLEADO', `Baja de servidor: ${found.first_name} ${found.last_name} (DNI ${found.dni})`);
                   }
@@ -664,41 +947,88 @@ export const App: React.FC = () => {
                 areas={areas}
                 cargos={cargos}
                 horarios={horarios}
-                onAddVacation={(v) => {
-                  const newV: Vacacion = { ...v, id: `vac-${Date.now()}`, created_at: new Date().toISOString() };
+                onAddVacation={async (v) => {
+                  const newV: Vacacion = {
+                    ...v,
+                    id: `vac-${Date.now()}`,
+                    employee_name: normalizePersonName(v.employee_name),
+                    dependencia_name: normalizeInstitutionalName(v.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(v.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(v.area_name),
+                    created_at: new Date().toISOString(),
+                  };
                   setVacaciones((prev) => [newV, ...prev]);
+                  await fetch('/api/vacaciones', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newV),
+                  }).catch(() => {});
                   handleRecordAudit('SOLICITAR_VACACION', `Solicitud de vacación registrada para servidor DNI ${newV.employee_dni} (${newV.dias_solicitados || newV.total_days || 0} días)`);
                 }}
-                onEditVacation={(v) => setVacaciones((prev) => prev.map((item) => (item.id === v.id ? v : item)))}
-                onDeleteVacation={(id) => setVacaciones((prev) => prev.filter((v) => v.id !== id))}
-                onApproveBoss={(id, bossData) => {
+                onEditVacation={async (v) => {
+                  const normV: Vacacion = {
+                    ...v,
+                    employee_name: normalizePersonName(v.employee_name),
+                    dependencia_name: normalizeInstitutionalName(v.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(v.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(v.area_name),
+                  };
+                  setVacaciones((prev) => prev.map((item) => (item.id === normV.id ? normV : item)));
+                  await fetch(`/api/vacaciones/${normV.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normV),
+                  }).catch(() => {});
+                }}
+                onDeleteVacation={async (id) => {
+                  setVacaciones((prev) => prev.filter((v) => v.id !== id));
+                  await fetch(`/api/vacaciones/${id}`, { method: 'DELETE' }).catch(() => {});
+                }}
+                onApproveBoss={async (id, bossData) => {
+                  const updatedData = {
+                    status: 'VB_JEFE' as const,
+                    boss_approved_at: new Date().toISOString(),
+                    boss_approver_name: normalizePersonName(bossData?.boss_name),
+                  };
                   setVacaciones((prev) =>
-                    prev.map((v) =>
-                      v.id === id
-                        ? { ...v, status: 'VB_JEFE', boss_approved_at: new Date().toISOString(), boss_approver_name: bossData?.boss_name }
-                        : v
-                    )
+                    prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
+                  await fetch(`/api/vacaciones/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedData),
+                  }).catch(() => {});
                   handleRecordAudit('APROBAR_VACACION_JEFE', `VoBo de jefe otorgado a solicitud de vacación ${id}`);
                 }}
-                onApproveHR={(id, hrData) => {
+                onApproveHR={async (id, hrData) => {
+                  const updatedData = {
+                    status: 'APROBADA' as const,
+                    hr_approved_at: new Date().toISOString(),
+                    hr_approver_name: normalizePersonName(hrData?.hr_name),
+                  };
                   setVacaciones((prev) =>
-                    prev.map((v) =>
-                      v.id === id
-                        ? { ...v, status: 'APROBADA', hr_approved_at: new Date().toISOString(), hr_approver_name: hrData?.hr_name }
-                        : v
-                    )
+                    prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
+                  await fetch(`/api/vacaciones/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedData),
+                  }).catch(() => {});
                   handleRecordAudit('APROBAR_VACACION_RRHH', `Resolución aprobatoria de RRHH para vacación ${id}`);
                 }}
-                onRejectVacation={(id, rejectData) => {
+                onRejectVacation={async (id, rejectData) => {
+                  const updatedData = {
+                    status: 'RECHAZADA' as const,
+                    rejection_reason: rejectData?.reason || 'Rechazado',
+                  };
                   setVacaciones((prev) =>
-                    prev.map((v) =>
-                      v.id === id
-                        ? { ...v, status: 'RECHAZADA', rejection_reason: rejectData?.reason || 'Rechazado' }
-                        : v
-                    )
+                    prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
+                  await fetch(`/api/vacaciones/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedData),
+                  }).catch(() => {});
                   handleRecordAudit('RECHAZAR_VACACION', `Vacación rechazada: ${id}`);
                 }}
               />
@@ -718,19 +1048,31 @@ export const App: React.FC = () => {
                 direccionesOrganos={direccionesOrganos}
                 areas={areas}
                 cargos={cargos}
-                onCreatePapeleta={(newP) => {
+                onCreatePapeleta={async (newP) => {
                   const created: PapeletaSalida = {
                     ...newP,
                     id: `pap-${Date.now()}`,
                     code: `PAP-2026-${String(papeletas.length + 1).padStart(3, '0')}`,
+                    employee_name: normalizePersonName(newP.employee_name),
+                    dependencia_name: normalizeInstitutionalName(newP.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(newP.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(newP.area_name),
+                    supervisor_name: normalizePersonName(newP.supervisor_name),
+                    destino: normalizeText(newP.destino),
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),
                   };
                   setPapeletas((prev) => [created, ...prev]);
+                  await fetch('/api/papeletas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(created),
+                  }).catch(() => {});
                   handleRecordAudit('CREAR_PAPELETA', `Papeleta emitida: ${created.code} para ${created.employee_name}`);
                 }}
-                onUpdatePapeletaStatus={(id, action, comment, salida, retorno, approverMeta) => {
+                onUpdatePapeletaStatus={async (id, action, comment, salida, retorno, approverMeta) => {
                   const actStr = action as string;
+                  let updatedItem: PapeletaSalida | null = null;
                   setPapeletas((prev) =>
                     prev.map((p) => {
                       if (p.id !== id) return p;
@@ -740,7 +1082,7 @@ export const App: React.FC = () => {
                         updated.boss_approved_at = new Date().toISOString();
                         updated.boss_comment = comment;
                         if (approverMeta) {
-                          updated.boss_approver_name = approverMeta.boss_name;
+                          updated.boss_approver_name = normalizePersonName(approverMeta.boss_name);
                           updated.boss_approver_dni = approverMeta.boss_dni;
                         }
                       } else if (actStr === 'APPROVE_HR' || actStr === 'VALIDADA_RRHH') {
@@ -758,9 +1100,17 @@ export const App: React.FC = () => {
                       } else {
                         updated.status = action as PapeletaStatus;
                       }
+                      updatedItem = updated;
                       return updated;
                     })
                   );
+                  if (updatedItem) {
+                    await fetch(`/api/papeletas/${id}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(updatedItem),
+                    }).catch(() => {});
+                  }
                   handleRecordAudit('ACTUALIZAR_PAPELETA', `Papeleta ${id} pasó a estado: ${action}`);
                 }}
               />
@@ -782,9 +1132,25 @@ export const App: React.FC = () => {
                 employees={employees}
                 activeRole={activeRole}
                 subTab={activeView === 'admin_roles' ? 'ROLES' : activeView === 'admin_audit' ? 'AUDIT' : 'USERS'}
-                onEditEmployee={(emp) => {
-                  setEmployees((prev) => prev.map((e) => (e.id === emp.id ? emp : e)));
-                  if (currentUser?.id === emp.id) setCurrentUser(emp);
+                onEditEmployee={async (emp) => {
+                  const normEmp = {
+                    ...emp,
+                    first_name: normalizePersonName(emp.first_name),
+                    last_name: normalizePersonName(emp.last_name),
+                    apellido_paterno: normalizePersonName(emp.apellido_paterno),
+                    apellido_materno: normalizePersonName(emp.apellido_materno),
+                    dependencia_name: normalizeInstitutionalName(emp.dependencia_name),
+                    direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name),
+                    area_name: normalizeInstitutionalName(emp.area_name),
+                    position: normalizeInstitutionalName(emp.position),
+                  };
+                  setEmployees((prev) => prev.map((e) => (e.id === normEmp.id || e.dni === normEmp.dni ? normEmp : e)));
+                  if (currentUser?.id === normEmp.id || currentUser?.dni === normEmp.dni) setCurrentUser(normEmp);
+                  await fetch(`/api/employees/${normEmp.id || normEmp.dni}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(normEmp),
+                  }).catch(() => {});
                 }}
               />
             )}

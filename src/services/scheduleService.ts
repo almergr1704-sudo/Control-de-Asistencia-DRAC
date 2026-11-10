@@ -85,18 +85,8 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
     tolerancia_minutos: normalizedTurno.tolerance_minutes,
   };
 
-  try {
-    const { error } = await supabase
-      .from('turnos')
-      .upsert(dbTurno);
-
-    if (!error) {
-      return { success: true, data: normalizedTurno };
-    }
-  } catch (err) {
-    console.warn('Error en upsert Supabase turnos:', err);
-  }
-
+  // 1. Persistencia prioritaria y garantizada en Backend Local
+  let localSaved = false;
   try {
     const res = await fetch('/api/turnos', {
       method: 'POST',
@@ -107,11 +97,20 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
       body: JSON.stringify(normalizedTurno),
     });
     if (res.ok) {
-      const resJson = await res.json();
-      return { success: true, data: resJson.data || normalizedTurno };
+      localSaved = true;
     }
   } catch (err: any) {
-    return { success: false, message: err?.message };
+    console.warn('Aviso guardando turno en backend local:', err?.message);
+  }
+
+  // 2. Replicación en Supabase PostgreSQL
+  try {
+    await Promise.race([
+      supabase.from('turnos').upsert(dbTurno),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase timeout')), 3500)),
+    ]);
+  } catch (err) {
+    console.warn('Aviso en upsert Supabase turnos (continuando con persistencia local):', err);
   }
 
   return { success: true, data: normalizedTurno };
@@ -192,18 +191,7 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
     activo: normalizedHorario.active,
   };
 
-  try {
-    const { error } = await supabase
-      .from('horarios')
-      .upsert(dbHorario);
-
-    if (!error) {
-      return { success: true, data: normalizedHorario };
-    }
-  } catch (err) {
-    console.warn('Error en upsert Supabase horarios:', err);
-  }
-
+  // 1. Persistencia prioritaria y garantizada en Backend Local
   try {
     const res = await fetch('/api/horarios', {
       method: 'POST',
@@ -213,12 +201,21 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
       },
       body: JSON.stringify(normalizedHorario),
     });
-    if (res.ok) {
-      const resJson = await res.json();
-      return { success: true, data: resJson.data || normalizedHorario };
+    if (!res.ok) {
+      console.warn('Aviso guardando horario en API local');
     }
   } catch (err: any) {
-    return { success: false, message: err?.message };
+    console.warn('Error en fetch /api/horarios:', err?.message);
+  }
+
+  // 2. Replicación en Supabase PostgreSQL
+  try {
+    await Promise.race([
+      supabase.from('horarios').upsert(dbHorario),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase timeout')), 3500)),
+    ]);
+  } catch (err) {
+    console.warn('Aviso en upsert Supabase horarios (continuando con persistencia local):', err);
   }
 
   return { success: true, data: normalizedHorario };

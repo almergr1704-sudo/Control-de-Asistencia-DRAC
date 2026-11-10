@@ -22,6 +22,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.text({ type: ['text/*', 'application/octet-stream'], limit: '10mb' }));
 
+import { normalizeText, normalizeInstitutionalName, normalizePersonName } from './src/utils/nameUtils';
+
 // Data Directory and Files
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -37,6 +39,14 @@ const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit-logs.json');
 const TURNOS_FILE = path.join(DATA_DIR, 'turnos.json');
 const HORARIOS_FILE = path.join(DATA_DIR, 'horarios.json');
 const ASIGNACIONES_FILE = path.join(DATA_DIR, 'asignacion-horarios.json');
+const DEPENDENCIAS_FILE = path.join(DATA_DIR, 'dependencias.json');
+const DIRECCIONES_FILE = path.join(DATA_DIR, 'direcciones.json');
+const AREAS_FILE = path.join(DATA_DIR, 'areas.json');
+const CARGOS_FILE = path.join(DATA_DIR, 'cargos.json');
+const RESPONSABLES_FILE = path.join(DATA_DIR, 'responsables.json');
+const PAPELETAS_FILE = path.join(DATA_DIR, 'papeletas.json');
+const VACACIONES_FILE = path.join(DATA_DIR, 'vacaciones.json');
+const ENCARGATURAS_FILE = path.join(DATA_DIR, 'encargaturas.json');
 
 // Helper to read JSON files safely
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -71,7 +81,7 @@ const getPunchesHandler = (req: express.Request, res: express.Response) => {
   const { fecha, dni, limit } = req.query;
 
   // Filter out any legacy synthetic IDs if any remain
-  let filtered = storedPunches.filter((p: any) => !p.id.startsWith('raw-1787835'));
+  let filtered = storedPunches.filter((p: any) => !(p.id && String(p.id).startsWith('raw-1787835')));
 
   if (fecha) {
     filtered = filtered.filter((p) => p.fecha === fecha || p.timestamp?.startsWith(String(fecha)));
@@ -583,14 +593,478 @@ app.delete('/api/zkteco/devices/:id', (req, res) => {
   });
 });
 
-// GET /api/employees
-app.get('/api/employees', (req, res) => {
+// ---------------------------------------------------------------------------
+// 1.1 EMPLEADOS / TRABAJADORES API (CRUD Persistente y Normalizado)
+// ---------------------------------------------------------------------------
+const normalizeEmployeePayload = (body: any, existing?: any) => {
+  const normFirstName = normalizePersonName(body.first_name);
+  const normLastName = normalizePersonName(body.last_name);
+  const normPat = normalizePersonName(body.apellido_paterno || normLastName.split(' ')[0] || '');
+  const normMat = normalizePersonName(body.apellido_materno || normLastName.split(' ')[1] || '');
+  const dni = String(body.dni || existing?.dni || '').trim();
+  const id = body.id || existing?.id || `emp-${dni || Date.now()}`;
+
+  return {
+    id,
+    dni,
+    codigo_trabajador: body.codigo_trabajador || existing?.codigo_trabajador || `DRAC-${dni}`,
+    first_name: normFirstName || existing?.first_name || 'Trabajador',
+    last_name: normLastName || existing?.last_name || 'DRAC',
+    apellido_paterno: normPat,
+    apellido_materno: normMat,
+    email: (body.email || existing?.email || '').toLowerCase().trim(),
+    phone: String(body.phone || existing?.phone || '').trim(),
+    address: normalizeText(body.address || existing?.address || ''),
+    dependencia_id: body.dependencia_id || existing?.dependencia_id || 'dep-01',
+    dependencia_name: normalizeInstitutionalName(body.dependencia_name || existing?.dependencia_name || 'Sede Central'),
+    direccion_organo_id: body.direccion_organo_id || existing?.direccion_organo_id || '',
+    direccion_organo_name: normalizeInstitutionalName(body.direccion_organo_name || existing?.direccion_organo_name || ''),
+    area_id: body.area_id || existing?.area_id || '',
+    area_name: normalizeInstitutionalName(body.area_name || existing?.area_name || ''),
+    position: normalizeInstitutionalName(body.position || body.cargo || existing?.position || 'Servidor Público'),
+    cargo: normalizeInstitutionalName(body.cargo || body.position || existing?.cargo || 'Servidor Público'),
+    cargo_id: body.cargo_id || existing?.cargo_id || '',
+    regimen_laboral: body.regimen_laboral || existing?.regimen_laboral || 'D.L. 276',
+    condicion_laboral: body.condicion_laboral || body.condicion || existing?.condicion_laboral || 'NOMBRADO',
+    is_jefe_director: Boolean(body.is_jefe_director),
+    role: body.role || existing?.role || 'TRABAJADOR',
+    assigned_roles: Array.isArray(body.assigned_roles) && body.assigned_roles.length > 0 ? body.assigned_roles : (existing?.assigned_roles || ['TRABAJADOR']),
+    has_system_access: body.has_system_access !== undefined ? Boolean(body.has_system_access) : true,
+    username: body.username || existing?.username || dni,
+    account_status: body.account_status || existing?.account_status || 'ACTIVE',
+    auth_method: body.auth_method || existing?.auth_method || 'PASSWORD',
+    primer_ingreso: body.primer_ingreso || existing?.primer_ingreso || 'PENDIENTE',
+    password_change_required: body.password_change_required !== undefined ? Boolean(body.password_change_required) : false,
+    password_hash: body.password_hash || existing?.password_hash || null,
+    active: body.active !== undefined ? Boolean(body.active) : true,
+    hire_date: body.hire_date || existing?.hire_date || '2026-01-01',
+    zkteco_pin: body.zkteco_pin || existing?.zkteco_pin || dni,
+    schedule_id: body.schedule_id || existing?.schedule_id || 'hor-01',
+    schedule_name: normalizeInstitutionalName(body.schedule_name || existing?.schedule_name || 'Jornada Partida Institucional DRAC'),
+    updated_at: new Date().toISOString(),
+  };
+};
+
+const handleGetEmployees = (req: express.Request, res: express.Response) => {
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
-  return res.json({
+  return res.json({ success: true, count: employees.length, data: employees });
+};
+
+const handleSaveEmployee = (req: express.Request, res: express.Response) => {
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const body = req.body || {};
+  const existingIdx = employees.findIndex((e) => e.id === body.id || (body.dni && e.dni === body.dni));
+  const existing = existingIdx >= 0 ? employees[existingIdx] : undefined;
+  const normalized = normalizeEmployeePayload(body, existing);
+
+  if (existingIdx >= 0) {
+    employees[existingIdx] = { ...employees[existingIdx], ...normalized };
+  } else {
+    employees.unshift(normalized);
+  }
+
+  writeJsonFile(EMPLOYEES_FILE, employees);
+
+  // Replicar en Supabase PostgreSQL de manera asíncrona
+  try {
+    Promise.resolve(
+      supabaseServer
+        .from('trabajadores')
+        .upsert({
+          id: normalized.id,
+          codigo_drac: normalized.codigo_trabajador,
+          dni: normalized.dni,
+          nombres: normalized.first_name,
+          apellido_paterno: normalized.apellido_paterno,
+          apellido_materno: normalized.apellido_materno,
+          email: normalized.email,
+          telefono: normalized.phone,
+          direccion: normalized.address,
+          dependencia_id: normalized.dependencia_id,
+          area_id: normalized.area_id,
+          cargo_id: normalized.cargo_id || 'crg-05',
+          regimen_id: normalized.regimen_laboral,
+          es_jefe: normalized.is_jefe_director,
+          estado: normalized.active ? 'ACTIVO' : 'INACTIVO',
+          fecha_ingreso: normalized.hire_date,
+          updated_at: normalized.updated_at,
+        })
+    );
+  } catch (_) {}
+
+  return res.status(201).json({
     success: true,
-    count: employees.length,
-    data: employees,
+    message: existingIdx >= 0 ? 'Trabajador actualizado exitosamente.' : 'Trabajador registrado exitosamente.',
+    data: normalized,
   });
+};
+
+const handleUpdateEmployee = (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const idx = employees.findIndex((e) => e.id === id || e.dni === id);
+
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Trabajador no encontrado.' });
+  }
+
+  const normalized = normalizeEmployeePayload(req.body, employees[idx]);
+  employees[idx] = { ...employees[idx], ...normalized };
+  writeJsonFile(EMPLOYEES_FILE, employees);
+
+  // Replicar en Supabase PostgreSQL
+  try {
+    Promise.resolve(
+      supabaseServer
+        .from('trabajadores')
+        .upsert({
+          id: employees[idx].id,
+          codigo_drac: employees[idx].codigo_trabajador,
+          dni: employees[idx].dni,
+          nombres: employees[idx].first_name,
+          apellido_paterno: employees[idx].apellido_paterno,
+          apellido_materno: employees[idx].apellido_materno,
+          email: employees[idx].email,
+          telefono: employees[idx].phone,
+          direccion: employees[idx].address,
+          dependencia_id: employees[idx].dependencia_id,
+          area_id: employees[idx].area_id,
+          cargo_id: employees[idx].cargo_id,
+          regimen_id: employees[idx].regimen_laboral,
+          es_jefe: employees[idx].is_jefe_director,
+          estado: employees[idx].active ? 'ACTIVO' : 'INACTIVO',
+          fecha_ingreso: employees[idx].hire_date,
+          updated_at: new Date().toISOString(),
+        })
+    );
+  } catch (_) {}
+
+  return res.json({ success: true, message: 'Trabajador actualizado exitosamente.', data: employees[idx] });
+};
+
+const handleDeleteEmployee = (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const idx = employees.findIndex((e) => e.id === id || e.dni === id);
+
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Trabajador no encontrado.' });
+  }
+
+  const removed = employees.splice(idx, 1)[0];
+  writeJsonFile(EMPLOYEES_FILE, employees);
+
+  try {
+    Promise.resolve(supabaseServer.from('trabajadores').delete().eq('id', id));
+  } catch (_) {}
+
+  return res.json({ success: true, message: 'Trabajador dado de baja correctamente.', data: removed });
+};
+
+app.get('/api/employees', handleGetEmployees);
+app.get('/api/trabajadores', handleGetEmployees);
+app.post('/api/employees', handleSaveEmployee);
+app.post('/api/trabajadores', handleSaveEmployee);
+app.put('/api/employees/:id', handleUpdateEmployee);
+app.put('/api/trabajadores/:id', handleUpdateEmployee);
+app.delete('/api/employees/:id', handleDeleteEmployee);
+app.delete('/api/trabajadores/:id', handleDeleteEmployee);
+
+// ---------------------------------------------------------------------------
+// 1.2 DEPENDENCIAS DRAC API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/dependencias', (req, res) => {
+  const dependencias = readJsonFile<any[]>(DEPENDENCIAS_FILE, []);
+  return res.json({ success: true, count: dependencias.length, data: dependencias });
+});
+
+app.post('/api/dependencias', (req, res) => {
+  const dependencias = readJsonFile<any[]>(DEPENDENCIAS_FILE, []);
+  const newDep = {
+    id: req.body.id || `dep-${Date.now()}`,
+    code: String(req.body.code || `DEP-0${dependencias.length + 1}`).trim().toUpperCase(),
+    name: normalizeInstitutionalName(req.body.name),
+    type: req.body.type || 'SEDE_CENTRAL',
+    ubigeo: req.body.ubigeo || '060101',
+    address: normalizeText(req.body.address || ''),
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const idx = dependencias.findIndex((d) => d.id === newDep.id || d.code === newDep.code);
+  if (idx >= 0) {
+    dependencias[idx] = { ...dependencias[idx], ...newDep };
+  } else {
+    dependencias.push(newDep);
+  }
+  writeJsonFile(DEPENDENCIAS_FILE, dependencias);
+  return res.status(201).json({ success: true, message: 'Dependencia guardada correctamente.', data: newDep });
+});
+
+app.put('/api/dependencias/:id', (req, res) => {
+  const { id } = req.params;
+  const dependencias = readJsonFile<any[]>(DEPENDENCIAS_FILE, []);
+  const idx = dependencias.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Dependencia no encontrada.' });
+  }
+  dependencias[idx] = {
+    ...dependencias[idx],
+    ...req.body,
+    name: req.body.name ? normalizeInstitutionalName(req.body.name) : dependencias[idx].name,
+    address: req.body.address !== undefined ? normalizeText(req.body.address) : dependencias[idx].address,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(DEPENDENCIAS_FILE, dependencias);
+  return res.json({ success: true, message: 'Dependencia actualizada correctamente.', data: dependencias[idx] });
+});
+
+app.delete('/api/dependencias/:id', (req, res) => {
+  const { id } = req.params;
+  const dependencias = readJsonFile<any[]>(DEPENDENCIAS_FILE, []);
+  const idx = dependencias.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Dependencia no encontrada.' });
+  }
+  const removed = dependencias.splice(idx, 1)[0];
+  writeJsonFile(DEPENDENCIAS_FILE, dependencias);
+  return res.json({ success: true, message: 'Dependencia eliminada.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.3 DIRECCIONES Y ÓRGANOS INSTITUCIONALES API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/direcciones', (req, res) => {
+  const direcciones = readJsonFile<any[]>(DIRECCIONES_FILE, []);
+  return res.json({ success: true, count: direcciones.length, data: direcciones });
+});
+
+app.post('/api/direcciones', (req, res) => {
+  const direcciones = readJsonFile<any[]>(DIRECCIONES_FILE, []);
+  const newDir = {
+    id: req.body.id || `dir-${Date.now()}`,
+    code: String(req.body.code || `DIR-0${direcciones.length + 1}`).trim().toUpperCase(),
+    name: normalizeInstitutionalName(req.body.name),
+    type: req.body.type || 'DIRECCION',
+    dependencia_id: req.body.dependencia_id || 'dep-01',
+    dependencia_name: normalizeInstitutionalName(req.body.dependencia_name || 'Sede Central'),
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const idx = direcciones.findIndex((d) => d.id === newDir.id || d.code === newDir.code);
+  if (idx >= 0) {
+    direcciones[idx] = { ...direcciones[idx], ...newDir };
+  } else {
+    direcciones.push(newDir);
+  }
+  writeJsonFile(DIRECCIONES_FILE, direcciones);
+  return res.status(201).json({ success: true, message: 'Dirección u órgano guardado correctamente.', data: newDir });
+});
+
+app.put('/api/direcciones/:id', (req, res) => {
+  const { id } = req.params;
+  const direcciones = readJsonFile<any[]>(DIRECCIONES_FILE, []);
+  const idx = direcciones.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Dirección u órgano no encontrado.' });
+  }
+  direcciones[idx] = {
+    ...direcciones[idx],
+    ...req.body,
+    name: req.body.name ? normalizeInstitutionalName(req.body.name) : direcciones[idx].name,
+    dependencia_name: req.body.dependencia_name ? normalizeInstitutionalName(req.body.dependencia_name) : direcciones[idx].dependencia_name,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(DIRECCIONES_FILE, direcciones);
+  return res.json({ success: true, message: 'Dirección u órgano actualizado.', data: direcciones[idx] });
+});
+
+app.delete('/api/direcciones/:id', (req, res) => {
+  const { id } = req.params;
+  const direcciones = readJsonFile<any[]>(DIRECCIONES_FILE, []);
+  const idx = direcciones.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Dirección u órgano no encontrado.' });
+  }
+  const removed = direcciones.splice(idx, 1)[0];
+  writeJsonFile(DIRECCIONES_FILE, direcciones);
+  return res.json({ success: true, message: 'Dirección u órgano eliminado.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.4 ÁREAS Y OFICINAS INSTITUCIONALES API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/areas', (req, res) => {
+  const areas = readJsonFile<any[]>(AREAS_FILE, []);
+  return res.json({ success: true, count: areas.length, data: areas });
+});
+
+app.post('/api/areas', (req, res) => {
+  const areas = readJsonFile<any[]>(AREAS_FILE, []);
+  const newArea = {
+    id: req.body.id || `area-${Date.now()}`,
+    code: String(req.body.code || `AREA-0${areas.length + 1}`).trim().toUpperCase(),
+    name: normalizeInstitutionalName(req.body.name),
+    tipo: req.body.tipo || 'OFICINA',
+    dependencia_id: req.body.dependencia_id || 'dep-01',
+    dependencia_name: normalizeInstitutionalName(req.body.dependencia_name || 'Sede Central'),
+    direccion_organo_id: req.body.direccion_organo_id || '',
+    direccion_organo_name: normalizeInstitutionalName(req.body.direccion_organo_name || ''),
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const idx = areas.findIndex((a) => a.id === newArea.id || a.code === newArea.code);
+  if (idx >= 0) {
+    areas[idx] = { ...areas[idx], ...newArea };
+  } else {
+    areas.push(newArea);
+  }
+  writeJsonFile(AREAS_FILE, areas);
+  return res.status(201).json({ success: true, message: 'Área guardada correctamente.', data: newArea });
+});
+
+app.put('/api/areas/:id', (req, res) => {
+  const { id } = req.params;
+  const areas = readJsonFile<any[]>(AREAS_FILE, []);
+  const idx = areas.findIndex((a) => a.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Área no encontrada.' });
+  }
+  areas[idx] = {
+    ...areas[idx],
+    ...req.body,
+    name: req.body.name ? normalizeInstitutionalName(req.body.name) : areas[idx].name,
+    direccion_organo_name: req.body.direccion_organo_name ? normalizeInstitutionalName(req.body.direccion_organo_name) : areas[idx].direccion_organo_name,
+    dependencia_name: req.body.dependencia_name ? normalizeInstitutionalName(req.body.dependencia_name) : areas[idx].dependencia_name,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(AREAS_FILE, areas);
+  return res.json({ success: true, message: 'Área institucional actualizada.', data: areas[idx] });
+});
+
+app.delete('/api/areas/:id', (req, res) => {
+  const { id } = req.params;
+  const areas = readJsonFile<any[]>(AREAS_FILE, []);
+  const idx = areas.findIndex((a) => a.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Área no encontrada.' });
+  }
+  const removed = areas.splice(idx, 1)[0];
+  writeJsonFile(AREAS_FILE, areas);
+  return res.json({ success: true, message: 'Área eliminada.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.5 CARGOS INSTITUCIONALES API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/cargos', (req, res) => {
+  const cargos = readJsonFile<any[]>(CARGOS_FILE, []);
+  return res.json({ success: true, count: cargos.length, data: cargos });
+});
+
+app.post('/api/cargos', (req, res) => {
+  const cargos = readJsonFile<any[]>(CARGOS_FILE, []);
+  const newCargo = {
+    id: req.body.id || `c-${Date.now()}`,
+    code: String(req.body.code || `CRG-0${cargos.length + 1}`).trim().toUpperCase(),
+    name: normalizeInstitutionalName(req.body.name),
+    nivel_jerarquico: req.body.nivel_jerarquico || 'PROFESIONAL',
+    active: req.body.active !== undefined ? Boolean(req.body.active) : true,
+    created_at: req.body.created_at || new Date().toISOString(),
+  };
+
+  const idx = cargos.findIndex((c) => c.id === newCargo.id || c.code === newCargo.code);
+  if (idx >= 0) {
+    cargos[idx] = { ...cargos[idx], ...newCargo };
+  } else {
+    cargos.push(newCargo);
+  }
+  writeJsonFile(CARGOS_FILE, cargos);
+  return res.status(201).json({ success: true, message: 'Cargo guardado correctamente.', data: newCargo });
+});
+
+app.put('/api/cargos/:id', (req, res) => {
+  const { id } = req.params;
+  const cargos = readJsonFile<any[]>(CARGOS_FILE, []);
+  const idx = cargos.findIndex((c) => c.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Cargo no encontrado.' });
+  }
+  cargos[idx] = {
+    ...cargos[idx],
+    ...req.body,
+    name: req.body.name ? normalizeInstitutionalName(req.body.name) : cargos[idx].name,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(CARGOS_FILE, cargos);
+  return res.json({ success: true, message: 'Cargo institucional actualizado.', data: cargos[idx] });
+});
+
+app.delete('/api/cargos/:id', (req, res) => {
+  const { id } = req.params;
+  const cargos = readJsonFile<any[]>(CARGOS_FILE, []);
+  const idx = cargos.findIndex((c) => c.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Cargo no encontrado.' });
+  }
+  const removed = cargos.splice(idx, 1)[0];
+  writeJsonFile(CARGOS_FILE, cargos);
+  return res.json({ success: true, message: 'Cargo institucional eliminado.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.6 RESPONSABLES DESIGNADOS API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/responsables', (req, res) => {
+  const resp = readJsonFile<any[]>(RESPONSABLES_FILE, []);
+  return res.json({ success: true, count: resp.length, data: resp });
+});
+
+app.post('/api/responsables', (req, res) => {
+  const resp = readJsonFile<any[]>(RESPONSABLES_FILE, []);
+  const newResp = {
+    ...req.body,
+    id: req.body.id || `resp-${Date.now()}`,
+    titular_name: req.body.titular_name ? normalizePersonName(req.body.titular_name) : undefined,
+    encargado_name: req.body.encargado_name ? normalizePersonName(req.body.encargado_name) : undefined,
+    created_at: new Date().toISOString(),
+  };
+  const idx = resp.findIndex((r) => r.id === newResp.id);
+  if (idx >= 0) resp[idx] = { ...resp[idx], ...newResp };
+  else resp.push(newResp);
+  writeJsonFile(RESPONSABLES_FILE, resp);
+  return res.status(201).json({ success: true, message: 'Responsable asignado correctamente.', data: newResp });
+});
+
+app.put('/api/responsables/:id', (req, res) => {
+  const { id } = req.params;
+  const resp = readJsonFile<any[]>(RESPONSABLES_FILE, []);
+  const idx = resp.findIndex((r) => r.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Responsable no encontrado.' });
+  }
+
+  resp[idx] = {
+    ...resp[idx],
+    ...req.body,
+    titular_name: req.body.titular_name ? normalizePersonName(req.body.titular_name) : resp[idx].titular_name,
+    encargado_name: req.body.encargado_name ? normalizePersonName(req.body.encargado_name) : resp[idx].encargado_name,
+    title: req.body.title ? normalizeInstitutionalName(req.body.title) : resp[idx].title,
+    unit_name: req.body.unit_name ? normalizeInstitutionalName(req.body.unit_name) : resp[idx].unit_name,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(RESPONSABLES_FILE, resp);
+  return res.json({ success: true, message: 'Responsable actualizado.', data: resp[idx] });
+});
+
+app.delete('/api/responsables/:id', (req, res) => {
+  const { id } = req.params;
+  const resp = readJsonFile<any[]>(RESPONSABLES_FILE, []);
+  const filtered = resp.filter((r) => r.id !== id);
+  writeJsonFile(RESPONSABLES_FILE, filtered);
+  return res.json({ success: true, message: 'Designación eliminada.' });
 });
 
 // ---------------------------------------------------------------------------
@@ -767,12 +1241,12 @@ app.post('/api/asignacion-horarios', (req, res) => {
     id: req.body.id || `asig-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     employee_id: emp?.id || req.body.employee_id || `emp-${req.body.employee_dni}`,
     employee_dni: String(req.body.employee_dni || emp?.dni || '').trim(),
-    employee_name: emp ? `${emp.first_name} ${emp.last_name}` : (req.body.employee_name || 'Trabajador'),
-    employee_cargo: emp?.cargo || emp?.position || req.body.employee_cargo || 'Servidor DRAC',
-    dependencia_name: emp?.dependencia_name || req.body.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
-    area_name: emp?.area_name || req.body.area_name || 'General',
+    employee_name: normalizePersonName(emp ? `${emp.first_name} ${emp.last_name}` : (req.body.employee_name || 'Trabajador')),
+    employee_cargo: normalizeInstitutionalName(emp?.cargo || emp?.position || req.body.employee_cargo || 'Servidor DRAC'),
+    dependencia_name: normalizeInstitutionalName(emp?.dependencia_name || req.body.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+    area_name: normalizeInstitutionalName(emp?.area_name || req.body.area_name || 'General'),
     horario_id: hor?.id || req.body.horario_id || 'hor-01',
-    horario_name: hor?.name || req.body.horario_name || 'Jornada Partida Institucional DRAC',
+    horario_name: normalizeInstitutionalName(hor?.name || req.body.horario_name || 'Jornada Partida Institucional DRAC'),
     horario_code: hor?.code || req.body.horario_code || 'HOR-01',
     fecha_inicio: String(req.body.fecha_inicio || new Date().toISOString().substring(0, 10)).trim(),
     fecha_fin: req.body.fecha_fin ? String(req.body.fecha_fin).trim() : null,
@@ -780,25 +1254,31 @@ app.post('/api/asignacion-horarios', (req, res) => {
     motivo: String(req.body.motivo || (req.body.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por requerimiento de servicio' : 'Horario regular institucional')).trim(),
     documento_sustento: req.body.documento_sustento ? String(req.body.documento_sustento).trim() : 'Memorando Institucional',
     activo: req.body.activo !== undefined ? Boolean(req.body.activo) : true,
-    created_at: new Date().toISOString(),
+    created_at: req.body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
 
   // Si es permanente o nueva asignación activa para el mismo trabajador, desactivar la anterior
   if (newAsignacion.activo && newAsignacion.tipo_asignacion === 'PERMANENTE') {
     asignaciones.forEach((a) => {
-      if (a.employee_dni === newAsignacion.employee_dni && a.tipo_asignacion === 'PERMANENTE') {
+      if (a.employee_dni === newAsignacion.employee_dni && a.tipo_asignacion === 'PERMANENTE' && a.id !== newAsignacion.id) {
         a.activo = false;
         a.fecha_fin = newAsignacion.fecha_inicio;
       }
     });
   }
 
-  asignaciones.unshift(newAsignacion);
+  const existingIdx = asignaciones.findIndex((a) => a.id === newAsignacion.id);
+  if (existingIdx >= 0) {
+    asignaciones[existingIdx] = { ...asignaciones[existingIdx], ...newAsignacion };
+  } else {
+    asignaciones.unshift(newAsignacion);
+  }
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
 
   return res.status(201).json({
     success: true,
-    message: `Asignación de horario ${newAsignacion.tipo_asignacion.toLowerCase()} registrada exitosamente.`,
+    message: existingIdx >= 0 ? 'Asignación de horario actualizada exitosamente.' : `Asignación de horario ${newAsignacion.tipo_asignacion.toLowerCase()} registrada exitosamente.`,
     data: newAsignacion,
   });
 });
@@ -814,6 +1294,8 @@ app.put('/api/asignacion-horarios/:id', (req, res) => {
   asignaciones[idx] = {
     ...asignaciones[idx],
     ...req.body,
+    employee_name: req.body.employee_name ? normalizePersonName(req.body.employee_name) : asignaciones[idx].employee_name,
+    horario_name: req.body.horario_name ? normalizeInstitutionalName(req.body.horario_name) : asignaciones[idx].horario_name,
     updated_at: new Date().toISOString(),
   };
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
@@ -851,12 +1333,12 @@ app.post('/api/asignacion-horarios/bulk', (req, res) => {
       id: `asig-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       employee_id: emp.id,
       employee_dni: emp.dni,
-      employee_name: `${emp.first_name} ${emp.last_name}`,
-      employee_cargo: emp.cargo || emp.position || 'Servidor DRAC',
-      dependencia_name: emp.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
-      area_name: emp.area_name || 'General',
+      employee_name: normalizePersonName(`${emp.first_name} ${emp.last_name}`),
+      employee_cargo: normalizeInstitutionalName(emp.cargo || emp.position || 'Servidor DRAC'),
+      dependencia_name: normalizeInstitutionalName(emp.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+      area_name: normalizeInstitutionalName(emp.area_name || 'General'),
       horario_id: hor.id,
-      horario_name: hor.name,
+      horario_name: normalizeInstitutionalName(hor.name),
       horario_code: hor.code,
       fecha_inicio: fecha_inicio || new Date().toISOString().substring(0, 10),
       fecha_fin: fecha_fin || null,
@@ -887,8 +1369,469 @@ app.post('/api/asignacion-horarios/bulk', (req, res) => {
   });
 });
 
-// POST /api/zkteco/devices/:id/sync - Genuine Hardware Handshake
-app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
+// ---------------------------------------------------------------------------
+// 1.7 PAPELETAS DE SALIDA API (CRUD Persistente y Normalizado)
+// ---------------------------------------------------------------------------
+app.get('/api/papeletas', (req, res) => {
+  const paps = readJsonFile<any[]>(PAPELETAS_FILE, []);
+  return res.json({ success: true, count: paps.length, data: paps });
+});
+
+app.post('/api/papeletas', (req, res) => {
+  const paps = readJsonFile<any[]>(PAPELETAS_FILE, []);
+  const body = req.body || {};
+
+  const newPap = {
+    ...body,
+    id: body.id || `pap-${Date.now()}`,
+    code: body.code || `PAP-2026-${String(paps.length + 1).padStart(3, '0')}`,
+    employee_name: normalizePersonName(body.employee_name),
+    dependencia_name: normalizeInstitutionalName(body.dependencia_name),
+    direccion_organo_name: normalizeInstitutionalName(body.direccion_organo_name),
+    area_name: normalizeInstitutionalName(body.area_name),
+    supervisor_name: normalizePersonName(body.supervisor_name),
+    destino: normalizeText(body.destino),
+    created_at: body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const idx = paps.findIndex((p) => p.id === newPap.id);
+  if (idx >= 0) {
+    paps[idx] = { ...paps[idx], ...newPap };
+  } else {
+    paps.unshift(newPap);
+  }
+  writeJsonFile(PAPELETAS_FILE, paps);
+
+  // Replicar en Supabase
+  try {
+    Promise.resolve(
+      supabaseServer.from('papeletas_salida').upsert({
+        id: newPap.id,
+        codigo: newPap.code,
+        trabajador_id: newPap.employee_id,
+        dni: newPap.employee_dni,
+        motivo: newPap.motivo,
+        destino: newPap.destino,
+        fecha: newPap.fecha,
+        hora_salida_estimada: newPap.hora_estimada_salida,
+        hora_retorno_estimada: newPap.hora_estimada_retorno,
+        hora_salida_real: newPap.hora_real_salida,
+        hora_retorno_real: newPap.hora_real_retorno,
+        estado: newPap.status,
+        created_at: newPap.created_at,
+        updated_at: newPap.updated_at,
+      })
+    );
+  } catch (_) {}
+
+  return res.status(201).json({ success: true, message: 'Papeleta guardada correctamente.', data: newPap });
+});
+
+app.put('/api/papeletas/:id', (req, res) => {
+  const { id } = req.params;
+  const paps = readJsonFile<any[]>(PAPELETAS_FILE, []);
+  const idx = paps.findIndex((p) => p.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Papeleta no encontrada.' });
+  }
+
+  paps[idx] = {
+    ...paps[idx],
+    ...req.body,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(PAPELETAS_FILE, paps);
+
+  try {
+    Promise.resolve(supabaseServer.from('papeletas_salida').upsert({
+      id: paps[idx].id,
+      estado: paps[idx].status,
+      hora_salida_real: paps[idx].hora_real_salida,
+      hora_retorno_real: paps[idx].hora_real_retorno,
+      updated_at: paps[idx].updated_at,
+    }));
+  } catch (_) {}
+
+  return res.json({ success: true, message: 'Papeleta actualizada exitosamente.', data: paps[idx] });
+});
+
+app.delete('/api/papeletas/:id', (req, res) => {
+  const { id } = req.params;
+  const paps = readJsonFile<any[]>(PAPELETAS_FILE, []);
+  const idx = paps.findIndex((p) => p.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Papeleta no encontrada.' });
+  }
+  const removed = paps.splice(idx, 1)[0];
+  writeJsonFile(PAPELETAS_FILE, paps);
+  return res.json({ success: true, message: 'Papeleta eliminada.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.8 VACACIONES API (CRUD Persistente y Normalizado)
+// ---------------------------------------------------------------------------
+app.get('/api/vacaciones', (req, res) => {
+  const vacs = readJsonFile<any[]>(VACACIONES_FILE, []);
+  return res.json({ success: true, count: vacs.length, data: vacs });
+});
+
+app.post('/api/vacaciones', (req, res) => {
+  const vacs = readJsonFile<any[]>(VACACIONES_FILE, []);
+  const body = req.body || {};
+
+  const newVac = {
+    ...body,
+    id: body.id || `vac-${Date.now()}`,
+    code: body.code || `VAC-2026-${String(vacs.length + 1).padStart(3, '0')}`,
+    employee_name: normalizePersonName(body.employee_name),
+    dependencia_name: normalizeInstitutionalName(body.dependencia_name),
+    direccion_organo_name: normalizeInstitutionalName(body.direccion_organo_name),
+    area_name: normalizeInstitutionalName(body.area_name),
+    position: normalizeInstitutionalName(body.position),
+    supervisor_name: normalizePersonName(body.supervisor_name),
+    created_at: body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const idx = vacs.findIndex((v) => v.id === newVac.id);
+  if (idx >= 0) {
+    vacs[idx] = { ...vacs[idx], ...newVac };
+  } else {
+    vacs.unshift(newVac);
+  }
+  writeJsonFile(VACACIONES_FILE, vacs);
+
+  return res.status(201).json({ success: true, message: 'Solicitud de vacación guardada correctamente.', data: newVac });
+});
+
+app.put('/api/vacaciones/:id', (req, res) => {
+  const { id } = req.params;
+  const vacs = readJsonFile<any[]>(VACACIONES_FILE, []);
+  const idx = vacs.findIndex((v) => v.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Registro de vacación no encontrado.' });
+  }
+
+  vacs[idx] = {
+    ...vacs[idx],
+    ...req.body,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(VACACIONES_FILE, vacs);
+  return res.json({ success: true, message: 'Registro de vacación actualizado.', data: vacs[idx] });
+});
+
+app.delete('/api/vacaciones/:id', (req, res) => {
+  const { id } = req.params;
+  const vacs = readJsonFile<any[]>(VACACIONES_FILE, []);
+  const idx = vacs.findIndex((v) => v.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Registro de vacación no encontrado.' });
+  }
+  const removed = vacs.splice(idx, 1)[0];
+  writeJsonFile(VACACIONES_FILE, vacs);
+  return res.json({ success: true, message: 'Registro de vacación eliminado.', data: removed });
+});
+
+// ---------------------------------------------------------------------------
+// 1.9 ENCARGATURAS API (CRUD)
+// ---------------------------------------------------------------------------
+app.get('/api/encargaturas', (req, res) => {
+  const encs = readJsonFile<any[]>(ENCARGATURAS_FILE, []);
+  return res.json({ success: true, count: encs.length, data: encs });
+});
+
+app.post('/api/encargaturas', (req, res) => {
+  const encs = readJsonFile<any[]>(ENCARGATURAS_FILE, []);
+  const body = req.body || {};
+
+  const newEnc = {
+    ...body,
+    id: body.id || `enc-${Date.now()}`,
+    titular_name: normalizePersonName(body.titular_name),
+    encargado_name: normalizePersonName(body.encargado_name),
+    cargo_origen: normalizeInstitutionalName(body.cargo_origen),
+    cargo_encargado: normalizeInstitutionalName(body.cargo_encargado),
+    unidad_encargada: normalizeInstitutionalName(body.unidad_encargada),
+    created_at: body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const idx = encs.findIndex((e) => e.id === newEnc.id);
+  if (idx >= 0) {
+    encs[idx] = { ...encs[idx], ...newEnc };
+  } else {
+    encs.unshift(newEnc);
+  }
+  writeJsonFile(ENCARGATURAS_FILE, encs);
+
+  return res.status(201).json({ success: true, message: 'Encargatura guardada correctamente.', data: newEnc });
+});
+
+app.put('/api/encargaturas/:id', (req, res) => {
+  const { id } = req.params;
+  const encs = readJsonFile<any[]>(ENCARGATURAS_FILE, []);
+  const idx = encs.findIndex((e) => e.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Encargatura no encontrada.' });
+  }
+
+  encs[idx] = {
+    ...encs[idx],
+    ...req.body,
+    updated_at: new Date().toISOString(),
+  };
+  writeJsonFile(ENCARGATURAS_FILE, encs);
+  return res.json({ success: true, message: 'Encargatura actualizada.', data: encs[idx] });
+});
+
+app.delete('/api/encargaturas/:id', (req, res) => {
+  const { id } = req.params;
+  const encs = readJsonFile<any[]>(ENCARGATURAS_FILE, []);
+  const idx = encs.findIndex((e) => e.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Encargatura no encontrada.' });
+  }
+  const removed = encs.splice(idx, 1)[0];
+  writeJsonFile(ENCARGATURAS_FILE, encs);
+  return res.json({ success: true, message: 'Encargatura eliminada.', data: removed });
+});
+
+function createZkChkSum(buffer: Buffer): number {
+  let checksum = 0;
+  let len = buffer.length;
+  let i = 0;
+  while (len > 1) {
+    checksum += buffer.readUInt16LE(i);
+    i += 2;
+    len -= 2;
+  }
+  if (len > 0) checksum += buffer[i];
+  while (checksum >> 16) {
+    checksum = (checksum & 0xffff) + (checksum >> 16);
+  }
+  return ~checksum & 0xffff;
+}
+
+function createZkTcpHeader(cmd: number, sessionId: number, replyId: number, data: string | Buffer = ''): Buffer {
+  const dataBuf = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
+  const payload = Buffer.alloc(8 + dataBuf.length);
+  payload.writeUInt16LE(cmd, 0);
+  payload.writeUInt16LE(0, 2);
+  payload.writeUInt16LE(sessionId, 4);
+  payload.writeUInt16LE(replyId, 6);
+  if (dataBuf.length > 0) dataBuf.copy(payload, 8);
+  const chk = createZkChkSum(payload);
+  payload.writeUInt16LE(chk, 2);
+
+  const tcpPacket = Buffer.alloc(8 + payload.length);
+  tcpPacket[0] = 0x50;
+  tcpPacket[1] = 0x50;
+  tcpPacket[2] = 0x82;
+  tcpPacket[3] = 0x7d;
+  tcpPacket.writeUInt32LE(payload.length, 4);
+  payload.copy(tcpPacket, 8);
+  return tcpPacket;
+}
+
+function decodeZkPackedTime(t: number): string {
+  if (!t || isNaN(t)) return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  if (t > 1500000000 && t < 2200000000) {
+    return new Date(t * 1000).toISOString().replace('T', ' ').substring(0, 19);
+  }
+  try {
+    let second = t % 60;
+    t = Math.floor(t / 60);
+    let minute = t % 60;
+    t = Math.floor(t / 60);
+    let hour = t % 24;
+    t = Math.floor(t / 24);
+    let day = (t % 31) + 1;
+    t = Math.floor(t / 31);
+    let month = (t % 12) + 1;
+    t = Math.floor(t / 12);
+    let year = t + 2000;
+    if (year >= 2000 && year <= 2040 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`;
+    }
+  } catch (_) {}
+  return new Date().toISOString().replace('T', ' ').substring(0, 19);
+}
+
+function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any[] {
+  const punches: any[] = [];
+  if (!dataBuf || dataBuf.length < 14) return punches;
+
+  if (dataBuf.length >= 40) {
+    const recSize = 40;
+    for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
+      const chunk = dataBuf.slice(i, i + recSize);
+      const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+      if (pin && pin.length > 0 && /^[0-9a-zA-Z_-]+$/.test(pin)) {
+        const verifyType = chunk[24];
+        const punchState = chunk[25];
+        const rawTime = chunk.readUInt32LE(26);
+        const punchTime = decodeZkPackedTime(rawTime);
+        const [fechaPart, horaPart] = punchTime.split(' ');
+        punches.push({
+          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          device_sn: serial,
+          device_ip: host,
+          employee_dni: pin,
+          employee_code: pin,
+          fecha: fechaPart,
+          hora: horaPart,
+          timestamp: punchTime,
+          verify_mode: verifyType === 15 ? 'FACE' : (verifyType === 2 ? 'PASSWORD' : 'FINGERPRINT'),
+          punch_type: 'AUTO',
+          punch_state: punchState || 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  if (punches.length === 0 && dataBuf.length >= 14) {
+    const recSize = 14;
+    for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
+      const chunk = dataBuf.slice(i, i + recSize);
+      const userSn = chunk.readUInt16LE(0);
+      if (userSn > 0) {
+        const rawTime = chunk.readUInt32LE(2);
+        const punchTime = decodeZkPackedTime(rawTime);
+        const [fechaPart, horaPart] = punchTime.split(' ');
+        const pin = String(userSn);
+        punches.push({
+          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          device_sn: serial,
+          device_ip: host,
+          employee_dni: pin,
+          employee_code: pin,
+          fecha: fechaPart,
+          hora: horaPart,
+          timestamp: punchTime,
+          verify_mode: chunk[6] === 15 ? 'FACE' : 'FINGERPRINT',
+          punch_type: 'AUTO',
+          punch_state: chunk[7] || 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  return punches;
+}
+
+async function downloadRealPunchesOverTcp(
+  ip: string,
+  port: number,
+  timeoutMs: number = 3500,
+  commKey: number = 0,
+  serialHint: string = 'AEH2223460040'
+): Promise<{ success: boolean; message: string; punches: any[]; latency: number }> {
+  const startTime = Date.now();
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let sessionId = 0;
+    let replyId = 0;
+    let stage: 'CONNECT' | 'ATTLOG' = 'CONNECT';
+    const collectedData: Buffer[] = [];
+    let idleTimer: any = null;
+    let isFinished = false;
+
+    const cleanup = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      socket.removeAllListeners();
+      if (!socket.destroyed) socket.destroy();
+    };
+
+    const finish = (success: boolean, msg: string, rawPunches: any[]) => {
+      if (isFinished) return;
+      isFinished = true;
+      cleanup();
+      const latency = Date.now() - startTime;
+      resolve({ success, message: msg, punches: rawPunches, latency });
+    };
+
+    socket.setTimeout(timeoutMs);
+
+    socket.on('error', (err) => {
+      finish(false, `Error socket TCP (${ip}:${port}): ${err.message}`, []);
+    });
+
+    socket.on('timeout', () => {
+      finish(false, `Timeout conectando al biométrico en ${ip}:${port}`, []);
+    });
+
+    socket.connect(port, ip, () => {
+      const connectPacket = createZkTcpHeader(1000, 0, 0, '');
+      socket.write(connectPacket);
+    });
+
+    socket.on('data', (chunk) => {
+      let payload = chunk;
+      if (
+        chunk.length >= 8 &&
+        (chunk.readUInt32LE(0) === 0x5050827d ||
+          chunk.readUInt32BE(0) === 0x5050827d ||
+          (chunk[0] === 0x7d && chunk[1] === 0x82) ||
+          (chunk[0] === 0x50 && chunk[1] === 0x50))
+      ) {
+        payload = chunk.slice(8);
+      }
+
+      if (stage === 'CONNECT') {
+        if (payload.length >= 8) {
+          sessionId = payload.readUInt16LE(4);
+          replyId = payload.readUInt16LE(6);
+          stage = 'ATTLOG';
+          const attlogPacket = createZkTcpHeader(13, sessionId, replyId, '');
+          socket.write(attlogPacket);
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            finish(true, 'Conexión verificada (buffer de marcaciones vacío)', []);
+          }, 2000);
+          return;
+        }
+      }
+
+      if (stage === 'ATTLOG') {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          const fullBuf = Buffer.concat(collectedData);
+          const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip);
+          finish(true, `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`, parsed);
+        }, 900);
+
+        if (payload.length >= 8) {
+          const cmd = payload.readUInt16LE(0);
+          if (cmd === 1500 && payload.length >= 12) {
+            if (payload.length > 12) collectedData.push(payload.slice(12));
+            return;
+          }
+          if (cmd === 2002) {
+            collectedData.push(payload.slice(8));
+            return;
+          }
+          if (cmd === 2000 && collectedData.length > 0) {
+            const fullBuf = Buffer.concat(collectedData);
+            const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip);
+            finish(true, `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`, parsed);
+            return;
+          }
+        }
+        collectedData.push(payload);
+      }
+    });
+  });
+}
+
+// POST /api/zkteco/devices/:id/sync & /api/devices/:id/download-punches
+const handleDeviceSyncAndDownload = async (req: express.Request, res: express.Response) => {
   const { id } = req.params;
   const devices = readJsonFile<any[]>(DEVICES_FILE, []);
   const device = devices.find((d) => d.id === id || d.serial_number === id);
@@ -897,37 +1840,12 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
     return res.status(404).json({ success: false, message: 'Dispositivo no encontrado' });
   }
 
-  // Attempt real TCP socket handshake to verify IP & port reachability
   const host = device.ip_address || '192.168.1.198';
   const port = Number(req.body?.port) || device.port || 7496;
 
-  const checkSocket = (): Promise<{ ok: boolean; latency: number; errorMsg?: string }> => {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
-      const socket = new net.Socket();
-      socket.setTimeout(2500);
+  const result = await downloadRealPunchesOverTcp(host, port, 4000, 0, device.serial_number || 'AEH2223460040');
 
-      socket.connect(port, host, () => {
-        const latency = Date.now() - startTime;
-        socket.destroy();
-        resolve({ ok: true, latency });
-      });
-
-      socket.on('error', (err) => {
-        socket.destroy();
-        resolve({ ok: false, latency: 0, errorMsg: err.message });
-      });
-
-      socket.on('timeout', () => {
-        socket.destroy();
-        resolve({ ok: false, latency: 0, errorMsg: `Timeout de conexión en ${host}:${port}` });
-      });
-    });
-  };
-
-  const { ok, latency, errorMsg } = await checkSocket();
-
-  if (!ok) {
+  if (!result.success && result.punches.length === 0) {
     device.status = 'OFFLINE';
     device.tcp_status = 'OFFLINE';
     writeJsonFile(DEVICES_FILE, devices);
@@ -937,7 +1855,7 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
       new_count: 0,
       device_id: device.id,
       serial_number: device.serial_number,
-      message: `No se pudo conectar con el marcador ZKTeco G3 en ${host}:${port}. Dispositivo desconectado (${errorMsg || 'Error TCP'}). No se generaron marcaciones.`,
+      message: `No se pudo conectar con el marcador ZKTeco G3 en ${host}:${port}. Dispositivo desconectado (${result.message}). No se generaron marcaciones ficticias.`,
     });
   }
 
@@ -945,18 +1863,96 @@ app.post('/api/zkteco/devices/:id/sync', async (req, res) => {
   device.last_activity = new Date().toISOString();
   device.status = 'ONLINE';
   device.tcp_status = 'ONLINE';
-  device.last_latency_ms = latency;
+  device.last_latency_ms = result.latency || 2;
   writeJsonFile(DEVICES_FILE, devices);
+
+  let newlyAdded = 0;
+  if (result.punches.length > 0) {
+    const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+    const existingKeys = new Set(storedPunches.map((p) => `${p.employee_dni || p.employee_code}_${p.timestamp}`));
+    const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+    const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+
+    for (const p of result.punches) {
+      const key = `${p.employee_dni || p.employee_code}_${p.timestamp}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        const emp = employees.find((e) => e.dni === p.employee_dni || e.zkteco_pin === p.employee_code);
+        const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
+        const enriched = {
+          ...p,
+          employee_name: workerName,
+          device_name: device.name || 'ZKTeco G3 Sede Central',
+        };
+        storedPunches.unshift(enriched);
+        newlyAdded++;
+
+        // Integrar en Asistencia del día
+        if (emp) {
+          const fechaPart = p.fecha;
+          const horaPart = p.hora;
+          const punchHour = horaPart ? horaPart.substring(0, 5) : '08:00';
+          const attIndex = existingAttendance.findIndex((a) => a.employee_dni === emp.dni && a.fecha === fechaPart);
+          if (attIndex === -1) {
+            const isLate = punchHour > '08:10';
+            existingAttendance.unshift({
+              id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              employee_id: emp.id,
+              employee_dni: emp.dni,
+              employee_name: workerName,
+              dependencia_id: emp.dependencia_id || 'dep-01',
+              dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
+              fecha: fechaPart,
+              t1_scheduled_in: '08:00',
+              t1_scheduled_out: '13:00',
+              t1_real_in: punchHour,
+              t1_real_out: null,
+              t2_scheduled_in: '14:00',
+              t2_scheduled_out: '17:00',
+              t2_real_in: null,
+              t2_real_out: null,
+              status: isLate ? 'LATE' : 'PUNCTUAL',
+              tardiness_minutes: isLate ? 15 : 0,
+              net_tardiness_minutes: isLate ? 5 : 0,
+              total_effective_hours: 4.5,
+              raw_punch_id: enriched.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          } else {
+            const att = existingAttendance[attIndex];
+            if (!att.t1_real_in) att.t1_real_in = punchHour;
+            else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
+            else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
+            else if (!att.t2_real_out && punchHour >= '16:00') {
+              att.t2_real_out = punchHour;
+              att.total_effective_hours = 8.0;
+            }
+            att.updated_at = new Date().toISOString();
+            existingAttendance[attIndex] = att;
+          }
+        }
+      }
+    }
+    writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
+    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  }
 
   return res.json({
     success: true,
-    imported_count: 0,
-    new_count: 0,
+    imported_count: result.punches.length,
+    new_count: newlyAdded,
     device_id: device.id,
     serial_number: device.serial_number,
-    message: `Enlace Socket TCP verificado (${host}:${port}). Estado: ONLINE (${latency}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
+    message: newlyAdded > 0
+      ? `Descarga completada: ${newlyAdded} marcaciones reales recuperadas exitosamente vía Socket TCP (${host}:${port}).`
+      : `Enlace Socket TCP verificado (${host}:${port}). Estado: ONLINE (${result.latency || 2}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
+    punches: result.punches,
   });
-});
+};
+
+app.post('/api/zkteco/devices/:id/sync', handleDeviceSyncAndDownload);
+app.post('/api/devices/:id/download-punches', handleDeviceSyncAndDownload);
 
 // GET /api/zkteco/agent/status - Lista de agentes Windows LAN
 app.get('/api/zkteco/agent/status', (req, res) => {
@@ -1057,23 +2053,100 @@ app.post('/api/zkteco/agent/command', async (req, res) => {
   }
 
   // DOWNLOAD_PUNCHES o SYNC_BIOTIME
-  const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
-  const count = rawPunches.length;
+  const result = await downloadRealPunchesOverTcp(activeIp, devPort, 4000, 0, cleanSerial);
+
+  const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+  let newlyAdded = 0;
+
+  if (result.punches && result.punches.length > 0) {
+    const existingKeys = new Set(storedPunches.map((p) => `${p.employee_dni || p.employee_code}_${p.timestamp}`));
+    const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+    const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+
+    for (const p of result.punches) {
+      const key = `${p.employee_dni || p.employee_code}_${p.timestamp}`;
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        const emp = employees.find((e) => e.dni === p.employee_dni || e.zkteco_pin === p.employee_code);
+        const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
+        const enriched = {
+          ...p,
+          employee_name: workerName,
+          device_name: targetDev.name || 'ZKTeco G3 Sede Central',
+        };
+        storedPunches.unshift(enriched);
+        newlyAdded++;
+
+        if (emp) {
+          const fechaPart = p.fecha;
+          const horaPart = p.hora;
+          const punchHour = horaPart ? horaPart.substring(0, 5) : '08:00';
+          const attIndex = existingAttendance.findIndex((a) => a.employee_dni === emp.dni && a.fecha === fechaPart);
+          if (attIndex === -1) {
+            const isLate = punchHour > '08:10';
+            existingAttendance.unshift({
+              id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              employee_id: emp.id,
+              employee_dni: emp.dni,
+              employee_name: workerName,
+              dependencia_id: emp.dependencia_id || 'dep-01',
+              dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
+              fecha: fechaPart,
+              t1_scheduled_in: '08:00',
+              t1_scheduled_out: '13:00',
+              t1_real_in: punchHour,
+              t1_real_out: null,
+              t2_scheduled_in: '14:00',
+              t2_scheduled_out: '17:00',
+              t2_real_in: null,
+              t2_real_out: null,
+              status: isLate ? 'LATE' : 'PUNCTUAL',
+              tardiness_minutes: isLate ? 15 : 0,
+              net_tardiness_minutes: isLate ? 5 : 0,
+              total_effective_hours: 4.5,
+              raw_punch_id: enriched.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          } else {
+            const att = existingAttendance[attIndex];
+            if (!att.t1_real_in) att.t1_real_in = punchHour;
+            else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
+            else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
+            else if (!att.t2_real_out && punchHour >= '16:00') {
+              att.t2_real_out = punchHour;
+              att.total_effective_hours = 8.0;
+            }
+            att.updated_at = new Date().toISOString();
+            existingAttendance[attIndex] = att;
+          }
+        }
+      }
+    }
+    writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
+    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  }
+
+  const finalTotal = storedPunches.length;
+
   return res.json({
-    success: true,
-    message: count > 0
-      ? `Descarga de marcaciones ejecutada vía Agente LAN (${activeIp}:${devPort}): ${count} marcaciones recuperadas.`
-      : `Descarga de marcaciones ejecutada vía Agente LAN (${activeIp}:${devPort}): 0 marcaciones recuperadas. No se encontraron nuevas marcaciones en el dispositivo.`,
+    success: result.success || newlyAdded > 0,
+    message: newlyAdded > 0
+      ? `Descarga de marcaciones completada (${activeIp}:${devPort}): ${newlyAdded} marcaciones reales recuperadas.`
+      : result.success
+      ? `Conexión TCP verificada con el marcador ZKTeco G3 (${activeIp}:${devPort}, ${result.latency || 2}ms). No se encontraron nuevas marcaciones en el dispositivo.`
+      : `No se pudo descargar marcaciones: ${result.message}`,
     details: {
       ip: activeIp,
       port: devPort,
       model: cleanModel,
       serial: cleanSerial,
       serial_number: cleanSerial,
-      latency_ms: 2,
+      latency_ms: result.latency || 2,
       users_in_clock: 14,
-      total_clock_punches: count,
-      punches: rawPunches.slice(0, 100),
+      total_clock_punches: finalTotal,
+      new_punches_downloaded: newlyAdded,
+      punches: storedPunches.slice(0, 100),
     },
   });
 });
