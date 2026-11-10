@@ -8,6 +8,7 @@ import {
   Trash2,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Info,
   Calculator,
   Search,
@@ -69,8 +70,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   }, [activeSubView]);
 
   // Data States
-  const [turnos, setTurnos] = useState<Turno[]>(INITIAL_TURNOS);
-  const [horarios, setHorarios] = useState<Horario[]>(INITIAL_HORARIOS);
+  const [turnos, setTurnos] = useState<Turno[]>([]);
+  const [horarios, setHorarios] = useState<Horario[]>([]);
   const [asignaciones, setAsignaciones] = useState<AsignacionHorario[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -153,9 +154,9 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
         fetchHorariosFromSupabase(),
         fetchAsignacionesFromSupabase(),
       ]);
-      if (tList && tList.length > 0) setTurnos(tList);
-      if (hList && hList.length > 0) setHorarios(hList);
-      if (aList) setAsignaciones(aList);
+      if (Array.isArray(tList)) setTurnos(tList);
+      if (Array.isArray(hList)) setHorarios(hList);
+      if (Array.isArray(aList)) setAsignaciones(aList);
     } catch (err) {
       console.warn('Aviso cargando datos de turnos/horarios:', err);
     } finally {
@@ -738,98 +739,120 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* ==================================================== */}
       {activeTab === 'turnos' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {turnos.map((turno) => (
-              <div
-                key={turno.id}
-                className="bg-[#0F1115] border border-slate-800 hover:border-slate-700 rounded-xl p-5 space-y-4 transition-all shadow-sm flex flex-col justify-between"
+          {turnos.length === 0 ? (
+            <div className="bg-[#0F1115] border border-slate-800 rounded-xl p-12 text-center space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-indigo-950/60 border border-indigo-800/40 flex items-center justify-center mx-auto text-indigo-400">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-white font-bold text-sm">No existen turnos laborales registrados</h4>
+                <p className="text-slate-400 text-xs max-w-lg mx-auto">
+                  El sistema no impone turnos precargados ni simulados. Registre los turnos laborales específicos (mañana, tarde, continuo o rotativo) que utiliza la institución mediante el botón «+ Nuevo Turno».
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenTurnoModal()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
               >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
-                          {turno.code}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            turno.active
-                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                              : 'bg-rose-950 text-rose-400 border border-rose-800'
-                          }`}
+                <Plus className="w-4 h-4" />
+                Registrar Primer Turno
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {turnos.map((turno) => (
+                <div
+                  key={turno.id}
+                  className="bg-[#0F1115] border border-slate-800 hover:border-slate-700 rounded-xl p-5 space-y-4 transition-all shadow-sm flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                            {turno.code}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              turno.active
+                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                : 'bg-rose-950 text-rose-400 border border-rose-800'
+                            }`}
+                          >
+                            {turno.active ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </div>
+                        <h3 className="font-bold text-sm text-white mt-1.5">{turno.name}</h3>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTurnoModal(turno)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Editar Turno"
                         >
-                          {turno.active ? 'Activo' : 'Inactivo'}
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: 'turno',
+                              id: turno.id,
+                              name: `${turno.code} - ${turno.name}`,
+                            })
+                          }
+                          className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                          title="Eliminar Turno"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {turno.description && (
+                      <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
+                        {turno.description}
+                      </p>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-[#090A0D] border border-slate-800 rounded-lg">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Entrada</span>
+                        <span className="font-mono text-sm font-bold text-emerald-400 mt-0.5 block">
+                          {turno.start_time} hrs
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Tolerancia: {turno.tolerance_minutes} min
                         </span>
                       </div>
-                      <h3 className="font-bold text-sm text-white mt-1.5">{turno.name}</h3>
+
+                      <div className="p-2.5 bg-[#090A0D] border border-slate-800 rounded-lg">
+                        <span className="text-[10px] text-slate-500 uppercase font-bold block">Salida</span>
+                        <span className="font-mono text-sm font-bold text-indigo-300 mt-0.5 block">
+                          {turno.end_time} hrs
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {turno.is_overnight ? 'Turno nocturno' : 'Mismo día'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenTurnoModal(turno)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                        title="Editar Turno"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDeleteTarget({
-                            type: 'turno',
-                            id: turno.id,
-                            name: `${turno.code} - ${turno.name}`,
-                          })
-                        }
-                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                        title="Eliminar Turno"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-800/80 rounded-lg text-[11px] font-mono text-slate-300 flex items-center justify-between">
+                      <span className="text-slate-500">Ventana Biométrica:</span>
+                      <span>{turno.window_entry_start || '07:00'} - {turno.window_exit_limit || '17:30'}</span>
                     </div>
                   </div>
 
-                  {turno.description && (
-                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">
-                      {turno.description}
-                    </p>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2.5 bg-[#090A0D] border border-slate-800 rounded-lg">
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Entrada</span>
-                      <span className="font-mono text-sm font-bold text-emerald-400 mt-0.5 block">
-                        {turno.start_time} hrs
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        Tolerancia: {turno.tolerance_minutes} min
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 bg-[#090A0D] border border-slate-800 rounded-lg">
-                      <span className="text-[10px] text-slate-500 uppercase font-bold block">Salida</span>
-                      <span className="font-mono text-sm font-bold text-indigo-300 mt-0.5 block">
-                        {turno.end_time} hrs
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {turno.is_overnight ? 'Turno nocturno' : 'Mismo día'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-900/40 border border-slate-800/80 rounded-lg text-[11px] font-mono text-slate-300 flex items-center justify-between">
-                    <span className="text-slate-500">Ventana Biométrica:</span>
-                    <span>{turno.window_entry_start || '07:00'} - {turno.window_exit_limit || '17:30'}</span>
+                  <div className="pt-2 text-[10px] text-slate-500 font-mono">
+                    Registrado: {new Date(turno.created_at).toLocaleDateString('es-PE')}
                   </div>
                 </div>
-
-                <div className="pt-2 text-[10px] text-slate-500 font-mono">
-                  Registrado: {new Date(turno.created_at).toLocaleDateString('es-PE')}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -838,133 +861,155 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* ==================================================== */}
       {activeTab === 'horarios' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {horarios.map((horario) => (
-              <div
-                key={horario.id}
-                className="bg-[#0F1115] border border-slate-800 hover:border-slate-700 rounded-xl p-5 space-y-4 transition-all shadow-sm"
+          {horarios.length === 0 ? (
+            <div className="bg-[#0F1115] border border-slate-800 rounded-xl p-12 text-center space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-indigo-950/60 border border-indigo-800/40 flex items-center justify-center mx-auto text-indigo-400">
+                <Calendar className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-white font-bold text-sm">No existen horarios laborales registrados</h4>
+                <p className="text-slate-400 text-xs max-w-lg mx-auto">
+                  Los horarios institucionales articulan uno o dos turnos diarios (jornada continua o partida). Utilice el botón «+ Nuevo Horario» para configurar los esquemas de trabajo institucional según las necesidades de la institución.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenHorarioModal()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm"
               >
-                <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
-                        {horario.code}
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
-                        {horario.turn_count} {horario.turn_count === 1 ? 'Turno Diario' : 'Turnos Diarios'}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          horario.active
-                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                            : 'bg-rose-950 text-rose-400 border border-rose-800'
-                        }`}
-                      >
-                        {horario.active ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </div>
-                    <h3 className="font-bold text-sm text-white mt-1.5">{horario.name}</h3>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenHorarioModal(horario)}
-                      className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Editar Horario"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDeleteTarget({
-                          type: 'horario',
-                          id: horario.id,
-                          name: `${horario.code} - ${horario.name}`,
-                        })
-                      }
-                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Eliminar Horario"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Turnos incluidos en este horario */}
-                <div className="space-y-2">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                    Turnos que integran este horario:
-                  </span>
-
-                  {/* Turno 1 */}
-                  <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                      <span className="font-bold text-slate-200">
-                        {horario.turno1_name || 'Turno 1'}
-                      </span>
-                    </div>
-                    <span className="font-mono text-emerald-400 font-semibold text-[11px]">
-                      Primer Turno
-                    </span>
-                  </div>
-
-                  {/* Turno 2 (si aplica) */}
-                  {horario.turn_count === 2 && (
-                    <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg flex items-center justify-between text-xs">
+                <Plus className="w-4 h-4" />
+                Registrar Primer Horario
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {horarios.map((horario) => (
+                <div
+                  key={horario.id}
+                  className="bg-[#0F1115] border border-slate-800 hover:border-slate-700 rounded-xl p-5 space-y-4 transition-all shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
+                    <div>
                       <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
-                        <span className="font-bold text-slate-200">
-                          {horario.turno2_name || 'Turno 2'}
+                        <span className="font-mono px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                          {horario.code}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                          {horario.turn_count} {horario.turn_count === 1 ? 'Turno Diario' : 'Turnos Diarios'}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            horario.active
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : 'bg-rose-950 text-rose-400 border border-rose-800'
+                          }`}
+                        >
+                          {horario.active ? 'Activo' : 'Inactivo'}
                         </span>
                       </div>
-                      <span className="font-mono text-indigo-300 font-semibold text-[11px]">
-                        Segundo Turno
-                      </span>
+                      <h3 className="font-bold text-sm text-white mt-1.5">{horario.name}</h3>
                     </div>
-                  )}
-                </div>
 
-                {/* Resumen de días y horas */}
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-400 text-[11px]">Días:</span>
                     <div className="flex items-center gap-1">
-                      {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => {
-                        const isWork = horario.working_days?.includes(d);
-                        const labels: Record<string, string> = {
-                          MON: 'L',
-                          TUE: 'M',
-                          WED: 'M',
-                          THU: 'J',
-                          FRI: 'V',
-                          SAT: 'S',
-                        };
-                        return (
-                          <span
-                            key={d}
-                            className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
-                              isWork
-                                ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60'
-                                : 'bg-slate-900 text-slate-600 border border-slate-800'
-                            }`}
-                          >
-                            {labels[d]}
-                          </span>
-                        );
-                      })}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenHorarioModal(horario)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Editar Horario"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteTarget({
+                            type: 'horario',
+                            id: horario.id,
+                            name: `${horario.code} - ${horario.name}`,
+                          })
+                        }
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Eliminar Horario"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
-                  <span className="font-mono font-bold text-indigo-400 text-xs">
-                    {horario.total_hours || 8} horas diarias
-                  </span>
+                  {/* Turnos incluidos en este horario */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                      Turnos que integran este horario:
+                    </span>
+
+                    {/* Turno 1 */}
+                    <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span className="font-bold text-slate-200">
+                          {horario.turno1_name || 'Turno 1'}
+                        </span>
+                      </div>
+                      <span className="font-mono text-emerald-400 font-semibold text-[11px]">
+                        Primer Turno
+                      </span>
+                    </div>
+
+                    {/* Turno 2 (si aplica) */}
+                    {horario.turn_count === 2 && (
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                          <span className="font-bold text-slate-200">
+                            {horario.turno2_name || 'Turno 2'}
+                          </span>
+                        </div>
+                        <span className="font-mono text-indigo-300 font-semibold text-[11px]">
+                          Segundo Turno
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Resumen de días y horas */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[11px]">Días:</span>
+                      <div className="flex items-center gap-1">
+                        {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((d) => {
+                          const isWork = horario.working_days?.includes(d);
+                          const labels: Record<string, string> = {
+                            MON: 'L',
+                            TUE: 'M',
+                            WED: 'M',
+                            THU: 'J',
+                            FRI: 'V',
+                            SAT: 'S',
+                          };
+                          return (
+                            <span
+                              key={d}
+                              className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold ${
+                                isWork
+                                  ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60'
+                                  : 'bg-slate-900 text-slate-600 border border-slate-800'
+                              }`}
+                            >
+                              {labels[d]}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <span className="font-mono font-bold text-indigo-400 text-xs">
+                      {horario.total_hours || 8} horas diarias
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1477,6 +1522,28 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             </div>
 
             <form onSubmit={handleSaveHorario} className="p-5 space-y-4 text-xs">
+              {turnos.length === 0 && (
+                <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs flex items-start gap-3">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 flex-1">
+                    <p className="font-semibold text-amber-300">Aún no existen turnos laborales registrados</p>
+                    <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                      Para crear un horario institucional debe asociar al menos un turno existente (entrada y salida). Registre primero un turno antes de continuar.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHorarioModalOpen(false);
+                        handleOpenTurnoModal();
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold transition-all shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Crear Primer Turno Ahora
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-slate-400 font-bold block mb-1">Código:</label>
@@ -1661,6 +1728,28 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
             </div>
 
             <form onSubmit={handleSaveAsignacion} className="p-5 space-y-4 text-xs">
+              {horarios.length === 0 && (
+                <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs flex items-start gap-3">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 flex-1">
+                    <p className="font-semibold text-amber-300">Aún no existen horarios laborales registrados</p>
+                    <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                      Para asignar un horario a los servidores o trabajadores, debe registrar primero un esquema de horario laboral institucional.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAsignacionModalOpen(false);
+                        handleOpenHorarioModal();
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold transition-all shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Crear Primer Horario Ahora
+                    </button>
+                  </div>
+                </div>
+              )}
               {/* Employee selector */}
               <div>
                 <label className="text-slate-400 font-bold block mb-1">Servidor / Trabajador:</label>

@@ -433,7 +433,7 @@ export const App: React.FC = () => {
 
       // 8. Turnos Laborales
       const resTurnos = await fetch('/api/turnos').then((r) => r.json()).catch(() => null);
-      if (resTurnos?.success && Array.isArray(resTurnos.data) && resTurnos.data.length > 0) {
+      if (resTurnos?.success && Array.isArray(resTurnos.data)) {
         setTurnos(resTurnos.data.map((t: any) => ({
           ...t,
           name: normalizeInstitutionalName(t.name),
@@ -443,7 +443,7 @@ export const App: React.FC = () => {
 
       // 9. Horarios Laborales
       const resHorarios = await fetch('/api/horarios').then((r) => r.json()).catch(() => null);
-      if (resHorarios?.success && Array.isArray(resHorarios.data) && resHorarios.data.length > 0) {
+      if (resHorarios?.success && Array.isArray(resHorarios.data)) {
         setHorarios(resHorarios.data.map((h: any) => ({
           ...h,
           name: normalizeInstitutionalName(h.name),

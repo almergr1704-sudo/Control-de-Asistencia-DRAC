@@ -21,6 +21,7 @@ import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../data/initialData';
 
 export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
   try {
+    // 1. Consulta a Supabase PostgreSQL
     const { data, error } = await supabase
       .from('turnos')
       .select('*')
@@ -44,11 +45,11 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
       }));
     }
 
-    // Fallback a API central
+    // 2. Consulta a Backend Local / Central
     const res = await fetch('/api/turnos');
     if (res.ok) {
       const apiData = await res.json();
-      if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
+      if (apiData.success && Array.isArray(apiData.data)) {
         return apiData.data.map((t: Turno) => ({
           ...t,
           name: normalizeInstitutionalName(t.name),
@@ -57,14 +58,11 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
       }
     }
   } catch (err) {
-    console.warn('Conexión en progreso con Supabase turnos, aplicando catálogo base:', err);
+    console.warn('Conexión en progreso con backend turnos:', err);
   }
 
-  return INITIAL_TURNOS.map((t) => ({
-    ...t,
-    name: normalizeInstitutionalName(t.name),
-    description: normalizeText(t.description),
-  }));
+  // Sin registros precargados ni semillas automáticas: retorna lista vacía para creación manual
+  return [];
 }
 
 export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: boolean; data?: Turno; message?: string }> {
@@ -87,6 +85,7 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
 
   // 1. Persistencia prioritaria y garantizada en Backend Local
   let localSaved = false;
+  let serverMessage = '';
   try {
     const res = await fetch('/api/turnos', {
       method: 'POST',
@@ -98,9 +97,13 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
     });
     if (res.ok) {
       localSaved = true;
+    } else {
+      const errJson = await res.json().catch(() => null);
+      serverMessage = errJson?.message || 'Error del servidor al registrar el turno laboral.';
     }
   } catch (err: any) {
     console.warn('Aviso guardando turno en backend local:', err?.message);
+    serverMessage = err?.message || 'No se pudo conectar con el servidor local.';
   }
 
   // 2. Replicación en Supabase PostgreSQL
@@ -113,7 +116,11 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
     console.warn('Aviso en upsert Supabase turnos (continuando con persistencia local):', err);
   }
 
-  return { success: true, data: normalizedTurno };
+  if (localSaved) {
+    return { success: true, data: normalizedTurno };
+  }
+
+  return { success: false, message: serverMessage || 'Error al persistir el turno en la base de datos.' };
 }
 
 // ==========================================
@@ -122,6 +129,7 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
 
 export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
   try {
+    // 1. Consulta a Supabase PostgreSQL
     const { data, error } = await supabase
       .from('horarios')
       .select('*')
@@ -147,10 +155,11 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
       }));
     }
 
+    // 2. Consulta a Backend Local / Central
     const res = await fetch('/api/horarios');
     if (res.ok) {
       const apiData = await res.json();
-      if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
+      if (apiData.success && Array.isArray(apiData.data)) {
         return apiData.data.map((h: Horario) => ({
           ...h,
           name: normalizeInstitutionalName(h.name),
@@ -160,15 +169,11 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
       }
     }
   } catch (err) {
-    console.warn('Conexión en progreso con Supabase horarios, aplicando catálogo base:', err);
+    console.warn('Conexión en progreso con backend horarios:', err);
   }
 
-  return INITIAL_HORARIOS.map((h) => ({
-    ...h,
-    name: normalizeInstitutionalName(h.name),
-    turno1_name: normalizeInstitutionalName(h.turno1_name),
-    turno2_name: normalizeInstitutionalName(h.turno2_name),
-  }));
+  // Sin registros precargados ni semillas automáticas: retorna lista vacía para creación manual
+  return [];
 }
 
 export async function saveHorarioToSupabase(horario: Horario): Promise<{ success: boolean; data?: Horario; message?: string }> {
@@ -192,6 +197,8 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
   };
 
   // 1. Persistencia prioritaria y garantizada en Backend Local
+  let localSaved = false;
+  let serverMessage = '';
   try {
     const res = await fetch('/api/horarios', {
       method: 'POST',
@@ -201,11 +208,15 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
       },
       body: JSON.stringify(normalizedHorario),
     });
-    if (!res.ok) {
-      console.warn('Aviso guardando horario en API local');
+    if (res.ok) {
+      localSaved = true;
+    } else {
+      const errJson = await res.json().catch(() => null);
+      serverMessage = errJson?.message || 'Error del servidor al guardar el horario laboral.';
     }
   } catch (err: any) {
     console.warn('Error en fetch /api/horarios:', err?.message);
+    serverMessage = err?.message || 'No se pudo conectar con el servidor local.';
   }
 
   // 2. Replicación en Supabase PostgreSQL
@@ -218,7 +229,11 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
     console.warn('Aviso en upsert Supabase horarios (continuando con persistencia local):', err);
   }
 
-  return { success: true, data: normalizedHorario };
+  if (localSaved) {
+    return { success: true, data: normalizedHorario };
+  }
+
+  return { success: false, message: serverMessage || 'Error al persistir el horario en la base de datos.' };
 }
 
 export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ success: boolean; message?: string }> {
