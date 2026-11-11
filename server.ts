@@ -1100,6 +1100,21 @@ app.post('/api/turnos', (req, res) => {
     turnos.push(newTurno);
   }
   writeJsonFile(TURNOS_FILE, turnos);
+
+  // Replicar en Supabase PostgreSQL de manera asíncrona
+  try {
+    Promise.resolve(
+      supabaseServer.from('turnos').upsert({
+        id: newTurno.id,
+        codigo: newTurno.code,
+        nombre: newTurno.name,
+        hora_inicio: newTurno.start_time,
+        hora_fin: newTurno.end_time,
+        tolerancia_minutos: newTurno.tolerance_minutes,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.status(201).json({ success: true, message: 'Turno guardado correctamente.', data: newTurno });
 });
 
@@ -1119,6 +1134,20 @@ app.put('/api/turnos/:id', (req, res) => {
     updated_at: new Date().toISOString(),
   };
   writeJsonFile(TURNOS_FILE, turnos);
+
+  try {
+    Promise.resolve(
+      supabaseServer.from('turnos').upsert({
+        id: turnos[idx].id,
+        codigo: turnos[idx].code,
+        nombre: turnos[idx].name,
+        hora_inicio: turnos[idx].start_time,
+        hora_fin: turnos[idx].end_time,
+        tolerancia_minutos: turnos[idx].tolerance_minutes,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Turno actualizado exitosamente.', data: turnos[idx] });
 });
 
@@ -1131,6 +1160,11 @@ app.delete('/api/turnos/:id', (req, res) => {
   }
   const removed = turnos.splice(idx, 1)[0];
   writeJsonFile(TURNOS_FILE, turnos);
+
+  try {
+    Promise.resolve(supabaseServer.from('turnos').delete().eq('id', id)).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Turno eliminado correctamente.', data: removed });
 });
 
@@ -1175,6 +1209,22 @@ app.post('/api/horarios', (req, res) => {
     horarios.push(newHorario);
   }
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  // Replicar en Supabase PostgreSQL de manera asíncrona
+  try {
+    Promise.resolve(
+      supabaseServer.from('horarios').upsert({
+        id: newHorario.id,
+        codigo: newHorario.code,
+        nombre: newHorario.name,
+        total_turnos: newHorario.turn_count,
+        turno1_id: newHorario.turno1_id,
+        turno2_id: newHorario.turn_count === 2 && newHorario.turno2_id ? newHorario.turno2_id : null,
+        activo: newHorario.active,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.status(201).json({ success: true, message: 'Horario guardado correctamente.', data: newHorario });
 });
 
@@ -1192,6 +1242,21 @@ app.put('/api/horarios/:id', (req, res) => {
     updated_at: new Date().toISOString(),
   };
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  try {
+    Promise.resolve(
+      supabaseServer.from('horarios').upsert({
+        id: horarios[idx].id,
+        codigo: horarios[idx].code,
+        nombre: horarios[idx].name,
+        total_turnos: horarios[idx].turn_count,
+        turno1_id: horarios[idx].turno1_id,
+        turno2_id: horarios[idx].turn_count === 2 && horarios[idx].turno2_id ? horarios[idx].turno2_id : null,
+        activo: horarios[idx].active,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Horario actualizado exitosamente.', data: horarios[idx] });
 });
 
@@ -1204,6 +1269,11 @@ app.delete('/api/horarios/:id', (req, res) => {
   }
   const removed = horarios.splice(idx, 1)[0];
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  try {
+    Promise.resolve(supabaseServer.from('horarios').delete().eq('id', id)).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Horario eliminado exitosamente.', data: removed });
 });
 
@@ -1276,6 +1346,23 @@ app.post('/api/asignacion-horarios', (req, res) => {
   }
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
 
+  // Replicar en Supabase PostgreSQL de manera asíncrona
+  try {
+    Promise.resolve(
+      supabaseServer.from('asignacion_horarios').upsert({
+        id: newAsignacion.id,
+        trabajador_id: newAsignacion.employee_id,
+        horario_id: newAsignacion.horario_id,
+        fecha_inicio: newAsignacion.fecha_inicio,
+        fecha_fin: newAsignacion.fecha_fin || null,
+        tipo_asignacion: newAsignacion.tipo_asignacion,
+        motivo: newAsignacion.motivo,
+        documento_sustento: newAsignacion.documento_sustento,
+        activo: newAsignacion.activo,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.status(201).json({
     success: true,
     message: existingIdx >= 0 ? 'Asignación de horario actualizada exitosamente.' : `Asignación de horario ${newAsignacion.tipo_asignacion.toLowerCase()} registrada exitosamente.`,
@@ -1299,6 +1386,23 @@ app.put('/api/asignacion-horarios/:id', (req, res) => {
     updated_at: new Date().toISOString(),
   };
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  try {
+    Promise.resolve(
+      supabaseServer.from('asignacion_horarios').upsert({
+        id: asignaciones[idx].id,
+        trabajador_id: asignaciones[idx].employee_id,
+        horario_id: asignaciones[idx].horario_id,
+        fecha_inicio: asignaciones[idx].fecha_inicio,
+        fecha_fin: asignaciones[idx].fecha_fin || null,
+        tipo_asignacion: asignaciones[idx].tipo_asignacion,
+        motivo: asignaciones[idx].motivo,
+        documento_sustento: asignaciones[idx].documento_sustento,
+        activo: asignaciones[idx].activo,
+      })
+    ).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Asignación actualizada exitosamente.', data: asignaciones[idx] });
 });
 
@@ -1311,6 +1415,11 @@ app.delete('/api/asignacion-horarios/:id', (req, res) => {
   }
   const removed = asignaciones.splice(idx, 1)[0];
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  try {
+    Promise.resolve(supabaseServer.from('asignacion_horarios').delete().eq('id', id)).catch(() => {});
+  } catch (_) {}
+
   return res.json({ success: true, message: 'Asignación eliminada correctamente.', data: removed });
 });
 
@@ -1662,18 +1771,61 @@ function decodeZkPackedTime(t: number): string {
 
 function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any[] {
   const punches: any[] = [];
-  if (!dataBuf || dataBuf.length < 14) return punches;
+  if (!dataBuf || dataBuf.length < 8) return punches;
 
-  if (dataBuf.length >= 40) {
+  // Si dataBuf tiene un prefijo de 4 bytes con la longitud total de datos (común en ZKTeco ACK_DATA)
+  let workingBuf = dataBuf;
+  if (dataBuf.length > 4) {
+    const declaredLen = dataBuf.readUInt32LE(0);
+    if (declaredLen > 0 && declaredLen <= dataBuf.length - 4 && (declaredLen % 40 === 0 || declaredLen % 14 === 0 || declaredLen % 8 === 0)) {
+      workingBuf = dataBuf.slice(4);
+    }
+  }
+
+  // 1. Probar formato extendido 40 bytes (ZKTeco G3 / SilkID / TFT)
+  if (workingBuf.length >= 40) {
     const recSize = 40;
-    for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
-      const chunk = dataBuf.slice(i, i + recSize);
-      const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
-      if (pin && pin.length > 0 && /^[0-9a-zA-Z_-]+$/.test(pin)) {
-        const verifyType = chunk[24];
-        const punchState = chunk[25];
+    for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+      const chunk = workingBuf.slice(i, i + recSize);
+
+      // Intento A: Layout oficial pyzk/ZKTeco TFT: <H24sB4sB8s (offset 0: uid uint16, offset 2..26: pin ASCII)
+      const uidA = chunk.readUInt16LE(0);
+      const rawPinA = chunk.slice(2, 26).toString('ascii').replace(/\0/g, '').trim();
+      const cleanPinA = rawPinA.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+
+      // Intento B: Layout sin UID: <24sBB4s... (offset 0..24: pin ASCII)
+      const rawPinB = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+      const cleanPinB = rawPinB.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+
+      let pin = '';
+      let verifyType = 1;
+      let punchState = 0;
+      let punchTime = '';
+
+      if (cleanPinA && /^[0-9a-zA-Z_-]+$/.test(cleanPinA)) {
+        pin = cleanPinA;
+        verifyType = chunk[26];
+        punchState = chunk[31] !== undefined ? chunk[31] : (chunk[27] || 0);
+        const rawTime1 = chunk.readUInt32LE(27);
+        const rawTime2 = chunk.readUInt32LE(28);
+        const decoded1 = decodeZkPackedTime(rawTime1);
+        const decoded2 = decodeZkPackedTime(rawTime2);
+        punchTime = (decoded1 && !decoded1.startsWith('2000-01-01')) ? decoded1 : decoded2;
+      } else if (cleanPinB && /^[0-9a-zA-Z_-]+$/.test(cleanPinB)) {
+        pin = cleanPinB;
+        verifyType = chunk[24];
+        punchState = chunk[25];
         const rawTime = chunk.readUInt32LE(26);
-        const punchTime = decodeZkPackedTime(rawTime);
+        punchTime = decodeZkPackedTime(rawTime);
+      } else if (uidA > 0) {
+        pin = String(uidA);
+        verifyType = chunk[26] || 1;
+        punchState = chunk[31] || 0;
+        const rawTime = chunk.readUInt32LE(28);
+        punchTime = decodeZkPackedTime(rawTime);
+      }
+
+      if (pin) {
         const [fechaPart, horaPart] = punchTime.split(' ');
         punches.push({
           id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
@@ -1694,10 +1846,11 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
     }
   }
 
-  if (punches.length === 0 && dataBuf.length >= 14) {
+  // 2. Probar formato estándar 14 bytes si no hubo marcaciones en 40 bytes
+  if (punches.length === 0 && workingBuf.length >= 14) {
     const recSize = 14;
-    for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
-      const chunk = dataBuf.slice(i, i + recSize);
+    for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+      const chunk = workingBuf.slice(i, i + recSize);
       const userSn = chunk.readUInt16LE(0);
       if (userSn > 0) {
         const rawTime = chunk.readUInt32LE(2);
@@ -1715,6 +1868,36 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
           hora: horaPart,
           timestamp: punchTime,
           verify_mode: chunk[6] === 15 ? 'FACE' : 'FINGERPRINT',
+          punch_type: 'AUTO',
+          punch_state: chunk[7] || 0,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  // 3. Probar formato 8 bytes
+  if (punches.length === 0 && workingBuf.length >= 8) {
+    const recSize = 8;
+    for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+      const chunk = workingBuf.slice(i, i + recSize);
+      const userSn = chunk.readUInt16LE(0);
+      if (userSn > 0) {
+        const rawTime = chunk.readUInt32LE(3);
+        const punchTime = decodeZkPackedTime(rawTime);
+        const [fechaPart, horaPart] = punchTime.split(' ');
+        const pin = String(userSn);
+        punches.push({
+          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          device_sn: serial,
+          device_ip: host,
+          employee_dni: pin,
+          employee_code: pin,
+          fecha: fechaPart,
+          hora: horaPart,
+          timestamp: punchTime,
+          verify_mode: 'FINGERPRINT',
           punch_type: 'AUTO',
           punch_state: chunk[7] || 0,
           created_at: new Date().toISOString(),

@@ -57,6 +57,17 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
         }));
       }
     }
+
+    // 3. Fallback localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const local = localStorage.getItem('drac_turnos_cache');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
   } catch (err) {
     console.warn('Conexión en progreso con backend turnos:', err);
   }
@@ -83,9 +94,26 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
     tolerancia_minutos: normalizedTurno.tolerance_minutes,
   };
 
-  // 1. Persistencia prioritaria y garantizada en Backend Local
+  let supabaseSaved = false;
+  let supabaseError = '';
   let localSaved = false;
-  let serverMessage = '';
+  let localError = '';
+
+  // 1. Guardar en Supabase PostgreSQL (Fuente central de verdad para Vercel y Electron)
+  try {
+    const { error } = await supabase.from('turnos').upsert(dbTurno);
+    if (!error) {
+      supabaseSaved = true;
+    } else {
+      console.warn('Supabase upsert turnos aviso:', error.message);
+      supabaseError = error.message;
+    }
+  } catch (err: any) {
+    console.warn('Supabase upsert turnos excepción:', err?.message);
+    supabaseError = err?.message || 'Error de conexión con Supabase';
+  }
+
+  // 2. Persistencia en Backend Local / API (para entorno local/desktop)
   try {
     const res = await fetch('/api/turnos', {
       method: 'POST',
@@ -99,28 +127,29 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
       localSaved = true;
     } else {
       const errJson = await res.json().catch(() => null);
-      serverMessage = errJson?.message || 'Error del servidor al registrar el turno laboral.';
+      localError = errJson?.message || 'Error en endpoint local /api/turnos';
     }
   } catch (err: any) {
-    console.warn('Aviso guardando turno en backend local:', err?.message);
-    serverMessage = err?.message || 'No se pudo conectar con el servidor local.';
+    localError = err?.message || 'Servidor local no disponible';
   }
 
-  // 2. Replicación en Supabase PostgreSQL
-  try {
-    await Promise.race([
-      supabase.from('turnos').upsert(dbTurno),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase timeout')), 3500)),
-    ]);
-  } catch (err) {
-    console.warn('Aviso en upsert Supabase turnos (continuando con persistencia local):', err);
-  }
-
-  if (localSaved) {
+  if (supabaseSaved || localSaved) {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
+        const idx = local.findIndex((t: any) => t.id === normalizedTurno.id);
+        if (idx >= 0) local[idx] = normalizedTurno;
+        else local.push(normalizedTurno);
+        localStorage.setItem('drac_turnos_cache', JSON.stringify(local));
+      } catch (_) {}
+    }
     return { success: true, data: normalizedTurno };
   }
 
-  return { success: false, message: serverMessage || 'Error al persistir el turno en la base de datos.' };
+  return {
+    success: false,
+    message: supabaseError || localError || 'Error al persistir el turno laboral en la base de datos.',
+  };
 }
 
 // ==========================================
@@ -168,6 +197,17 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
         }));
       }
     }
+
+    // 3. Fallback localStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const local = localStorage.getItem('drac_horarios_cache');
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (_) {}
+    }
   } catch (err) {
     console.warn('Conexión en progreso con backend horarios:', err);
   }
@@ -192,13 +232,30 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
     nombre: normalizedHorario.name,
     total_turnos: normalizedHorario.turn_count,
     turno1_id: normalizedHorario.turno1_id,
-    turno2_id: normalizedHorario.turno2_id || null,
+    turno2_id: normalizedHorario.turn_count === 2 && normalizedHorario.turno2_id ? normalizedHorario.turno2_id : null,
     activo: normalizedHorario.active,
   };
 
-  // 1. Persistencia prioritaria y garantizada en Backend Local
+  let supabaseSaved = false;
+  let supabaseError = '';
   let localSaved = false;
-  let serverMessage = '';
+  let localError = '';
+
+  // 1. Guardar en Supabase PostgreSQL (Fuente central de verdad para Vercel y Electron)
+  try {
+    const { error } = await supabase.from('horarios').upsert(dbHorario);
+    if (!error) {
+      supabaseSaved = true;
+    } else {
+      console.warn('Supabase upsert horarios aviso:', error.message);
+      supabaseError = error.message;
+    }
+  } catch (err: any) {
+    console.warn('Supabase upsert horarios excepción:', err?.message);
+    supabaseError = err?.message || 'Error de conexión con Supabase';
+  }
+
+  // 2. Persistencia en Backend Local / API (para entorno local/desktop)
   try {
     const res = await fetch('/api/horarios', {
       method: 'POST',
@@ -212,28 +269,29 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
       localSaved = true;
     } else {
       const errJson = await res.json().catch(() => null);
-      serverMessage = errJson?.message || 'Error del servidor al guardar el horario laboral.';
+      localError = errJson?.message || 'Error en endpoint local /api/horarios';
     }
   } catch (err: any) {
-    console.warn('Error en fetch /api/horarios:', err?.message);
-    serverMessage = err?.message || 'No se pudo conectar con el servidor local.';
+    localError = err?.message || 'Servidor local no disponible';
   }
 
-  // 2. Replicación en Supabase PostgreSQL
-  try {
-    await Promise.race([
-      supabase.from('horarios').upsert(dbHorario),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase timeout')), 3500)),
-    ]);
-  } catch (err) {
-    console.warn('Aviso en upsert Supabase horarios (continuando con persistencia local):', err);
-  }
-
-  if (localSaved) {
+  if (supabaseSaved || localSaved) {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
+        const idx = local.findIndex((h: any) => h.id === normalizedHorario.id);
+        if (idx >= 0) local[idx] = normalizedHorario;
+        else local.push(normalizedHorario);
+        localStorage.setItem('drac_horarios_cache', JSON.stringify(local));
+      } catch (_) {}
+    }
     return { success: true, data: normalizedHorario };
   }
 
-  return { success: false, message: serverMessage || 'Error al persistir el horario en la base de datos.' };
+  return {
+    success: false,
+    message: supabaseError || localError || 'Error al persistir el horario laboral en la base de datos.',
+  };
 }
 
 export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ success: boolean; message?: string }> {
@@ -243,7 +301,15 @@ export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ succes
 
   try {
     const res = await fetch(`/api/turnos/${turnoId}`, { method: 'DELETE' });
-    if (res.ok) return { success: true };
+    if (res.ok) {
+      if (typeof window !== 'undefined') {
+        try {
+          const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
+          localStorage.setItem('drac_turnos_cache', JSON.stringify(local.filter((t: any) => t.id !== turnoId)));
+        } catch (_) {}
+      }
+      return { success: true };
+    }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
@@ -257,7 +323,15 @@ export async function deleteHorarioFromSupabase(horarioId: string): Promise<{ su
 
   try {
     const res = await fetch(`/api/horarios/${horarioId}`, { method: 'DELETE' });
-    if (res.ok) return { success: true };
+    if (res.ok) {
+      if (typeof window !== 'undefined') {
+        try {
+          const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
+          localStorage.setItem('drac_horarios_cache', JSON.stringify(local.filter((h: any) => h.id !== horarioId)));
+        } catch (_) {}
+      }
+      return { success: true };
+    }
   } catch (err: any) {
     return { success: false, message: err?.message };
   }
@@ -330,6 +404,12 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
     created_at: asignacion.created_at || new Date().toISOString(),
   };
 
+  let supabaseSaved = false;
+  let supabaseError = '';
+  let localSaved = false;
+  let localError = '';
+
+  // 1. Guardar en Supabase PostgreSQL
   try {
     if (normalized.activo && normalized.tipo_asignacion === 'PERMANENTE') {
       await supabase
@@ -339,7 +419,7 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
         .eq('tipo_asignacion', 'PERMANENTE');
     }
 
-    await supabase.from('asignacion_horarios').upsert({
+    const { error } = await supabase.from('asignacion_horarios').upsert({
       id: normalized.id,
       trabajador_id: normalized.employee_id,
       horario_id: normalized.horario_id,
@@ -350,8 +430,18 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
       documento_sustento: normalized.documento_sustento,
       activo: normalized.activo,
     });
-  } catch (_) {}
+    if (!error) {
+      supabaseSaved = true;
+    } else {
+      console.warn('Aviso Supabase upsert asignacion_horarios:', error.message);
+      supabaseError = error.message;
+    }
+  } catch (err: any) {
+    console.warn('Excepción Supabase asignaciones:', err?.message);
+    supabaseError = err?.message || 'Error de conexión con Supabase';
+  }
 
+  // 2. Persistencia en Backend Local
   try {
     const res = await fetch('/api/asignacion-horarios', {
       method: 'POST',
@@ -362,25 +452,32 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
       body: JSON.stringify(normalized),
     });
     if (res.ok) {
-      const json = await res.json();
-      return { success: true, data: json.data || normalized };
+      localSaved = true;
+    } else {
+      const errJson = await res.json().catch(() => null);
+      localError = errJson?.message || 'Error en endpoint local /api/asignacion-horarios';
     }
   } catch (err: any) {
-    return { success: false, message: err?.message };
+    localError = err?.message || 'Servidor local no disponible';
   }
 
-  // Fallback local
-  if (typeof window !== 'undefined') {
-    try {
-      const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
-      const idx = local.findIndex((a: any) => a.id === normalized.id);
-      if (idx >= 0) local[idx] = normalized;
-      else local.unshift(normalized);
-      localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(local));
-    } catch (_) {}
+  if (supabaseSaved || localSaved) {
+    if (typeof window !== 'undefined') {
+      try {
+        const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
+        const idx = local.findIndex((a: any) => a.id === normalized.id);
+        if (idx >= 0) local[idx] = normalized;
+        else local.unshift(normalized);
+        localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(local));
+      } catch (_) {}
+    }
+    return { success: true, data: normalized };
   }
 
-  return { success: true, data: normalized };
+  return {
+    success: false,
+    message: supabaseError || localError || 'Error al persistir la asignación de horario en la base de datos.',
+  };
 }
 
 export async function deleteAsignacionFromSupabase(asignacionId: string): Promise<{ success: boolean; message?: string }> {
@@ -388,19 +485,19 @@ export async function deleteAsignacionFromSupabase(asignacionId: string): Promis
     await supabase.from('asignacion_horarios').delete().eq('id', asignacionId);
   } catch (_) {}
 
-  try {
-    const res = await fetch(`/api/asignacion-horarios/${asignacionId}`, { method: 'DELETE' });
-    if (res.ok) return { success: true };
-  } catch (err: any) {
-    return { success: false, message: err?.message };
-  }
-
   if (typeof window !== 'undefined') {
     try {
       const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
       const filtered = local.filter((a: any) => a.id !== asignacionId);
       localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(filtered));
     } catch (_) {}
+  }
+
+  try {
+    const res = await fetch(`/api/asignacion-horarios/${asignacionId}`, { method: 'DELETE' });
+    if (res.ok) return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err?.message };
   }
 
   return { success: true };

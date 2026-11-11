@@ -447,18 +447,58 @@ class ZKLibTCP {
       } catch (_) {}
 
       if (dataBuf && dataBuf.length > 0) {
+        let workingBuf = dataBuf;
+        if (dataBuf.length > 4) {
+          const declaredLen = dataBuf.readUInt32LE(0);
+          if (declaredLen > 0 && declaredLen <= dataBuf.length - 4 && (declaredLen % 40 === 0 || declaredLen % 14 === 0 || declaredLen % 8 === 0)) {
+            workingBuf = dataBuf.slice(4);
+          }
+        }
+
         // Intento 1: Formato extendido ZKTeco G3 / SilkID / TFT (40 bytes por marcación)
-        // [0-23: PIN ASCII] [24: verifyType] [25: punchState] [26-29: rawTime (packed 32-bit)]
-        if (dataBuf.length >= 40) {
+        if (workingBuf.length >= 40) {
           const recSize = 40;
-          for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
-            const chunk = dataBuf.slice(i, i + recSize);
-            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
-            if (pin && pin.length > 0 && /^[0-9a-zA-Z_-]+$/.test(pin)) {
-              const verifyType = chunk[24];
-              const punchState = chunk[25];
+          for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+            const chunk = workingBuf.slice(i, i + recSize);
+
+            // Layout A: pyzk/ZKTeco TFT: <H24sB4sB8s (offset 0: uid uint16, offset 2..26: pin ASCII)
+            const uidA = chunk.readUInt16LE(0);
+            const rawPinA = chunk.slice(2, 26).toString('ascii').replace(/\0/g, '').trim();
+            const cleanPinA = rawPinA.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+
+            // Layout B: sin UID: <24sBB4s... (offset 0..24: pin ASCII)
+            const rawPinB = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
+            const cleanPinB = rawPinB.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
+
+            let pin = '';
+            let verifyType = 1;
+            let punchState = 0;
+            let punchTime = '';
+
+            if (cleanPinA && /^[0-9a-zA-Z_-]+$/.test(cleanPinA)) {
+              pin = cleanPinA;
+              verifyType = chunk[26];
+              punchState = chunk[31] !== undefined ? chunk[31] : (chunk[27] || 0);
+              const rawTime1 = chunk.readUInt32LE(27);
+              const rawTime2 = chunk.readUInt32LE(28);
+              const decoded1 = decodeZkTime(rawTime1);
+              const decoded2 = decodeZkTime(rawTime2);
+              punchTime = (decoded1 && !decoded1.startsWith('2000-01-01')) ? decoded1 : decoded2;
+            } else if (cleanPinB && /^[0-9a-zA-Z_-]+$/.test(cleanPinB)) {
+              pin = cleanPinB;
+              verifyType = chunk[24];
+              punchState = chunk[25];
               const rawTime = chunk.readUInt32LE(26);
-              const punchTime = decodeZkTime(rawTime);
+              punchTime = decodeZkTime(rawTime);
+            } else if (uidA > 0) {
+              pin = String(uidA);
+              verifyType = chunk[26] || 1;
+              punchState = chunk[31] || 0;
+              const rawTime = chunk.readUInt32LE(28);
+              punchTime = decodeZkTime(rawTime);
+            }
+
+            if (pin) {
               punches.push({
                 deviceUserId: pin,
                 pin,
@@ -470,11 +510,11 @@ class ZKLibTCP {
           }
         }
 
-        // Intento 2: Si no coincidió formato de 40 bytes, probar formato estándar de 14 bytes
-        if (punches.length === 0 && dataBuf.length >= 14) {
+        // Intento 2: Formato estándar 14 bytes si no hubo marcaciones en 40 bytes
+        if (punches.length === 0 && workingBuf.length >= 14) {
           const recSize = 14;
-          for (let i = 0; i + recSize <= dataBuf.length; i += recSize) {
-            const chunk = dataBuf.slice(i, i + recSize);
+          for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+            const chunk = workingBuf.slice(i, i + recSize);
             const userSn = chunk.readUInt16LE(0);
             if (userSn > 0) {
               const rawTime = chunk.readUInt32LE(2);
@@ -485,6 +525,27 @@ class ZKLibTCP {
                 pin: String(userSn),
                 recordTime: punchTime,
                 verifyType: chunk[6] || 1,
+                punchState: chunk[7] || 0,
+              });
+            }
+          }
+        }
+
+        // Intento 3: Formato estándar 8 bytes
+        if (punches.length === 0 && workingBuf.length >= 8) {
+          const recSize = 8;
+          for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
+            const chunk = workingBuf.slice(i, i + recSize);
+            const userSn = chunk.readUInt16LE(0);
+            if (userSn > 0) {
+              const rawTime = chunk.readUInt32LE(3);
+              const punchTime = decodeZkTime(rawTime);
+              punches.push({
+                deviceUserId: String(userSn),
+                userSn,
+                pin: String(userSn),
+                recordTime: punchTime,
+                verifyType: 1,
                 punchState: chunk[7] || 0,
               });
             }

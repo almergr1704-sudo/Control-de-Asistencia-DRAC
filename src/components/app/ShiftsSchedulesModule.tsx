@@ -83,12 +83,15 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
   // Modals States
   const [isTurnoModalOpen, setIsTurnoModalOpen] = useState(false);
   const [editingTurno, setEditingTurno] = useState<Turno | null>(null);
+  const [isSubmittingTurno, setIsSubmittingTurno] = useState(false);
 
   const [isHorarioModalOpen, setIsHorarioModalOpen] = useState(false);
   const [editingHorario, setEditingHorario] = useState<Horario | null>(null);
+  const [isSubmittingHorario, setIsSubmittingHorario] = useState(false);
 
   const [isAsignacionModalOpen, setIsAsignacionModalOpen] = useState(false);
   const [editingAsignacion, setEditingAsignacion] = useState<AsignacionHorario | null>(null);
+  const [isSubmittingAsignacion, setIsSubmittingAsignacion] = useState(false);
 
   // Delete Confirmations
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -231,48 +234,62 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
   const handleSaveTurno = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingTurno) return;
+
     if (!turnoForm.name.trim()) {
-      showFeedback('error', 'El nombre del turno es obligatorio.');
+      showFeedback('error', 'El nombre del turno laboral es obligatorio.');
+      return;
+    }
+    if (!turnoForm.code.trim()) {
+      showFeedback('error', 'El código del turno laboral es obligatorio.');
       return;
     }
 
-    const turnoToSave: Turno = {
-      id: editingTurno ? editingTurno.id : `turno-${Date.now()}`,
-      code: turnoForm.code.trim().toUpperCase() || `T-${Date.now().toString().slice(-3)}`,
-      name: normalizeInstitutionalName(turnoForm.name),
-      description: turnoForm.description.trim(),
-      start_time: turnoForm.start_time,
-      end_time: turnoForm.end_time,
-      window_entry_start: turnoForm.window_entry_start,
-      window_exit_limit: turnoForm.window_exit_limit,
-      tolerance_minutes: Number(turnoForm.tolerance_minutes) || 10,
-      tolerance_exit_minutes: Number(turnoForm.tolerance_exit_minutes) || 0,
-      is_overnight: turnoForm.is_overnight,
-      active: turnoForm.active,
-      created_at: editingTurno?.created_at || new Date().toISOString(),
-    };
+    setIsSubmittingTurno(true);
+    try {
+      const turnoToSave: Turno = {
+        id: editingTurno ? editingTurno.id : `turno-${Date.now()}`,
+        code: turnoForm.code.trim().toUpperCase(),
+        name: normalizeInstitutionalName(turnoForm.name),
+        description: turnoForm.description.trim(),
+        start_time: turnoForm.start_time,
+        end_time: turnoForm.end_time,
+        window_entry_start: turnoForm.window_entry_start,
+        window_exit_limit: turnoForm.window_exit_limit,
+        tolerance_minutes: Number(turnoForm.tolerance_minutes) || 10,
+        tolerance_exit_minutes: Number(turnoForm.tolerance_exit_minutes) || 0,
+        is_overnight: turnoForm.is_overnight,
+        active: turnoForm.active,
+        created_at: editingTurno?.created_at || new Date().toISOString(),
+      };
 
-    const res = await saveTurnoToSupabase(turnoToSave);
-    if (res.success) {
-      setTurnos((prev) => {
-        const index = prev.findIndex((t) => t.id === turnoToSave.id);
-        if (index >= 0) {
-          const next = [...prev];
-          next[index] = turnoToSave;
-          return next;
+      const res = await saveTurnoToSupabase(turnoToSave);
+      if (res.success) {
+        setTurnos((prev) => {
+          const index = prev.findIndex((t) => t.id === turnoToSave.id);
+          if (index >= 0) {
+            const next = [...prev];
+            next[index] = turnoToSave;
+            return next;
+          }
+          return [...prev, turnoToSave];
+        });
+        showFeedback('success', editingTurno ? 'Turno actualizado exitosamente en el sistema.' : 'Nuevo turno registrado exitosamente.');
+        setIsTurnoModalOpen(false);
+        if (onRecordAudit) {
+          onRecordAudit(
+            editingTurno ? 'TURNO_EDITADO' : 'TURNO_CREADO',
+            `Turno ${turnoToSave.code} (${turnoToSave.name}) guardado correctamente.`
+          );
         }
-        return [...prev, turnoToSave];
-      });
-      showFeedback('success', editingTurno ? 'Turno actualizado exitosamente.' : 'Nuevo turno registrado.');
-      setIsTurnoModalOpen(false);
-      if (onRecordAudit) {
-        onRecordAudit(
-          editingTurno ? 'TURNO_EDITADO' : 'TURNO_CREADO',
-          `Turno ${turnoToSave.code} (${turnoToSave.name}) guardado correctamente.`
-        );
+      } else {
+        // En caso de error: NO cierra el modal y conserva los datos ingresados
+        showFeedback('error', res.message || 'Error al guardar el turno laboral en la base de datos.');
       }
-    } else {
-      showFeedback('error', res.message || 'Error al guardar el turno.');
+    } catch (err: any) {
+      showFeedback('error', err?.message || 'Error inesperado al procesar la solicitud.');
+    } finally {
+      setIsSubmittingTurno(false);
     }
   };
 
@@ -323,72 +340,90 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
   const handleSaveHorario = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingHorario) return;
+
     if (!horarioForm.name.trim()) {
-      showFeedback('error', 'El nombre del horario es obligatorio.');
+      showFeedback('error', 'El nombre del horario institucional es obligatorio.');
+      return;
+    }
+    if (!horarioForm.code.trim()) {
+      showFeedback('error', 'El código del horario institucional es obligatorio.');
       return;
     }
     if (!horarioForm.turno1_id) {
-      showFeedback('error', 'Debe seleccionar al menos el primer turno.');
+      showFeedback('error', 'Debe seleccionar al menos el primer turno para el horario.');
+      return;
+    }
+    if (horarioForm.turn_count === 2 && !horarioForm.turno2_id) {
+      showFeedback('error', 'Para horarios de 2 turnos (jornada partida), debe seleccionar el segundo turno.');
       return;
     }
 
-    const t1 = turnos.find((t) => t.id === horarioForm.turno1_id);
-    const t2 = horarioForm.turn_count === 2 ? turnos.find((t) => t.id === horarioForm.turno2_id) : null;
+    setIsSubmittingHorario(true);
+    try {
+      const t1 = turnos.find((t) => t.id === horarioForm.turno1_id);
+      const t2 = horarioForm.turn_count === 2 ? turnos.find((t) => t.id === horarioForm.turno2_id) : null;
 
-    // Calculate estimated daily hours
-    let hours = 8;
-    if (t1) {
-      const [h1s, m1s] = t1.start_time.split(':').map(Number);
-      const [h1e, m1e] = t1.end_time.split(':').map(Number);
-      const dur1 = (h1e * 60 + m1e - (h1s * 60 + m1s)) / 60;
-      hours = dur1;
-      if (t2) {
-        const [h2s, m2s] = t2.start_time.split(':').map(Number);
-        const [h2e, m2e] = t2.end_time.split(':').map(Number);
-        const dur2 = (h2e * 60 + m2e - (h2s * 60 + m2s)) / 60;
-        hours += dur2;
-      }
-    }
-
-    const horarioToSave: Horario = {
-      id: editingHorario ? editingHorario.id : `hor-${Date.now()}`,
-      code: horarioForm.code.trim().toUpperCase() || `HOR-${Date.now().toString().slice(-3)}`,
-      name: normalizeInstitutionalName(horarioForm.name),
-      turn_count: horarioForm.turn_count,
-      turno1_id: horarioForm.turno1_id,
-      turno1_name: t1 ? `${t1.name} (${t1.start_time} - ${t1.end_time})` : '',
-      turno2_id: horarioForm.turn_count === 2 ? horarioForm.turno2_id : null,
-      turno2_name: t2 ? `${t2.name} (${t2.start_time} - ${t2.end_time})` : undefined,
-      working_days: horarioForm.working_days,
-      active: horarioForm.active,
-      effective_start_date: editingHorario?.effective_start_date || '2026-01-01',
-      effective_end_date: editingHorario?.effective_end_date || null,
-      version: (editingHorario?.version || 1) + (editingHorario ? 1 : 0),
-      total_hours: Math.round(hours * 10) / 10,
-      total_duration_text: `${Math.round(hours * 10) / 10} horas diarias (${horarioForm.turn_count} turno${horarioForm.turn_count > 1 ? 's' : ''})`,
-    };
-
-    const res = await saveHorarioToSupabase(horarioToSave);
-    if (res.success) {
-      setHorarios((prev) => {
-        const index = prev.findIndex((h) => h.id === horarioToSave.id);
-        if (index >= 0) {
-          const next = [...prev];
-          next[index] = horarioToSave;
-          return next;
+      // Calculate estimated daily hours
+      let hours = 8;
+      if (t1) {
+        const [h1s, m1s] = t1.start_time.split(':').map(Number);
+        const [h1e, m1e] = t1.end_time.split(':').map(Number);
+        const dur1 = (h1e * 60 + m1e - (h1s * 60 + m1s)) / 60;
+        hours = dur1;
+        if (t2) {
+          const [h2s, m2s] = t2.start_time.split(':').map(Number);
+          const [h2e, m2e] = t2.end_time.split(':').map(Number);
+          const dur2 = (h2e * 60 + m2e - (h2s * 60 + m2s)) / 60;
+          hours += dur2;
         }
-        return [...prev, horarioToSave];
-      });
-      showFeedback('success', editingHorario ? 'Horario actualizado exitosamente.' : 'Nuevo horario registrado.');
-      setIsHorarioModalOpen(false);
-      if (onRecordAudit) {
-        onRecordAudit(
-          editingHorario ? 'HORARIO_EDITADO' : 'HORARIO_CREADO',
-          `Horario ${horarioToSave.code} (${horarioToSave.name}) guardado correctamente.`
-        );
       }
-    } else {
-      showFeedback('error', res.message || 'Error al guardar el horario.');
+
+      const horarioToSave: Horario = {
+        id: editingHorario ? editingHorario.id : `hor-${Date.now()}`,
+        code: horarioForm.code.trim().toUpperCase(),
+        name: normalizeInstitutionalName(horarioForm.name),
+        turn_count: horarioForm.turn_count,
+        turno1_id: horarioForm.turno1_id,
+        turno1_name: t1 ? `${t1.name} (${t1.start_time} - ${t1.end_time})` : '',
+        turno2_id: horarioForm.turn_count === 2 ? horarioForm.turno2_id : null,
+        turno2_name: t2 ? `${t2.name} (${t2.start_time} - ${t2.end_time})` : undefined,
+        working_days: horarioForm.working_days,
+        active: horarioForm.active,
+        effective_start_date: editingHorario?.effective_start_date || '2026-01-01',
+        effective_end_date: editingHorario?.effective_end_date || null,
+        version: (editingHorario?.version || 1) + (editingHorario ? 1 : 0),
+        total_hours: Math.round(hours * 10) / 10,
+        total_duration_text: `${Math.round(hours * 10) / 10} horas diarias (${horarioForm.turn_count} turno${horarioForm.turn_count > 1 ? 's' : ''})`,
+      };
+
+      const res = await saveHorarioToSupabase(horarioToSave);
+      if (res.success) {
+        setHorarios((prev) => {
+          const index = prev.findIndex((h) => h.id === horarioToSave.id);
+          if (index >= 0) {
+            const next = [...prev];
+            next[index] = horarioToSave;
+            return next;
+          }
+          return [...prev, horarioToSave];
+        });
+        showFeedback('success', editingHorario ? 'Horario actualizado exitosamente.' : 'Nuevo horario registrado exitosamente.');
+        setIsHorarioModalOpen(false);
+        if (onRecordAudit) {
+          onRecordAudit(
+            editingHorario ? 'HORARIO_EDITADO' : 'HORARIO_CREADO',
+            `Horario ${horarioToSave.code} (${horarioToSave.name}) guardado correctamente.`
+          );
+        }
+      } else {
+        // En caso de error: NO cierra el modal y conserva los datos ingresados
+        showFeedback('error', res.message || 'Error al guardar el horario en la base de datos.');
+      }
+    } catch (err: any) {
+      showFeedback('error', err?.message || 'Error inesperado al procesar el horario.');
+    } finally {
+      setIsSubmittingHorario(false);
     }
   };
 
@@ -440,6 +475,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
   const handleSaveAsignacion = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingAsignacion) return;
+
     if (!asignacionForm.employee_id) {
       showFeedback('error', 'Debe seleccionar un trabajador.');
       return;
@@ -453,58 +490,66 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       return;
     }
 
-    const emp = employees.find((e) => e.id === asignacionForm.employee_id);
-    const hor = horarios.find((h) => h.id === asignacionForm.horario_id);
+    setIsSubmittingAsignacion(true);
+    try {
+      const emp = employees.find((e) => e.id === asignacionForm.employee_id);
+      const hor = horarios.find((h) => h.id === asignacionForm.horario_id);
 
-    const asignacionToSave: AsignacionHorario = {
-      id: editingAsignacion ? editingAsignacion.id : `asig-${Date.now()}`,
-      employee_id: asignacionForm.employee_id,
-      employee_dni: emp ? emp.dni : (editingAsignacion?.employee_dni || '10000001'),
-      employee_name: emp
-        ? normalizePersonName(`${emp.first_name} ${emp.last_name}`)
-        : (editingAsignacion?.employee_name || 'Servidor DRAC'),
-      employee_cargo: normalizeInstitutionalName(emp?.position || editingAsignacion?.employee_cargo || 'Servidor DRAC'),
-      dependencia_name: normalizeInstitutionalName(emp?.dependencia_name || editingAsignacion?.dependencia_name || 'Sede Central - DRAC Cajamarca'),
-      area_name: normalizeInstitutionalName(emp?.area_name || editingAsignacion?.area_name || 'General'),
-      horario_id: asignacionForm.horario_id,
-      horario_name: normalizeInstitutionalName(hor ? hor.name : (editingAsignacion?.horario_name || 'Horario Institucional')),
-      horario_code: hor?.code || editingAsignacion?.horario_code || 'HOR-01',
-      fecha_inicio: asignacionForm.fecha_inicio,
-      fecha_fin: asignacionForm.tipo_asignacion === 'TEMPORAL' ? asignacionForm.fecha_fin : null,
-      tipo_asignacion: asignacionForm.tipo_asignacion,
-      motivo: normalizeText(asignacionForm.motivo.trim() || (asignacionForm.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por servicio' : 'Horario regular')),
-      documento_sustento: normalizeText(asignacionForm.documento_sustento.trim() || 'Memorando Institucional'),
-      activo: asignacionForm.activo,
-      created_at: editingAsignacion?.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+      const asignacionToSave: AsignacionHorario = {
+        id: editingAsignacion ? editingAsignacion.id : `asig-${Date.now()}`,
+        employee_id: asignacionForm.employee_id,
+        employee_dni: emp ? emp.dni : (editingAsignacion?.employee_dni || '10000001'),
+        employee_name: emp
+          ? normalizePersonName(`${emp.first_name} ${emp.last_name}`)
+          : (editingAsignacion?.employee_name || 'Servidor DRAC'),
+        employee_cargo: normalizeInstitutionalName(emp?.position || editingAsignacion?.employee_cargo || 'Servidor DRAC'),
+        dependencia_name: normalizeInstitutionalName(emp?.dependencia_name || editingAsignacion?.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+        area_name: normalizeInstitutionalName(emp?.area_name || editingAsignacion?.area_name || 'General'),
+        horario_id: asignacionForm.horario_id,
+        horario_name: normalizeInstitutionalName(hor ? hor.name : (editingAsignacion?.horario_name || 'Horario Institucional')),
+        horario_code: hor?.code || editingAsignacion?.horario_code || 'HOR-01',
+        fecha_inicio: asignacionForm.fecha_inicio,
+        fecha_fin: asignacionForm.tipo_asignacion === 'TEMPORAL' ? asignacionForm.fecha_fin : null,
+        tipo_asignacion: asignacionForm.tipo_asignacion,
+        motivo: normalizeText(asignacionForm.motivo.trim() || (asignacionForm.tipo_asignacion === 'TEMPORAL' ? 'Asignación temporal por servicio' : 'Horario regular')),
+        documento_sustento: normalizeText(asignacionForm.documento_sustento.trim() || 'Memorando Institucional'),
+        activo: asignacionForm.activo,
+        created_at: editingAsignacion?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-    const res = await saveAsignacionToSupabase(asignacionToSave);
-    if (res.success) {
-      setAsignaciones((prev) => {
-        const index = prev.findIndex((a) => a.id === asignacionToSave.id);
-        if (index >= 0) {
-          const next = [...prev];
-          next[index] = asignacionToSave;
-          return next;
-        }
-        return [asignacionToSave, ...prev];
-      });
-      showFeedback(
-        'success',
-        editingAsignacion
-          ? 'Asignación de horario actualizada exitosamente.'
-          : `Horario asignado correctamente (${asignacionToSave.tipo_asignacion}).`
-      );
-      setIsAsignacionModalOpen(false);
-      if (onRecordAudit) {
-        onRecordAudit(
-          editingAsignacion ? 'ASIGNACION_HORARIO_EDITADA' : 'ASIGNACION_HORARIO_CREADA',
-          `Asignación ${asignacionToSave.tipo_asignacion} de ${asignacionToSave.horario_name} a ${asignacionToSave.employee_name} (DNI ${asignacionToSave.employee_dni}).`
+      const res = await saveAsignacionToSupabase(asignacionToSave);
+      if (res.success) {
+        setAsignaciones((prev) => {
+          const index = prev.findIndex((a) => a.id === asignacionToSave.id);
+          if (index >= 0) {
+            const next = [...prev];
+            next[index] = asignacionToSave;
+            return next;
+          }
+          return [asignacionToSave, ...prev];
+        });
+        showFeedback(
+          'success',
+          editingAsignacion
+            ? 'Asignación de horario actualizada exitosamente.'
+            : `Horario asignado correctamente (${asignacionToSave.tipo_asignacion}).`
         );
+        setIsAsignacionModalOpen(false);
+        if (onRecordAudit) {
+          onRecordAudit(
+            editingAsignacion ? 'ASIGNACION_HORARIO_EDITADA' : 'ASIGNACION_HORARIO_CREADA',
+            `Asignación ${asignacionToSave.tipo_asignacion} de ${asignacionToSave.horario_name} a ${asignacionToSave.employee_name} (DNI ${asignacionToSave.employee_dni}).`
+          );
+        }
+      } else {
+        // En caso de error: NO cierra el modal y conserva los datos ingresados
+        showFeedback('error', res.message || 'Error al guardar la asignación.');
       }
-    } else {
-      showFeedback('error', res.message || 'Error al guardar la asignación.');
+    } catch (err: any) {
+      showFeedback('error', err?.message || 'Error inesperado al procesar la asignación.');
+    } finally {
+      setIsSubmittingAsignacion(false);
     }
   };
 
@@ -1488,10 +1533,20 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold flex items-center gap-1.5"
+                  disabled={isSubmittingTurno}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/50 disabled:text-indigo-400 disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  {editingTurno ? 'Guardar Cambios' : 'Registrar Turno'}
+                  {isSubmittingTurno ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{editingTurno ? 'Guardar Cambios' : 'Registrar Turno'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1692,10 +1747,20 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold flex items-center gap-1.5"
+                  disabled={isSubmittingHorario}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/50 disabled:text-indigo-400 disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  {editingHorario ? 'Guardar Cambios' : 'Registrar Horario'}
+                  {isSubmittingHorario ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{editingHorario ? 'Guardar Cambios' : 'Registrar Horario'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1913,10 +1978,20 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold flex items-center gap-1.5"
+                  disabled={isSubmittingAsignacion}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900/50 disabled:text-emerald-400 disabled:cursor-not-allowed text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  {editingAsignacion ? 'Actualizar Asignación' : 'Confirmar Asignación'}
+                  {isSubmittingAsignacion ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{editingAsignacion ? 'Actualizar Asignación' : 'Confirmar Asignación'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

@@ -267,7 +267,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         if (command === 'TEST_CONNECTION') {
           setCommandResult({
             success: true,
-            message: `Prueba TCP Socket ${devPort} despachada hacia el terminal biométrico (${activeIp}).`,
+            message: data?.message || `Conexión TCP Socket ${devPort} verificada exitosamente hacia el terminal biométrico (${activeIp}).`,
             details: data?.details || {
               ip: activeIp,
               port: devPort,
@@ -278,6 +278,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               tcp_status: 'ONLINE',
             },
           });
+          if (onRefreshDevices) onRefreshDevices();
+        } else {
           const punchCount = data?.details?.total_clock_punches ?? data?.details?.received_punches ?? (data?.details?.punches ? data.details.punches.length : 0);
           setCommandResult({
             success: true,
