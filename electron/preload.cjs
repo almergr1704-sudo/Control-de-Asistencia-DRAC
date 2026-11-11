@@ -62,6 +62,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('system:get-info');
   },
 
+  // Turnos, Horarios y Asignaciones
+  getTurnos: () => ipcRenderer.invoke('turnos:get-all'),
+  saveTurno: (turno) => ipcRenderer.invoke('turnos:save', turno),
+  deleteTurno: (id) => ipcRenderer.invoke('turnos:delete', id),
+
+  getHorarios: () => ipcRenderer.invoke('horarios:get-all'),
+  saveHorario: (horario) => ipcRenderer.invoke('horarios:save', horario),
+  deleteHorario: (id) => ipcRenderer.invoke('horarios:delete', id),
+
+  getAsignaciones: () => ipcRenderer.invoke('asignaciones:get-all'),
+  saveAsignacion: (asignacion) => ipcRenderer.invoke('asignaciones:save', asignacion),
+  deleteAsignacion: (id) => ipcRenderer.invoke('asignaciones:delete', id),
+
   // Controles de ventana
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),

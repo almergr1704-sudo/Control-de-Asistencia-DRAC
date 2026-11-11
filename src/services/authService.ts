@@ -8,6 +8,7 @@ import {
 } from '../utils/userAuthUtils';
 import { INITIAL_EMPLOYEES } from '../data/initialData';
 import { normalizePersonName } from '../utils/nameUtils';
+import { getApiUrl } from '../utils/apiConfig';
 import type { Session, User } from '@supabase/supabase-js';
 
 export interface AuthenticationResponse {
@@ -421,7 +422,7 @@ export async function loginUser(
 
   // 4. FALLBACK PARA SERVIDOR LOCAL EXPRESS (/api/auth/login)
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(getApiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier: cleanId, password: cleanPass }),
@@ -625,7 +626,7 @@ export async function changePasswordPermanently(
   // 5. SINCRONIZACIÓN CON BACKEND EXPRESS (para entorno Desktop offline)
   let serverUpdatedEmp: Employee | null = null;
   try {
-    const res = await fetch('/api/auth/change-password', {
+    const res = await fetch(getApiUrl('/api/auth/change-password'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

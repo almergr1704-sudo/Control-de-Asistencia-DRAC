@@ -6,6 +6,7 @@ import {
   PushReceptionLog,
   Employee,
 } from '../../types';
+import { getApiUrl } from '../../utils/apiConfig';
 import {
   Server,
   Activity,
@@ -103,7 +104,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
   const fetchPushStatus = async () => {
     setIsLoadingSummary(true);
     try {
-      const res = await fetch('/api/zkteco/push-status');
+      const res = await fetch(getApiUrl('/api/zkteco/push-status'));
       const data = await res.json();
       if (data.success) {
         setPushSummary(data);
@@ -119,7 +120,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
   const fetchPushLogs = async () => {
     setIsLoadingLogs(true);
     try {
-      const res = await fetch('/api/zkteco/push-logs');
+      const res = await fetch(getApiUrl('/api/zkteco/push-logs'));
       const data = await res.json();
       if (data.success) {
         setPushLogs(data.data || []);
@@ -135,7 +136,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
   const runPipelineDiagnostic = async (devId: string) => {
     setIsDiagnosing(true);
     try {
-      const res = await fetch('/api/zkteco/diagnose-pipeline', {
+      const res = await fetch(getApiUrl('/api/zkteco/diagnose-pipeline'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId: devId }),
@@ -157,7 +158,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
   const handleClearLogs = async () => {
     if (!window.confirm('¿Está seguro de limpiar los logs de auditoría PUSH?')) return;
     try {
-      await fetch('/api/zkteco/push-logs/clear', { method: 'POST' });
+      await fetch(getApiUrl('/api/zkteco/push-logs/clear'), { method: 'POST' });
       setPushLogs([]);
       showToast('✓ Logs de auditoría PUSH limpiados.');
     } catch (err) {

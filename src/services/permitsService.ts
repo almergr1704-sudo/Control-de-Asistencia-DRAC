@@ -2,6 +2,7 @@ import { Encargatura, Vacacion, PapeletaSalida, PapeletaStatus, VacacionStatus }
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizePersonName, normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_ENCARGATURAS, INITIAL_VACACIONES, INITIAL_PAPELETAS } from '../data/initialData';
+import { getApiUrl } from '../utils/apiConfig';
 
 /**
  * SERVICIO CENTRALIZADO DE ENCARGATURAS, VACACIONES Y PAPELETAS DE SALIDA (FASE 4)
@@ -65,7 +66,7 @@ export async function fetchEncargaturasFromSupabase(): Promise<Encargatura[]> {
     }
 
     // Fallback a API local
-    const res = await fetch('/api/encargaturas');
+    const res = await fetch(getApiUrl('/api/encargaturas'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -152,7 +153,7 @@ export async function saveEncargaturaToSupabase(enc: Encargatura): Promise<{ suc
   }
 
   try {
-    const res = await fetch('/api/encargaturas', {
+    const res = await fetch(getApiUrl('/api/encargaturas'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -244,7 +245,7 @@ export async function fetchVacacionesFromSupabase(): Promise<Vacacion[]> {
     }
 
     // Fallback a API central
-    const res = await fetch('/api/vacaciones');
+    const res = await fetch(getApiUrl('/api/vacaciones'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -320,7 +321,7 @@ export async function saveVacacionToSupabase(vac: Vacacion): Promise<{ success: 
   }
 
   try {
-    const res = await fetch('/api/vacaciones', {
+    const res = await fetch(getApiUrl('/api/vacaciones'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -415,7 +416,7 @@ export async function fetchPapeletasFromSupabase(): Promise<PapeletaSalida[]> {
     }
 
     // Fallback a API central
-    const res = await fetch('/api/papeletas');
+    const res = await fetch(getApiUrl('/api/papeletas'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -499,7 +500,7 @@ export async function savePapeletaToSupabase(papeleta: PapeletaSalida): Promise<
   }
 
   try {
-    const res = await fetch('/api/papeletas', {
+    const res = await fetch(getApiUrl('/api/papeletas'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

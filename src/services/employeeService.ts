@@ -2,6 +2,7 @@ import { Employee } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizePersonName, normalizeInstitutionalName, buildNormalizedFullName, normalizeText } from '../utils/nameUtils';
 import { INITIAL_EMPLOYEES } from '../data/initialData';
+import { getApiUrl } from '../utils/apiConfig';
 
 /**
  * SERVICIO CENTRALIZADO DE PERSONAL Y USUARIOS (FASE 2)
@@ -79,7 +80,7 @@ export async function fetchEmployeesFromSupabase(): Promise<Employee[]> {
     }
 
     // 2. Consulta vía endpoint central
-    const res = await fetch('/api/trabajadores');
+    const res = await fetch(getApiUrl('/api/trabajadores'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -232,7 +233,7 @@ export async function saveEmployeeToSupabase(employee: Employee): Promise<{ succ
 
   // Sincronización persistente en el servidor backend (garantiza persistencia entre reinicios)
   try {
-    const res = await fetch('/api/trabajadores', {
+    const res = await fetch(getApiUrl('/api/trabajadores'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

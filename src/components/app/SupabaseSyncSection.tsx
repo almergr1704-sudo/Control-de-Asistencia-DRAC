@@ -28,6 +28,7 @@ import {
   getAppOrigin,
 } from '../../lib/supabaseClient';
 import { AppOrigin, SupabaseConfigStatus } from '../../types';
+import { getApiUrl } from '../../utils/apiConfig';
 
 export const SupabaseSyncSection: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -68,7 +69,7 @@ export const SupabaseSyncSection: React.FC = () => {
       const conn = await checkSupabaseConnection();
       setConnectionStatus(conn);
 
-      const res = await fetch('/api/supabase/status');
+      const res = await fetch(getApiUrl('/api/supabase/status'));
       if (res.ok) {
         const data = await res.json();
         setDbStats(data);
@@ -85,7 +86,7 @@ export const SupabaseSyncSection: React.FC = () => {
 
   const fetchAuditLogs = async () => {
     try {
-      const res = await fetch('/api/audit/logs?limit=50');
+      const res = await fetch(getApiUrl('/api/audit/logs?limit=50'));
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {

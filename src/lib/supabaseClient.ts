@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AppOrigin, Employee, Papeleta, Vacacion, Encargatura, DispositivoZkTeco, RawPunch, AsistenciaProcesada } from '../types';
+import { getApiUrl } from '../utils/apiConfig';
 
 /**
  * UNIFIED SUPABASE CLIENT - DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA (DRAC)
@@ -79,7 +80,7 @@ export async function checkSupabaseConnection(): Promise<{
   const origin = getAppOrigin();
   const startTime = Date.now();
   try {
-    const res = await fetch('/api/supabase/status');
+    const res = await fetch(getApiUrl('/api/supabase/status'));
     if (res.ok) {
       const data = await res.json();
       return {

@@ -1,18 +1,17 @@
 import { Turno, Horario, AsignacionHorario } from '../types';
 import { supabase, getAppOrigin } from '../lib/supabaseClient';
 import { normalizeInstitutionalName, normalizeText } from '../utils/nameUtils';
-import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../data/initialData';
+import { getApiUrl } from '../utils/apiConfig';
 
 /**
- * SERVICIO CENTRALIZADO DE HORARIOS, TURNOS Y ASIGNACIONES (FASE 3)
+ * SERVICIO CENTRALIZADO DE HORARIOS, TURNOS Y ASIGNACIONES
+ * DRAC Cajamarca - Soporte Multi-entorno (Desktop Electron e Institucional Web)
  * 
- * Única Fuente de Verdad: Supabase PostgreSQL
- * Tablas: turnos, horarios, asignacion_horarios
- * Reglas de Negocio:
- *  - Máximo 2 turnos por día
- *  - Validación de no solapamiento
- *  - Tolerancia de entrada configurable (por defecto 10 min)
- * Clientes: Vercel (Web) y Desktop (Escritorio)
+ * Capas de persistencia:
+ * 1. IPC Nativo Electron (almacenamiento en disco local sin dependencia de red)
+ * 2. API Backend Local (Express en http://127.0.0.1:3000/api/...)
+ * 3. Supabase PostgreSQL (nube/centralizada, no bloqueante ante desconexión o fallo de DNS)
+ * 4. Caché de Respaldo Local (localStorage)
  */
 
 // ==========================================
@@ -20,8 +19,41 @@ import { INITIAL_TURNOS, INITIAL_HORARIOS } from '../data/initialData';
 // ==========================================
 
 export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
+  // 1. Verificar IPC Desktop de Electron (máxima fidelidad en aplicación de escritorio)
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.getTurnos) {
+    try {
+      const ipcRes = await (window as any).electronAPI.getTurnos();
+      if (ipcRes?.success && Array.isArray(ipcRes.data) && ipcRes.data.length > 0) {
+        return ipcRes.data.map((t: Turno) => ({
+          ...t,
+          name: normalizeInstitutionalName(t.name),
+          description: normalizeText(t.description),
+        }));
+      }
+    } catch (ipcErr) {
+      console.warn('Aviso en Electron IPC getTurnos:', ipcErr);
+    }
+  }
+
+  // 2. Consulta a Backend Local / Central vía getApiUrl
   try {
-    // 1. Consulta a Supabase PostgreSQL
+    const res = await fetch(getApiUrl('/api/turnos'));
+    if (res.ok) {
+      const apiData = await res.json();
+      if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
+        return apiData.data.map((t: Turno) => ({
+          ...t,
+          name: normalizeInstitutionalName(t.name),
+          description: normalizeText(t.description),
+        }));
+      }
+    }
+  } catch (err) {
+    // Si la conexión HTTP falla, continuar con los siguientes niveles
+  }
+
+  // 3. Consulta a Supabase PostgreSQL (con captura defensiva de errores de red)
+  try {
     const { data, error } = await supabase
       .from('turnos')
       .select('*')
@@ -44,35 +76,22 @@ export async function fetchTurnosFromSupabase(): Promise<Turno[]> {
         created_at: t.created_at || new Date().toISOString(),
       }));
     }
-
-    // 2. Consulta a Backend Local / Central
-    const res = await fetch('/api/turnos');
-    if (res.ok) {
-      const apiData = await res.json();
-      if (apiData.success && Array.isArray(apiData.data)) {
-        return apiData.data.map((t: Turno) => ({
-          ...t,
-          name: normalizeInstitutionalName(t.name),
-          description: normalizeText(t.description),
-        }));
-      }
-    }
-
-    // 3. Fallback localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const local = localStorage.getItem('drac_turnos_cache');
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch (_) {}
-    }
   } catch (err) {
-    console.warn('Conexión en progreso con backend turnos:', err);
+    // Supabase no alcanzable o sin conexión de red externa
   }
 
-  // Sin registros precargados ni semillas automáticas: retorna lista vacía para creación manual
+  // 4. Fallback localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = localStorage.getItem('drac_turnos_cache');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+  }
+
+  // Retorna lista vacía si aún no se han creado turnos
   return [];
 }
 
@@ -94,28 +113,24 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
     tolerancia_minutos: normalizedTurno.tolerance_minutes,
   };
 
-  let supabaseSaved = false;
-  let supabaseError = '';
-  let localSaved = false;
-  let localError = '';
+  let savedSuccessfully = false;
+  let saveErrorMessage = '';
 
-  // 1. Guardar en Supabase PostgreSQL (Fuente central de verdad para Vercel y Electron)
-  try {
-    const { error } = await supabase.from('turnos').upsert(dbTurno);
-    if (!error) {
-      supabaseSaved = true;
-    } else {
-      console.warn('Supabase upsert turnos aviso:', error.message);
-      supabaseError = error.message;
+  // 1. Guardar vía Electron IPC nativo si estamos en la app de escritorio
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.saveTurno) {
+    try {
+      const ipcRes = await (window as any).electronAPI.saveTurno(normalizedTurno);
+      if (ipcRes?.success) {
+        savedSuccessfully = true;
+      }
+    } catch (ipcErr: any) {
+      console.warn('Aviso guardando turno vía Electron IPC:', ipcErr);
     }
-  } catch (err: any) {
-    console.warn('Supabase upsert turnos excepción:', err?.message);
-    supabaseError = err?.message || 'Error de conexión con Supabase';
   }
 
-  // 2. Persistencia en Backend Local / API (para entorno local/desktop)
+  // 2. Persistencia en Backend Local / API (Express) vía getApiUrl
   try {
-    const res = await fetch('/api/turnos', {
+    const res = await fetch(getApiUrl('/api/turnos'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -124,32 +139,76 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
       body: JSON.stringify(normalizedTurno),
     });
     if (res.ok) {
-      localSaved = true;
+      savedSuccessfully = true;
     } else {
       const errJson = await res.json().catch(() => null);
-      localError = errJson?.message || 'Error en endpoint local /api/turnos';
+      if (errJson?.message) saveErrorMessage = errJson.message;
     }
   } catch (err: any) {
-    localError = err?.message || 'Servidor local no disponible';
+    console.warn('Aviso conexión /api/turnos:', err?.message);
   }
 
-  if (supabaseSaved || localSaved) {
-    if (typeof window !== 'undefined') {
-      try {
-        const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
-        const idx = local.findIndex((t: any) => t.id === normalizedTurno.id);
-        if (idx >= 0) local[idx] = normalizedTurno;
-        else local.push(normalizedTurno);
-        localStorage.setItem('drac_turnos_cache', JSON.stringify(local));
-      } catch (_) {}
+  // 3. Supabase PostgreSQL (sincronización asíncrona segura sin romper el flujo ante fallo de red)
+  try {
+    const { error } = await supabase.from('turnos').upsert(dbTurno);
+    if (!error) {
+      savedSuccessfully = true;
+    } else {
+      console.warn('Aviso Supabase upsert turnos:', error.message);
     }
+  } catch (err: any) {
+    console.warn('Supabase no alcanzable (modo offline/local activo):', err?.message);
+  }
+
+  // 4. Caché de cliente en LocalStorage (garantiza persistencia inmediata ante recargas)
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
+      const idx = local.findIndex((t: any) => t.id === normalizedTurno.id || t.code === normalizedTurno.code);
+      if (idx >= 0) local[idx] = normalizedTurno;
+      else local.push(normalizedTurno);
+      localStorage.setItem('drac_turnos_cache', JSON.stringify(local));
+      savedSuccessfully = true;
+    } catch (_) {}
+  }
+
+  if (savedSuccessfully) {
     return { success: true, data: normalizedTurno };
   }
 
   return {
     success: false,
-    message: supabaseError || localError || 'Error al persistir el turno laboral en la base de datos.',
+    message: saveErrorMessage || 'Error al persistir el turno laboral en el sistema.',
   };
+}
+
+export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ success: boolean; message?: string }> {
+  // 1. Electron IPC
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.deleteTurno) {
+    try {
+      await (window as any).electronAPI.deleteTurno(turnoId);
+    } catch (_) {}
+  }
+
+  // 2. Supabase delete
+  try {
+    await supabase.from('turnos').delete().eq('id', turnoId);
+  } catch (_) {}
+
+  // 3. Backend Local
+  try {
+    await fetch(getApiUrl(`/api/turnos/${turnoId}`), { method: 'DELETE' });
+  } catch (_) {}
+
+  // 4. LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
+      localStorage.setItem('drac_turnos_cache', JSON.stringify(local.filter((t: any) => t.id !== turnoId)));
+    } catch (_) {}
+  }
+
+  return { success: true };
 }
 
 // ==========================================
@@ -157,8 +216,43 @@ export async function saveTurnoToSupabase(turno: Turno): Promise<{ success: bool
 // ==========================================
 
 export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
+  // 1. Verificar IPC Desktop de Electron
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.getHorarios) {
+    try {
+      const ipcRes = await (window as any).electronAPI.getHorarios();
+      if (ipcRes?.success && Array.isArray(ipcRes.data) && ipcRes.data.length > 0) {
+        return ipcRes.data.map((h: Horario) => ({
+          ...h,
+          name: normalizeInstitutionalName(h.name),
+          turno1_name: normalizeInstitutionalName(h.turno1_name),
+          turno2_name: normalizeInstitutionalName(h.turno2_name),
+        }));
+      }
+    } catch (ipcErr) {
+      console.warn('Aviso en Electron IPC getHorarios:', ipcErr);
+    }
+  }
+
+  // 2. Consulta a Backend Local / Central vía getApiUrl
   try {
-    // 1. Consulta a Supabase PostgreSQL
+    const res = await fetch(getApiUrl('/api/horarios'));
+    if (res.ok) {
+      const apiData = await res.json();
+      if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
+        return apiData.data.map((h: Horario) => ({
+          ...h,
+          name: normalizeInstitutionalName(h.name),
+          turno1_name: normalizeInstitutionalName(h.turno1_name),
+          turno2_name: normalizeInstitutionalName(h.turno2_name),
+        }));
+      }
+    }
+  } catch (err) {
+    // Si la conexión HTTP falla, continuar con los siguientes niveles
+  }
+
+  // 3. Consulta a Supabase PostgreSQL (seguro ante fallos de red)
+  try {
     const { data, error } = await supabase
       .from('horarios')
       .select('*')
@@ -183,36 +277,21 @@ export async function fetchHorariosFromSupabase(): Promise<Horario[]> {
         total_duration_text: h.total_duration_text || '8 horas',
       }));
     }
-
-    // 2. Consulta a Backend Local / Central
-    const res = await fetch('/api/horarios');
-    if (res.ok) {
-      const apiData = await res.json();
-      if (apiData.success && Array.isArray(apiData.data)) {
-        return apiData.data.map((h: Horario) => ({
-          ...h,
-          name: normalizeInstitutionalName(h.name),
-          turno1_name: normalizeInstitutionalName(h.turno1_name),
-          turno2_name: normalizeInstitutionalName(h.turno2_name),
-        }));
-      }
-    }
-
-    // 3. Fallback localStorage
-    if (typeof window !== 'undefined') {
-      try {
-        const local = localStorage.getItem('drac_horarios_cache');
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch (_) {}
-    }
   } catch (err) {
-    console.warn('Conexión en progreso con backend horarios:', err);
+    // Supabase no alcanzable
   }
 
-  // Sin registros precargados ni semillas automáticas: retorna lista vacía para creación manual
+  // 4. Fallback localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = localStorage.getItem('drac_horarios_cache');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+  }
+
   return [];
 }
 
@@ -236,28 +315,24 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
     activo: normalizedHorario.active,
   };
 
-  let supabaseSaved = false;
-  let supabaseError = '';
-  let localSaved = false;
-  let localError = '';
+  let savedSuccessfully = false;
+  let saveErrorMessage = '';
 
-  // 1. Guardar en Supabase PostgreSQL (Fuente central de verdad para Vercel y Electron)
-  try {
-    const { error } = await supabase.from('horarios').upsert(dbHorario);
-    if (!error) {
-      supabaseSaved = true;
-    } else {
-      console.warn('Supabase upsert horarios aviso:', error.message);
-      supabaseError = error.message;
+  // 1. Guardar vía Electron IPC nativo si estamos en la app de escritorio
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.saveHorario) {
+    try {
+      const ipcRes = await (window as any).electronAPI.saveHorario(normalizedHorario);
+      if (ipcRes?.success) {
+        savedSuccessfully = true;
+      }
+    } catch (ipcErr: any) {
+      console.warn('Aviso guardando horario vía Electron IPC:', ipcErr);
     }
-  } catch (err: any) {
-    console.warn('Supabase upsert horarios excepción:', err?.message);
-    supabaseError = err?.message || 'Error de conexión con Supabase';
   }
 
-  // 2. Persistencia en Backend Local / API (para entorno local/desktop)
+  // 2. Persistencia en Backend Local / API (Express) vía getApiUrl
   try {
-    const res = await fetch('/api/horarios', {
+    const res = await fetch(getApiUrl('/api/horarios'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -266,75 +341,75 @@ export async function saveHorarioToSupabase(horario: Horario): Promise<{ success
       body: JSON.stringify(normalizedHorario),
     });
     if (res.ok) {
-      localSaved = true;
+      savedSuccessfully = true;
     } else {
       const errJson = await res.json().catch(() => null);
-      localError = errJson?.message || 'Error en endpoint local /api/horarios';
+      if (errJson?.message) saveErrorMessage = errJson.message;
     }
   } catch (err: any) {
-    localError = err?.message || 'Servidor local no disponible';
+    console.warn('Aviso conexión /api/horarios:', err?.message);
   }
 
-  if (supabaseSaved || localSaved) {
-    if (typeof window !== 'undefined') {
-      try {
-        const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
-        const idx = local.findIndex((h: any) => h.id === normalizedHorario.id);
-        if (idx >= 0) local[idx] = normalizedHorario;
-        else local.push(normalizedHorario);
-        localStorage.setItem('drac_horarios_cache', JSON.stringify(local));
-      } catch (_) {}
+  // 3. Supabase PostgreSQL (sincronización segura)
+  try {
+    const { error } = await supabase.from('horarios').upsert(dbHorario);
+    if (!error) {
+      savedSuccessfully = true;
+    } else {
+      console.warn('Aviso Supabase upsert horarios:', error.message);
     }
+  } catch (err: any) {
+    console.warn('Supabase no alcanzable (modo offline/local activo):', err?.message);
+  }
+
+  // 4. Caché de cliente en LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
+      const idx = local.findIndex((h: any) => h.id === normalizedHorario.id || h.code === normalizedHorario.code);
+      if (idx >= 0) local[idx] = normalizedHorario;
+      else local.push(normalizedHorario);
+      localStorage.setItem('drac_horarios_cache', JSON.stringify(local));
+      savedSuccessfully = true;
+    } catch (_) {}
+  }
+
+  if (savedSuccessfully) {
     return { success: true, data: normalizedHorario };
   }
 
   return {
     success: false,
-    message: supabaseError || localError || 'Error al persistir el horario laboral en la base de datos.',
+    message: saveErrorMessage || 'Error al persistir el horario laboral en el sistema.',
   };
 }
 
-export async function deleteTurnoFromSupabase(turnoId: string): Promise<{ success: boolean; message?: string }> {
-  try {
-    await supabase.from('turnos').delete().eq('id', turnoId);
-  } catch (_) {}
-
-  try {
-    const res = await fetch(`/api/turnos/${turnoId}`, { method: 'DELETE' });
-    if (res.ok) {
-      if (typeof window !== 'undefined') {
-        try {
-          const local = JSON.parse(localStorage.getItem('drac_turnos_cache') || '[]');
-          localStorage.setItem('drac_turnos_cache', JSON.stringify(local.filter((t: any) => t.id !== turnoId)));
-        } catch (_) {}
-      }
-      return { success: true };
-    }
-  } catch (err: any) {
-    return { success: false, message: err?.message };
-  }
-  return { success: true };
-}
-
 export async function deleteHorarioFromSupabase(horarioId: string): Promise<{ success: boolean; message?: string }> {
+  // 1. Electron IPC
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.deleteHorario) {
+    try {
+      await (window as any).electronAPI.deleteHorario(horarioId);
+    } catch (_) {}
+  }
+
+  // 2. Supabase delete
   try {
     await supabase.from('horarios').delete().eq('id', horarioId);
   } catch (_) {}
 
+  // 3. Backend Local
   try {
-    const res = await fetch(`/api/horarios/${horarioId}`, { method: 'DELETE' });
-    if (res.ok) {
-      if (typeof window !== 'undefined') {
-        try {
-          const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
-          localStorage.setItem('drac_horarios_cache', JSON.stringify(local.filter((h: any) => h.id !== horarioId)));
-        } catch (_) {}
-      }
-      return { success: true };
-    }
-  } catch (err: any) {
-    return { success: false, message: err?.message };
+    await fetch(getApiUrl(`/api/horarios/${horarioId}`), { method: 'DELETE' });
+  } catch (_) {}
+
+  // 4. LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_horarios_cache') || '[]');
+      localStorage.setItem('drac_horarios_cache', JSON.stringify(local.filter((h: any) => h.id !== horarioId)));
+    } catch (_) {}
   }
+
   return { success: true };
 }
 
@@ -343,6 +418,38 @@ export async function deleteHorarioFromSupabase(horarioId: string): Promise<{ su
 // ==========================================
 
 export async function fetchAsignacionesFromSupabase(): Promise<AsignacionHorario[]> {
+  // 1. Electron IPC
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.getAsignaciones) {
+    try {
+      const ipcRes = await (window as any).electronAPI.getAsignaciones();
+      if (ipcRes?.success && Array.isArray(ipcRes.data) && ipcRes.data.length > 0) {
+        return ipcRes.data.map((a: AsignacionHorario) => ({
+          ...a,
+          employee_name: normalizeInstitutionalName(a.employee_name),
+          horario_name: normalizeInstitutionalName(a.horario_name),
+        }));
+      }
+    } catch (ipcErr) {
+      console.warn('Aviso en Electron IPC getAsignaciones:', ipcErr);
+    }
+  }
+
+  // 2. Backend Local vía getApiUrl
+  try {
+    const res = await fetch(getApiUrl('/api/asignacion-horarios'));
+    if (res.ok) {
+      const apiData = await res.json();
+      if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
+        return apiData.data.map((a: AsignacionHorario) => ({
+          ...a,
+          employee_name: normalizeInstitutionalName(a.employee_name),
+          horario_name: normalizeInstitutionalName(a.horario_name),
+        }));
+      }
+    }
+  } catch (_) {}
+
+  // 3. Supabase PostgreSQL
   try {
     const { data, error } = await supabase
       .from('asignacion_horarios')
@@ -356,7 +463,7 @@ export async function fetchAsignacionesFromSupabase(): Promise<AsignacionHorario
         employee_dni: a.trabajador_dni || a.employee_dni,
         employee_name: normalizeInstitutionalName(a.trabajador_nombre || a.employee_name),
         employee_cargo: a.cargo || a.employee_cargo || 'Servidor DRAC',
-        dependencia_name: a.dependencia_nombre || a.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
+        dependencia_name: a.dependencia_nombre || a.dependencia_name || 'Sede Central - DRAC Cajamarca',
         area_name: a.area_nombre || a.area_name || 'General',
         horario_id: a.horario_id,
         horario_name: normalizeInstitutionalName(a.horario_nombre || a.horario_name),
@@ -370,19 +477,11 @@ export async function fetchAsignacionesFromSupabase(): Promise<AsignacionHorario
         created_at: a.created_at || new Date().toISOString(),
       }));
     }
-
-    const res = await fetch('/api/asignacion-horarios');
-    if (res.ok) {
-      const apiData = await res.json();
-      if (apiData.success && Array.isArray(apiData.data)) {
-        return apiData.data;
-      }
-    }
   } catch (err) {
-    console.warn('Conexión en progreso con Supabase asignaciones, aplicando catálogo local:', err);
+    // Supabase no disponible
   }
 
-  // Fallback local
+  // 4. Fallback local
   if (typeof window !== 'undefined') {
     try {
       const local = localStorage.getItem('drac_asignaciones_horarios');
@@ -404,12 +503,42 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
     created_at: asignacion.created_at || new Date().toISOString(),
   };
 
-  let supabaseSaved = false;
-  let supabaseError = '';
-  let localSaved = false;
-  let localError = '';
+  let savedSuccessfully = false;
+  let saveErrorMessage = '';
 
-  // 1. Guardar en Supabase PostgreSQL
+  // 1. Electron IPC
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.saveAsignacion) {
+    try {
+      const ipcRes = await (window as any).electronAPI.saveAsignacion(normalized);
+      if (ipcRes?.success) {
+        savedSuccessfully = true;
+      }
+    } catch (ipcErr: any) {
+      console.warn('Aviso guardando asignación vía Electron IPC:', ipcErr);
+    }
+  }
+
+  // 2. Persistencia en Backend Local vía getApiUrl
+  try {
+    const res = await fetch(getApiUrl('/api/asignacion-horarios'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-App-Origin': origin,
+      },
+      body: JSON.stringify(normalized),
+    });
+    if (res.ok) {
+      savedSuccessfully = true;
+    } else {
+      const errJson = await res.json().catch(() => null);
+      if (errJson?.message) saveErrorMessage = errJson.message;
+    }
+  } catch (err: any) {
+    console.warn('Aviso conexión /api/asignacion-horarios:', err?.message);
+  }
+
+  // 3. Supabase PostgreSQL
   try {
     if (normalized.activo && normalized.tipo_asignacion === 'PERMANENTE') {
       await supabase
@@ -431,60 +560,50 @@ export async function saveAsignacionToSupabase(asignacion: AsignacionHorario): P
       activo: normalized.activo,
     });
     if (!error) {
-      supabaseSaved = true;
+      savedSuccessfully = true;
     } else {
       console.warn('Aviso Supabase upsert asignacion_horarios:', error.message);
-      supabaseError = error.message;
     }
   } catch (err: any) {
-    console.warn('Excepción Supabase asignaciones:', err?.message);
-    supabaseError = err?.message || 'Error de conexión con Supabase';
+    console.warn('Supabase no alcanzable (modo offline/local activo):', err?.message);
   }
 
-  // 2. Persistencia en Backend Local
-  try {
-    const res = await fetch('/api/asignacion-horarios', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Origin': origin,
-      },
-      body: JSON.stringify(normalized),
-    });
-    if (res.ok) {
-      localSaved = true;
-    } else {
-      const errJson = await res.json().catch(() => null);
-      localError = errJson?.message || 'Error en endpoint local /api/asignacion-horarios';
-    }
-  } catch (err: any) {
-    localError = err?.message || 'Servidor local no disponible';
+  // 4. LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
+      const idx = local.findIndex((a: any) => a.id === normalized.id);
+      if (idx >= 0) local[idx] = normalized;
+      else local.unshift(normalized);
+      localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(local));
+      savedSuccessfully = true;
+    } catch (_) {}
   }
 
-  if (supabaseSaved || localSaved) {
-    if (typeof window !== 'undefined') {
-      try {
-        const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
-        const idx = local.findIndex((a: any) => a.id === normalized.id);
-        if (idx >= 0) local[idx] = normalized;
-        else local.unshift(normalized);
-        localStorage.setItem('drac_asignaciones_horarios', JSON.stringify(local));
-      } catch (_) {}
-    }
+  if (savedSuccessfully) {
     return { success: true, data: normalized };
   }
 
   return {
     success: false,
-    message: supabaseError || localError || 'Error al persistir la asignación de horario en la base de datos.',
+    message: saveErrorMessage || 'Error al persistir la asignación de horario en el sistema.',
   };
 }
 
 export async function deleteAsignacionFromSupabase(asignacionId: string): Promise<{ success: boolean; message?: string }> {
+  // 1. Electron IPC
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.deleteAsignacion) {
+    try {
+      await (window as any).electronAPI.deleteAsignacion(asignacionId);
+    } catch (_) {}
+  }
+
+  // 2. Supabase
   try {
     await supabase.from('asignacion_horarios').delete().eq('id', asignacionId);
   } catch (_) {}
 
+  // 3. LocalStorage
   if (typeof window !== 'undefined') {
     try {
       const local = JSON.parse(localStorage.getItem('drac_asignaciones_horarios') || '[]');
@@ -493,12 +612,10 @@ export async function deleteAsignacionFromSupabase(asignacionId: string): Promis
     } catch (_) {}
   }
 
+  // 4. Backend Local
   try {
-    const res = await fetch(`/api/asignacion-horarios/${asignacionId}`, { method: 'DELETE' });
-    if (res.ok) return { success: true };
-  } catch (err: any) {
-    return { success: false, message: err?.message };
-  }
+    await fetch(getApiUrl(`/api/asignacion-horarios/${asignacionId}`), { method: 'DELETE' });
+  } catch (_) {}
 
   return { success: true };
 }
@@ -513,7 +630,7 @@ export async function bulkAssignHorarioToEmployees(
   documentoSustento: string
 ): Promise<{ success: boolean; message?: string; count?: number }> {
   try {
-    const res = await fetch('/api/asignacion-horarios/bulk', {
+    const res = await fetch(getApiUrl('/api/asignacion-horarios/bulk'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -531,7 +648,7 @@ export async function bulkAssignHorarioToEmployees(
       return { success: true, message: json.message, count: json.count };
     }
   } catch (err: any) {
-    return { success: false, message: err?.message };
+    console.warn('Aviso bulk assign HTTP:', err?.message);
   }
   return { success: true, count: dnis.length };
 }

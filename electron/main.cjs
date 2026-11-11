@@ -555,6 +555,139 @@ ipcMain.handle('punches:get-all', async () => {
 });
 
 // =========================================================================
+// IPC HANDLERS - TURNOS, HORARIOS Y ASIGNACIONES (PERSISTENCIA LOCAL SEGURA)
+// =========================================================================
+
+ipcMain.handle('turnos:get-all', async () => {
+  try {
+    const p = getStorageFilePath('turnos.json');
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch (_) {}
+  return [];
+});
+
+ipcMain.handle('turnos:save', async (_event, turno) => {
+  try {
+    const p = getStorageFilePath('turnos.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const idx = list.findIndex((t) => t.id === turno.id || t.code === turno.code);
+    if (idx >= 0) list[idx] = { ...list[idx], ...turno };
+    else list.push(turno);
+    fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    return { success: true, data: turno };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('turnos:delete', async (_event, id) => {
+  try {
+    const p = getStorageFilePath('turnos.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const filtered = list.filter((t) => t.id !== id);
+    fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('horarios:get-all', async () => {
+  try {
+    const p = getStorageFilePath('horarios.json');
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch (_) {}
+  return [];
+});
+
+ipcMain.handle('horarios:save', async (_event, horario) => {
+  try {
+    const p = getStorageFilePath('horarios.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const idx = list.findIndex((h) => h.id === horario.id || h.code === horario.code);
+    if (idx >= 0) list[idx] = { ...list[idx], ...horario };
+    else list.push(horario);
+    fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    return { success: true, data: horario };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('horarios:delete', async (_event, id) => {
+  try {
+    const p = getStorageFilePath('horarios.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const filtered = list.filter((h) => h.id !== id);
+    fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('asignaciones:get-all', async () => {
+  try {
+    const p = getStorageFilePath('asignacion-horarios.json');
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(data)) return data;
+    }
+  } catch (_) {}
+  return [];
+});
+
+ipcMain.handle('asignaciones:save', async (_event, asig) => {
+  try {
+    const p = getStorageFilePath('asignacion-horarios.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const idx = list.findIndex((a) => a.id === asig.id);
+    if (idx >= 0) list[idx] = { ...list[idx], ...asig };
+    else list.unshift(asig);
+    fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    return { success: true, data: asig };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('asignaciones:delete', async (_event, id) => {
+  try {
+    const p = getStorageFilePath('asignacion-horarios.json');
+    let list = [];
+    if (fs.existsSync(p)) {
+      try { list = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { list = []; }
+    }
+    const filtered = list.filter((a) => a.id !== id);
+    fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+// =========================================================================
 // IPC HANDLERS - PERSISTENCIA Y GESTIÓN DIRECTA DE MARCADORES BIOMÉTRICOS
 // =========================================================================
 

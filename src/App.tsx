@@ -337,7 +337,7 @@ export const App: React.FC = () => {
       if (Array.isArray(atts)) setAttendance(atts);
 
       // 2. Employees
-      const resEmps = await fetch('/api/employees').then((r) => r.json()).catch(() => null);
+      const resEmps = await fetch(getApiUrl('/api/employees')).then((r) => r.json()).catch(() => null);
       if (resEmps?.success && Array.isArray(resEmps.data) && resEmps.data.length > 0) {
         setEmployees((prev) => {
           const map = new Map<string, Employee>();
@@ -379,7 +379,7 @@ export const App: React.FC = () => {
       }
 
       // 3. Dependencias
-      const resDeps = await fetch('/api/dependencias').then((r) => r.json()).catch(() => null);
+      const resDeps = await fetch(getApiUrl('/api/dependencias')).then((r) => r.json()).catch(() => null);
       if (resDeps?.success && Array.isArray(resDeps.data) && resDeps.data.length > 0) {
         setDependencias(resDeps.data.map((d: any) => ({
           ...d,
@@ -389,7 +389,7 @@ export const App: React.FC = () => {
       }
 
       // 4. Direcciones u Órganos
-      const resDirs = await fetch('/api/direcciones').then((r) => r.json()).catch(() => null);
+      const resDirs = await fetch(getApiUrl('/api/direcciones')).then((r) => r.json()).catch(() => null);
       if (resDirs?.success && Array.isArray(resDirs.data) && resDirs.data.length > 0) {
         setDireccionesOrganos(resDirs.data.map((d: any) => ({
           ...d,
@@ -399,7 +399,7 @@ export const App: React.FC = () => {
       }
 
       // 5. Áreas u Oficinas
-      const resAreas = await fetch('/api/areas').then((r) => r.json()).catch(() => null);
+      const resAreas = await fetch(getApiUrl('/api/areas')).then((r) => r.json()).catch(() => null);
       if (resAreas?.success && Array.isArray(resAreas.data) && resAreas.data.length > 0) {
         setAreas(resAreas.data.map((a: any) => ({
           ...a,
@@ -412,7 +412,7 @@ export const App: React.FC = () => {
       }
 
       // 6. Cargos
-      const resCargos = await fetch('/api/cargos').then((r) => r.json()).catch(() => null);
+      const resCargos = await fetch(getApiUrl('/api/cargos')).then((r) => r.json()).catch(() => null);
       if (resCargos?.success && Array.isArray(resCargos.data) && resCargos.data.length > 0) {
         setCargos(resCargos.data.map((c: any) => ({
           ...c,
@@ -421,7 +421,7 @@ export const App: React.FC = () => {
       }
 
       // 7. Responsables
-      const resResp = await fetch('/api/responsables').then((r) => r.json()).catch(() => null);
+      const resResp = await fetch(getApiUrl('/api/responsables')).then((r) => r.json()).catch(() => null);
       if (resResp?.success && Array.isArray(resResp.data) && resResp.data.length > 0) {
         setResponsables(resResp.data.map((r: any) => ({
           ...r,
@@ -432,7 +432,7 @@ export const App: React.FC = () => {
       }
 
       // 8. Turnos Laborales
-      const resTurnos = await fetch('/api/turnos').then((r) => r.json()).catch(() => null);
+      const resTurnos = await fetch(getApiUrl('/api/turnos')).then((r) => r.json()).catch(() => null);
       if (resTurnos?.success && Array.isArray(resTurnos.data)) {
         setTurnos(resTurnos.data.map((t: any) => ({
           ...t,
@@ -442,7 +442,7 @@ export const App: React.FC = () => {
       }
 
       // 9. Horarios Laborales
-      const resHorarios = await fetch('/api/horarios').then((r) => r.json()).catch(() => null);
+      const resHorarios = await fetch(getApiUrl('/api/horarios')).then((r) => r.json()).catch(() => null);
       if (resHorarios?.success && Array.isArray(resHorarios.data)) {
         setHorarios(resHorarios.data.map((h: any) => ({
           ...h,
@@ -453,7 +453,7 @@ export const App: React.FC = () => {
       }
 
       // 10. Papeletas de Salida
-      const resPapeletas = await fetch('/api/papeletas').then((r) => r.json()).catch(() => null);
+      const resPapeletas = await fetch(getApiUrl('/api/papeletas')).then((r) => r.json()).catch(() => null);
       if (resPapeletas?.success && Array.isArray(resPapeletas.data)) {
         setPapeletas(resPapeletas.data.map((p: any) => ({
           ...p,
@@ -467,7 +467,7 @@ export const App: React.FC = () => {
       }
 
       // 11. Vacaciones
-      const resVacaciones = await fetch('/api/vacaciones').then((r) => r.json()).catch(() => null);
+      const resVacaciones = await fetch(getApiUrl('/api/vacaciones')).then((r) => r.json()).catch(() => null);
       if (resVacaciones?.success && Array.isArray(resVacaciones.data)) {
         setVacaciones(resVacaciones.data.map((v: any) => ({
           ...v,
@@ -481,7 +481,7 @@ export const App: React.FC = () => {
       }
 
       // 12. Encargaturas
-      const resEncargaturas = await fetch('/api/encargaturas').then((r) => r.json()).catch(() => null);
+      const resEncargaturas = await fetch(getApiUrl('/api/encargaturas')).then((r) => r.json()).catch(() => null);
       if (resEncargaturas?.success && Array.isArray(resEncargaturas.data)) {
         setEncargaturas(resEncargaturas.data.map((e: any) => ({
           ...e,
@@ -705,7 +705,7 @@ export const App: React.FC = () => {
                     created_at: new Date().toISOString(),
                   };
                   setDependencias((prev) => [...prev, newDep]);
-                  await fetch('/api/dependencias', {
+                  await fetch(getApiUrl('/api/dependencias'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newDep),
@@ -719,7 +719,7 @@ export const App: React.FC = () => {
                     address: normalizeText(dep.address),
                   };
                   setDependencias((prev) => prev.map((d) => (d.id === normDep.id ? normDep : d)));
-                  await fetch(`/api/dependencias/${normDep.id}`, {
+                  await fetch(getApiUrl(`/api/dependencias/${normDep.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normDep),
@@ -729,7 +729,7 @@ export const App: React.FC = () => {
                 onDeleteDependencia={async (id) => {
                   const found = dependencias.find((d) => d.id === id);
                   setDependencias((prev) => prev.filter((d) => d.id !== id));
-                  await fetch(`/api/dependencias/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/dependencias/${id}`), { method: 'DELETE' }).catch(() => {});
                   if (found) handleRecordAudit('ELIMINAR_DEPENDENCIA', `Dependencia eliminada: ${found.name}`);
                 }}
                 onAddDireccionOrgano={async (dir) => {
@@ -741,7 +741,7 @@ export const App: React.FC = () => {
                     created_at: new Date().toISOString(),
                   };
                   setDireccionesOrganos((prev) => [...prev, newDir]);
-                  await fetch('/api/direcciones', {
+                  await fetch(getApiUrl('/api/direcciones'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newDir),
@@ -755,7 +755,7 @@ export const App: React.FC = () => {
                     dependencia_name: normalizeInstitutionalName(dir.dependencia_name),
                   };
                   setDireccionesOrganos((prev) => prev.map((d) => (d.id === normDir.id ? normDir : d)));
-                  await fetch(`/api/direcciones/${normDir.id}`, {
+                  await fetch(getApiUrl(`/api/direcciones/${normDir.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normDir),
@@ -765,7 +765,7 @@ export const App: React.FC = () => {
                 onDeleteDireccionOrgano={async (id) => {
                   const found = direccionesOrganos.find((d) => d.id === id);
                   setDireccionesOrganos((prev) => prev.filter((d) => d.id !== id));
-                  await fetch(`/api/direcciones/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/direcciones/${id}`), { method: 'DELETE' }).catch(() => {});
                   if (found) handleRecordAudit('ELIMINAR_DIRECCION', `Dirección/Órgano eliminado: ${found.name}`);
                 }}
                 onAddArea={async (area) => {
@@ -779,7 +779,7 @@ export const App: React.FC = () => {
                     created_at: new Date().toISOString(),
                   };
                   setAreas((prev) => [...prev, newArea]);
-                  await fetch('/api/areas', {
+                  await fetch(getApiUrl('/api/areas'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newArea),
@@ -795,7 +795,7 @@ export const App: React.FC = () => {
                     direccion_organo_name: normalizeInstitutionalName(area.direccion_organo_name),
                   };
                   setAreas((prev) => prev.map((a) => (a.id === normArea.id ? normArea : a)));
-                  await fetch(`/api/areas/${normArea.id}`, {
+                  await fetch(getApiUrl(`/api/areas/${normArea.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normArea),
@@ -805,7 +805,7 @@ export const App: React.FC = () => {
                 onDeleteArea={async (id) => {
                   const found = areas.find((a) => a.id === id);
                   setAreas((prev) => prev.filter((a) => a.id !== id));
-                  await fetch(`/api/areas/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/areas/${id}`), { method: 'DELETE' }).catch(() => {});
                   if (found) handleRecordAudit('ELIMINAR_AREA', `Área eliminada: ${found.name}`);
                 }}
                 onAddCargo={async (cargo) => {
@@ -815,7 +815,7 @@ export const App: React.FC = () => {
                     name: normalizeInstitutionalName(cargo.name),
                   };
                   setCargos((prev) => [...prev, newCargo]);
-                  await fetch('/api/cargos', {
+                  await fetch(getApiUrl('/api/cargos'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newCargo),
@@ -828,7 +828,7 @@ export const App: React.FC = () => {
                     name: normalizeInstitutionalName(cargo.name),
                   };
                   setCargos((prev) => prev.map((c) => (c.id === normCargo.id ? normCargo : c)));
-                  await fetch(`/api/cargos/${normCargo.id}`, {
+                  await fetch(getApiUrl(`/api/cargos/${normCargo.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normCargo),
@@ -838,7 +838,7 @@ export const App: React.FC = () => {
                 onDeleteCargo={async (id) => {
                   const found = cargos.find((c) => c.id === id);
                   setCargos((prev) => prev.filter((c) => c.id !== id));
-                  await fetch(`/api/cargos/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/cargos/${id}`), { method: 'DELETE' }).catch(() => {});
                   if (found) handleRecordAudit('ELIMINAR_CARGO', `Cargo eliminado: ${found.name}`);
                 }}
                 onAddEmployee={async (emp) => {
@@ -863,7 +863,7 @@ export const App: React.FC = () => {
                     }
                     return [...prev, newEmp];
                   });
-                  await fetch('/api/employees', {
+                  await fetch(getApiUrl('/api/employees'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newEmp),
@@ -884,7 +884,7 @@ export const App: React.FC = () => {
                   };
                   setEmployees((prev) => prev.map((e) => (e.id === normEmp.id || e.dni === normEmp.dni ? normEmp : e)));
                   if (currentUser?.id === normEmp.id || currentUser?.dni === normEmp.dni) setCurrentUser(normEmp);
-                  await fetch(`/api/employees/${normEmp.id || normEmp.dni}`, {
+                  await fetch(getApiUrl(`/api/employees/${normEmp.id || normEmp.dni}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normEmp),
@@ -894,7 +894,7 @@ export const App: React.FC = () => {
                 onDeleteEmployee={async (id) => {
                   const found = employees.find((e) => e.id === id || e.dni === id);
                   setEmployees((prev) => prev.filter((e) => e.id !== id && e.dni !== id));
-                  await fetch(`/api/employees/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/employees/${id}`), { method: 'DELETE' }).catch(() => {});
                   if (found) {
                     handleRecordAudit('ELIMINAR_EMPLEADO', `Baja de servidor: ${found.first_name} ${found.last_name} (DNI ${found.dni})`);
                   }
@@ -958,7 +958,7 @@ export const App: React.FC = () => {
                     created_at: new Date().toISOString(),
                   };
                   setVacaciones((prev) => [newV, ...prev]);
-                  await fetch('/api/vacaciones', {
+                  await fetch(getApiUrl('/api/vacaciones'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newV),
@@ -974,7 +974,7 @@ export const App: React.FC = () => {
                     area_name: normalizeInstitutionalName(v.area_name),
                   };
                   setVacaciones((prev) => prev.map((item) => (item.id === normV.id ? normV : item)));
-                  await fetch(`/api/vacaciones/${normV.id}`, {
+                  await fetch(getApiUrl(`/api/vacaciones/${normV.id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(normV),
@@ -982,7 +982,7 @@ export const App: React.FC = () => {
                 }}
                 onDeleteVacation={async (id) => {
                   setVacaciones((prev) => prev.filter((v) => v.id !== id));
-                  await fetch(`/api/vacaciones/${id}`, { method: 'DELETE' }).catch(() => {});
+                  await fetch(getApiUrl(`/api/vacaciones/${id}`), { method: 'DELETE' }).catch(() => {});
                 }}
                 onApproveBoss={async (id, bossData) => {
                   const updatedData = {
@@ -993,7 +993,7 @@ export const App: React.FC = () => {
                   setVacaciones((prev) =>
                     prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
-                  await fetch(`/api/vacaciones/${id}`, {
+                  await fetch(getApiUrl(`/api/vacaciones/${id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updatedData),
@@ -1009,7 +1009,7 @@ export const App: React.FC = () => {
                   setVacaciones((prev) =>
                     prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
-                  await fetch(`/api/vacaciones/${id}`, {
+                  await fetch(getApiUrl(`/api/vacaciones/${id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updatedData),
@@ -1024,7 +1024,7 @@ export const App: React.FC = () => {
                   setVacaciones((prev) =>
                     prev.map((v) => (v.id === id ? { ...v, ...updatedData } : v))
                   );
-                  await fetch(`/api/vacaciones/${id}`, {
+                  await fetch(getApiUrl(`/api/vacaciones/${id}`), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updatedData),
@@ -1063,7 +1063,7 @@ export const App: React.FC = () => {
                     updated_at: new Date().toISOString(),
                   };
                   setPapeletas((prev) => [created, ...prev]);
-                  await fetch('/api/papeletas', {
+                  await fetch(getApiUrl('/api/papeletas'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(created),
@@ -1105,7 +1105,7 @@ export const App: React.FC = () => {
                     })
                   );
                   if (updatedItem) {
-                    await fetch(`/api/papeletas/${id}`, {
+                    await fetch(getApiUrl(`/api/papeletas/${id}`), {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(updatedItem),

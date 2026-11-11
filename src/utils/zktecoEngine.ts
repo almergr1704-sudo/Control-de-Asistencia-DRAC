@@ -10,6 +10,7 @@ import {
   AsistenciaEstado,
 } from '../types';
 import { evaluatePunchesForSchedule } from './shiftCalculations';
+import { getApiUrl } from './apiConfig';
 
 /**
  * Calculates time difference in minutes between two "HH:MM" strings
@@ -530,7 +531,7 @@ export async function syncEmployeeToDevice(
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
 
   try {
-    const res = await fetch('/api/zkteco/sync-user', {
+    const res = await fetch(getApiUrl('/api/zkteco/sync-user'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -582,7 +583,7 @@ export async function syncBatchEmployeesToDevice(
   device: DispositivoZkTeco
 ): Promise<{ success: boolean; total: number; synced_count: number; error_count: number; message: string; details: any[] }> {
   try {
-    const res = await fetch('/api/zkteco/sync-batch', {
+    const res = await fetch(getApiUrl('/api/zkteco/sync-batch'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -645,7 +646,7 @@ export async function disableUserOnDevice(
 ): Promise<{ success: boolean; message: string }> {
   const userId = employee.biometric_user_id || employee.dni;
   try {
-    const res = await fetch('/api/zkteco/disable-user', {
+    const res = await fetch(getApiUrl('/api/zkteco/disable-user'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -683,7 +684,7 @@ export async function fetchUsersFromDevice(
   device: DispositivoZkTeco
 ): Promise<{ success: boolean; users: any[]; message?: string }> {
   try {
-    const res = await fetch('/api/zkteco/get-users', {
+    const res = await fetch(getApiUrl('/api/zkteco/get-users'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -716,7 +717,7 @@ export async function fetchPunchesFromDevice(
   endDate?: string
 ): Promise<{ success: boolean; punches: any[]; message?: string }> {
   try {
-    const res = await fetch('/api/zkteco/get-punches', {
+    const res = await fetch(getApiUrl('/api/zkteco/get-punches'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

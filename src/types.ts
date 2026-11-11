@@ -1210,10 +1210,16 @@ declare global {
       createDevice?: (
         payload: any
       ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
-      deleteDevice?: (
-        id: string
-      ) => Promise<{ success: boolean; message: string; data?: DispositivoZkTeco }>;
       onDeviceConfigChanged?: (callback: (device: DispositivoZkTeco) => void) => () => void;
+      getTurnos?: () => Promise<Turno[]>;
+      saveTurno?: (turno: Turno) => Promise<{ success: boolean; data?: Turno; message?: string }>;
+      deleteTurno?: (id: string) => Promise<{ success: boolean; message?: string }>;
+      getHorarios?: () => Promise<Horario[]>;
+      saveHorario?: (horario: Horario) => Promise<{ success: boolean; data?: Horario; message?: string }>;
+      deleteHorario?: (id: string) => Promise<{ success: boolean; message?: string }>;
+      getAsignaciones?: () => Promise<AsignacionHorario[]>;
+      saveAsignacion?: (asignacion: AsignacionHorario) => Promise<{ success: boolean; data?: AsignacionHorario; message?: string }>;
+      deleteAsignacion?: (id: string) => Promise<{ success: boolean; message?: string }>;
     };
     __DRAC_DESKTOP_CLIENT__?: boolean;
   }

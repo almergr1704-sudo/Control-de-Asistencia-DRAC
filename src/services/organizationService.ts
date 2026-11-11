@@ -8,6 +8,7 @@ import {
   INITIAL_CARGOS,
   INITIAL_RESPONSABLES,
 } from '../data/initialData';
+import { getApiUrl } from '../utils/apiConfig';
 
 /**
  * SERVICIO CENTRALIZADO DE ESTRUCTURA ORGÁNICA (FASE 1)
@@ -43,7 +44,7 @@ export async function fetchDependenciasFromSupabase(): Promise<Dependencia[]> {
     }
 
     // 2. Intentar endpoint API central
-    const res = await fetch('/api/dependencias');
+    const res = await fetch(getApiUrl('/api/dependencias'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -103,7 +104,7 @@ export async function saveDependenciaToSupabase(dependencia: Dependencia): Promi
 
   // Backup via API central con trazabilidad de origen
   try {
-    const res = await fetch('/api/dependencias', {
+    const res = await fetch(getApiUrl('/api/dependencias'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -147,7 +148,7 @@ export async function fetchDireccionesFromSupabase(): Promise<DireccionOrgano[]>
       }));
     }
 
-    const res = await fetch('/api/direcciones');
+    const res = await fetch(getApiUrl('/api/direcciones'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -209,7 +210,7 @@ export async function saveDireccionToSupabase(direccion: DireccionOrgano): Promi
   }
 
   try {
-    const res = await fetch('/api/direcciones', {
+    const res = await fetch(getApiUrl('/api/direcciones'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -256,7 +257,7 @@ export async function fetchAreasFromSupabase(): Promise<Area[]> {
       }));
     }
 
-    const res = await fetch('/api/areas');
+    const res = await fetch(getApiUrl('/api/areas'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
@@ -319,7 +320,7 @@ export async function saveAreaToSupabase(area: Area): Promise<{ success: boolean
   }
 
   try {
-    const res = await fetch('/api/areas', {
+    const res = await fetch(getApiUrl('/api/areas'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -359,7 +360,7 @@ export async function fetchCargosFromSupabase(): Promise<Cargo[]> {
       }));
     }
 
-    const res = await fetch('/api/cargos');
+    const res = await fetch(getApiUrl('/api/cargos'));
     if (res.ok) {
       const apiData = await res.json();
       if (apiData.success && Array.isArray(apiData.data) && apiData.data.length > 0) {
