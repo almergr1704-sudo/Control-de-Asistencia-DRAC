@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkBioTimeStatus: (params = {}) => {
     return ipcRenderer.invoke('biotime:check-status', params);
   },
+  inspectBioTimeDatabase: (params = {}) => {
+    return ipcRenderer.invoke('biotime:inspect-database', params);
+  },
   syncBioTimePunches: (params = {}) => {
     return ipcRenderer.invoke('biotime:sync-punches', params);
   },

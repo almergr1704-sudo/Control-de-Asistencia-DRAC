@@ -667,10 +667,16 @@ export interface MarcacionRaw {
   rejection_reason?: string;
   authorization_id?: string;
   
-  // Compatibilidad
+  // Compatibilidad y auditoría de sincronización
+  employee_id?: string | null;
+  original_punch_id?: string;
   fecha?: string;
   hora?: string;
   source?: string;
+  synced_at?: string;
+  created_at?: string;
+  linked_at?: string;
+  linked_by?: string;
   deviceId?: string;
   pin?: string;
 }
@@ -1105,6 +1111,8 @@ declare global {
         serial?: string
       ) => Promise<{
         success: boolean;
+        status?: string;
+        status_code?: string;
         message?: string;
         serial_number?: string;
         serial?: string;
@@ -1118,16 +1126,21 @@ declare global {
         total_clock_punches?: number;
         punches?: Array<{
           punch_id: string;
+          original_punch_id?: string;
           device_sn: string;
           device_ip: string;
           employee_dni: string;
+          employee_code?: string;
           timestamp: string;
-          verify_mode: 'FINGERPRINT' | 'FACE' | 'PASSWORD';
+          verify_mode: 'FINGERPRINT' | 'FACE' | 'PASSWORD' | 'CARD';
           punch_type: string;
+          punch_state?: number;
           raw_record?: string;
         }>;
         timestamp?: string;
       }>;
+      inspectBioTimeDatabase?: (config?: any) => Promise<any>;
+      syncBioTimePunches?: (config?: any) => Promise<any>;
       pingZkDevice: (ip: string, port?: number, timeoutMs?: number) => Promise<{
         success: boolean;
         reachable: boolean;

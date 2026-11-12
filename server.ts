@@ -5,6 +5,8 @@ import path from 'path';
 import net from 'net';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import ZKLib from 'node-zklib';
+import pg from 'pg';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,12 +75,73 @@ function writeJsonFile<T>(filePath: string, data: T): void {
 // 1. RAW PUNCHES & ATTENDANCE ENDPOINTS (Strict Zero-Mock Data Policy)
 // ---------------------------------------------------------------------------
 
+// Helper: timeout guard for network/Supabase operations
+async function withServerTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    promise
+      .then((val) => {
+        clearTimeout(timer);
+        resolve(val);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+// Helper: load latest saved device configuration (Supabase dispositivos_zkteco + local devices.json)
+async function getLatestDeviceConfig(deviceIdOrSerial?: string): Promise<any[]> {
+  const localDevices = readJsonFile<any[]>(DEVICES_FILE, []);
+  let merged = [...localDevices];
+  try {
+    const sbPromise = Promise.resolve(
+      supabaseServer.from('dispositivos_zkteco').select('*')
+    );
+    const sbRes: any = await withServerTimeout(sbPromise, 1500, 'Timeout Supabase dispositivos_zkteco');
+    if (sbRes && !sbRes.error && Array.isArray(sbRes.data) && sbRes.data.length > 0) {
+      for (const remote of sbRes.data) {
+        const idx = merged.findIndex((d) => d.id === remote.id || d.serial_number === remote.serial_number);
+        if (idx >= 0) {
+          const localTs = Date.parse(merged[idx].updated_at || merged[idx].last_modified_at || '1970-01-01');
+          const remoteTs = Date.parse(remote.updated_at || remote.last_modified_at || '1970-01-01');
+          if (remoteTs > localTs) {
+            merged[idx] = { ...merged[idx], ...remote };
+          }
+        } else {
+          merged.push(remote);
+        }
+      }
+    }
+  } catch (_) {}
+
+  if (deviceIdOrSerial) {
+    const found = merged.find((d) => d.id === deviceIdOrSerial || d.serial_number === deviceIdOrSerial);
+    return found ? [found, ...merged.filter((d) => d.id !== found.id)] : merged;
+  }
+  return merged;
+}
+
+// Strict employee matcher ONLY by biometric identifier (NEVER by name)
+function findEmployeeByBiometricCode(employees: any[], rawCode: string): any | undefined {
+  const clean = String(rawCode || '').trim();
+  if (!clean) return undefined;
+  return employees.find(
+    (e) =>
+      String(e.dni || '').trim() === clean ||
+      String(e.zkteco_pin || '').trim() === clean ||
+      String(e.biometric_user_id || '').trim() === clean ||
+      String(e.codigo_trabajador || '').trim() === clean
+  );
+}
+
 // GET /api/attendance/punches & /api/zkteco/raw-punches
 const getPunchesHandler = (req: express.Request, res: express.Response) => {
   const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
   const devices = readJsonFile<any[]>(DEVICES_FILE, []);
-  const { fecha, dni, limit } = req.query;
+  const { fecha, dni, device, status, limit } = req.query;
 
   // Filter out any legacy synthetic IDs if any remain
   let filtered = storedPunches.filter((p: any) => !(p.id && String(p.id).startsWith('raw-1787835')));
@@ -87,28 +150,51 @@ const getPunchesHandler = (req: express.Request, res: express.Response) => {
     filtered = filtered.filter((p) => p.fecha === fecha || p.timestamp?.startsWith(String(fecha)));
   }
   if (dni) {
-    filtered = filtered.filter((p) => p.employee_dni === dni || p.employee_code === dni);
+    const qDni = String(dni).trim();
+    filtered = filtered.filter((p) => p.employee_dni === qDni || p.employee_code === qDni);
+  }
+  if (device) {
+    const qDev = String(device).trim();
+    filtered = filtered.filter((p) => p.device_sn === qDev || p.device_id === qDev);
   }
 
-  // Enrich with employee names if known
+  // Enrich strictly by biometric ID or manually linked employee_id (never by name)
   const enriched = filtered.map((p) => {
-    const emp = employees.find((e) => e.dni === p.employee_dni || e.zkteco_pin === p.employee_code);
-    const dev = devices.find((d) => d.serial_number === p.device_sn);
+    const rawCode = String(p.employee_code || p.employee_dni || '').trim();
+    const linkedById = p.employee_id ? employees.find((e) => e.id === p.employee_id) : undefined;
+    const emp = linkedById || findEmployeeByBiometricCode(employees, rawCode);
+    const dev = devices.find((d) => d.serial_number === p.device_sn || d.id === p.device_id);
+    const isIdentified = !!emp;
     return {
       ...p,
-      employee_name: emp ? `${emp.first_name} ${emp.last_name}` : (p.employee_name || 'Trabajador no identificado'),
-      device_name: dev ? dev.name : (p.device_name || 'ZKTeco G3-id Sede Central'),
+      employee_id: emp ? emp.id : null,
+      employee_dni: emp ? emp.dni : rawCode,
+      employee_code: rawCode,
+      employee_name: emp ? normalizePersonName(`${emp.first_name} ${emp.last_name}`) : 'Pendiente de Identificación',
+      device_name: dev ? dev.name : (p.device_name || 'ZKTeco G3 Sede Central'),
+      validation_status: isIdentified ? (p.validation_status === 'PENDIENTE_IDENTIFICACION' ? 'VALIDA' : (p.validation_status || 'VALIDA')) : 'PENDIENTE_IDENTIFICACION',
+      synced_at: p.synced_at || p.created_at || null,
+      source: p.source || 'DIRECT_READ',
     };
   });
 
-  // Sort descending by timestamp
-  enriched.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  const finalRows = status
+    ? enriched.filter((p) => p.validation_status === String(status))
+    : enriched;
 
-  const numLimit = limit ? parseInt(limit as string, 10) : enriched.length;
+  // Sort descending by timestamp
+  finalRows.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+  const numLimit = limit ? parseInt(limit as string, 10) : finalRows.length;
+  const lastSync = devices[0]?.last_sync || finalRows[0]?.synced_at || null;
+  const pendingCount = finalRows.filter((p) => p.validation_status === 'PENDIENTE_IDENTIFICACION').length;
+
   return res.json({
     success: true,
-    count: enriched.length,
-    data: enriched.slice(0, numLimit),
+    count: finalRows.length,
+    pending_identification_count: pendingCount,
+    last_sync: lastSync,
+    data: finalRows.slice(0, numLimit),
   });
 };
 
@@ -143,14 +229,14 @@ app.get('/api/attendance', (req, res) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/zkteco/devices
-app.get('/api/zkteco/devices', (req, res) => {
-  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+app.get('/api/zkteco/devices', async (req, res) => {
+  const devices = await getLatestDeviceConfig();
   const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
 
   // Update log_count with real punch count
   const updatedDevices = devices.map((d) => ({
     ...d,
-    log_count: rawPunches.filter((p) => p.device_sn === d.serial_number || p.deviceId === d.id).length,
+    log_count: rawPunches.filter((p) => p.device_sn === d.serial_number || p.device_id === d.id || p.deviceId === d.id).length,
   }));
 
   return res.json({
@@ -1745,7 +1831,8 @@ function createZkTcpHeader(cmd: number, sessionId: number, replyId: number, data
 }
 
 function decodeZkPackedTime(t: number): string {
-  if (!t || isNaN(t)) return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  // Nunca fabricar una fecha actual cuando el dato binario es 0 o inválido
+  if (!t || isNaN(t)) return '';
   if (t > 1500000000 && t < 2200000000) {
     return new Date(t * 1000).toISOString().replace('T', ' ').substring(0, 19);
   }
@@ -1766,14 +1853,13 @@ function decodeZkPackedTime(t: number): string {
       return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`;
     }
   } catch (_) {}
-  return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  return '';
 }
 
 function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any[] {
   const punches: any[] = [];
   if (!dataBuf || dataBuf.length < 8) return punches;
 
-  // Si dataBuf tiene un prefijo de 4 bytes con la longitud total de datos (común en ZKTeco ACK_DATA)
   let workingBuf = dataBuf;
   if (dataBuf.length > 4) {
     const declaredLen = dataBuf.readUInt32LE(0);
@@ -1782,18 +1868,16 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
     }
   }
 
-  // 1. Probar formato extendido 40 bytes (ZKTeco G3 / SilkID / TFT)
+  // 1. Formato extendido 40 bytes (ZKTeco G3 / SilkID / TFT)
   if (workingBuf.length >= 40) {
     const recSize = 40;
     for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
       const chunk = workingBuf.slice(i, i + recSize);
 
-      // Intento A: Layout oficial pyzk/ZKTeco TFT: <H24sB4sB8s (offset 0: uid uint16, offset 2..26: pin ASCII)
       const uidA = chunk.readUInt16LE(0);
       const rawPinA = chunk.slice(2, 26).toString('ascii').replace(/\0/g, '').trim();
       const cleanPinA = rawPinA.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
 
-      // Intento B: Layout sin UID: <24sBB4s... (offset 0..24: pin ASCII)
       const rawPinB = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
       const cleanPinB = rawPinB.replace(/[\x00-\x1F\x7F-\xFF]/g, '').trim();
 
@@ -1825,11 +1909,13 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
         punchTime = decodeZkPackedTime(rawTime);
       }
 
-      if (pin) {
+      if (pin && punchTime) {
         const [fechaPart, horaPart] = punchTime.split(' ');
+        const baseId = `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}`;
         punches.push({
-          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
-          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          id: baseId,
+          punch_id: baseId,
+          original_punch_id: `${baseId}_${punches.length}`,
           device_sn: serial,
           device_ip: host,
           employee_dni: pin,
@@ -1837,8 +1923,8 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
           fecha: fechaPart,
           hora: horaPart,
           timestamp: punchTime,
-          verify_mode: verifyType === 15 ? 'FACE' : (verifyType === 2 ? 'PASSWORD' : 'FINGERPRINT'),
-          punch_type: 'AUTO',
+          verify_mode: verifyType === 15 ? 'FACE' : (verifyType === 2 ? 'PASSWORD' : verifyType === 3 ? 'CARD' : 'FINGERPRINT'),
+          punch_type: punchState === 1 ? 'CHECK_OUT' : punchState === 0 ? 'CHECK_IN' : 'AUTO',
           punch_state: punchState || 0,
           created_at: new Date().toISOString(),
         });
@@ -1846,7 +1932,7 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
     }
   }
 
-  // 2. Probar formato estándar 14 bytes si no hubo marcaciones en 40 bytes
+  // 2. Formato estándar 14 bytes si no hubo marcaciones en 40 bytes
   if (punches.length === 0 && workingBuf.length >= 14) {
     const recSize = 14;
     for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
@@ -1855,11 +1941,14 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
       if (userSn > 0) {
         const rawTime = chunk.readUInt32LE(2);
         const punchTime = decodeZkPackedTime(rawTime);
+        if (!punchTime) continue;
         const [fechaPart, horaPart] = punchTime.split(' ');
         const pin = String(userSn);
+        const baseId = `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}`;
         punches.push({
-          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
-          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          id: baseId,
+          punch_id: baseId,
+          original_punch_id: `${baseId}_${punches.length}`,
           device_sn: serial,
           device_ip: host,
           employee_dni: pin,
@@ -1876,7 +1965,7 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
     }
   }
 
-  // 3. Probar formato 8 bytes
+  // 3. Formato 8 bytes
   if (punches.length === 0 && workingBuf.length >= 8) {
     const recSize = 8;
     for (let i = 0; i + recSize <= workingBuf.length; i += recSize) {
@@ -1885,11 +1974,14 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
       if (userSn > 0) {
         const rawTime = chunk.readUInt32LE(3);
         const punchTime = decodeZkPackedTime(rawTime);
+        if (!punchTime) continue;
         const [fechaPart, horaPart] = punchTime.split(' ');
         const pin = String(userSn);
+        const baseId = `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}`;
         punches.push({
-          id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
-          punch_id: `zk_${serial}_${pin}_${punchTime.replace(/[- :]/g, '')}_${punches.length}`,
+          id: baseId,
+          punch_id: baseId,
+          original_punch_id: `${baseId}_${punches.length}`,
           device_sn: serial,
           device_ip: host,
           employee_dni: pin,
@@ -1909,18 +2001,702 @@ function parseZkAttlogBuffer(dataBuf: Buffer, serial: string, host: string): any
   return punches;
 }
 
+function parseZkAttlogText(rawContent: string, serialHint: string = 'AEH2223460040'): any[] {
+  if (!rawContent || typeof rawContent !== 'string') return [];
+  const lines = rawContent.split(/\r?\n/);
+  const punches: any[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) continue;
+    if (trimmed.toLowerCase().includes('dni') && trimmed.toLowerCase().includes('fecha')) continue;
+    if (trimmed.toLowerCase().includes('userpin') || trimmed.toLowerCase().includes('time')) continue;
+
+    let parts: string[] = [];
+    if (trimmed.includes('\t')) {
+      parts = trimmed.split('\t').map((p) => p.trim());
+    } else if (trimmed.includes(';') && !trimmed.includes(',')) {
+      parts = trimmed.split(';').map((p) => p.trim());
+    } else if (trimmed.includes(',') && (trimmed.match(/,/g) || []).length >= 2) {
+      parts = trimmed.split(',').map((p) => p.trim().replace(/^["']|["']$/g, ''));
+    } else {
+      parts = trimmed.split(/\s+/).map((p) => p.trim());
+    }
+
+    if (parts.length < 2) continue;
+
+    let pin = '';
+    let timestamp = '';
+    let punchState = 0;
+    let verifyType = 1;
+
+    // Formato estándar 1_attlog.dat:
+    // "1\t2026-11-11 08:02:15\t1\t0\t0\t0" o "1 2026-11-11 08:02:15 1 0"
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parts[1]) && parts[2] && /^\d{2}:\d{2}/.test(parts[2])) {
+      pin = parts[0];
+      timestamp = `${parts[1]} ${parts[2].substring(0, 8)}`;
+      if (parts[3] !== undefined) punchState = Number(parts[3]) || 0;
+      if (parts[4] !== undefined) verifyType = Number(parts[4]) || 1;
+    } else if (/\d{4}[-/]\d{1,2}[-/]\d{1,2}\s+\d{1,2}:\d{2}/.test(parts[1])) {
+      pin = parts[0];
+      timestamp = parts[1].replace(/\//g, '-');
+      if (parts[2] !== undefined) punchState = Number(parts[2]) || 0;
+      if (parts[3] !== undefined) verifyType = Number(parts[3]) || 1;
+    } else {
+      for (let i = 0; i < parts.length; i++) {
+        const item = parts[i];
+        if (/\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(item)) {
+          if (parts[i + 1] && /^\d{1,2}:\d{2}/.test(parts[i + 1])) {
+            timestamp = `${item.replace(/\//g, '-')} ${parts[i + 1].substring(0, 8)}`;
+            pin = parts[0] !== item ? parts[0] : (parts[i - 1] || '');
+            break;
+          } else if (item.includes(' ') || item.includes('T')) {
+            timestamp = item.replace('T', ' ').replace(/\//g, '-').substring(0, 19);
+            pin = parts[0] !== item ? parts[0] : (parts[i - 1] || '');
+            break;
+          }
+        }
+      }
+    }
+
+    if (pin && timestamp) {
+      const m = timestamp.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})(:(\d{1,2}))?/);
+      if (m) {
+        const pad = (n: string) => n.padStart(2, '0');
+        timestamp = `${m[1]}-${pad(m[2])}-${pad(m[3])} ${pad(m[4])}:${pad(m[5])}:${pad(m[7] || '00')}`;
+      }
+
+      let verifyMode = 'FINGERPRINT';
+      if (verifyType === 15) verifyMode = 'FACE';
+      else if (verifyType === 2) verifyMode = 'PASSWORD';
+      else if (verifyType === 3) verifyMode = 'CARD';
+
+      punches.push({
+        id: `usb_${serialHint}_${pin}_${timestamp.replace(/[- :]/g, '')}_${punches.length}`,
+        punch_id: `usb_${serialHint}_${pin}_${timestamp.replace(/[- :]/g, '')}_${punches.length}`,
+        device_sn: serialHint,
+        employee_dni: pin,
+        employee_code: pin,
+        timestamp,
+        verify_mode: verifyMode,
+        punch_state: punchState,
+        source: 'USB_ATTLOG',
+      });
+    }
+  }
+
+  return punches;
+}
+
+// Helper: Genera o actualiza asistencia diaria SOLO para trabajadores identificados
+function upsertAttendanceFromIdentifiedPunch(
+  existingAttendance: any[],
+  emp: any,
+  punchRecord: any
+): void {
+  const fechaPart = punchRecord.fecha;
+  const horaPart = punchRecord.hora;
+  const punchHour = horaPart ? horaPart.substring(0, 5) : '';
+  if (!emp || !fechaPart || !punchHour) return;
+
+  const empDni = emp.dni;
+  const workerName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+  const attIndex = existingAttendance.findIndex((a) => a.employee_dni === empDni && a.fecha === fechaPart);
+
+  if (attIndex === -1) {
+    const isLate = punchHour > '08:10';
+    existingAttendance.unshift({
+      id: `att-${emp.id || empDni}-${fechaPart}`,
+      employee_id: emp.id,
+      employee_dni: empDni,
+      employee_name: workerName,
+      dependencia_id: emp.dependencia_id || 'dep-01',
+      dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
+      fecha: fechaPart,
+      t1_scheduled_in: '08:00',
+      t1_scheduled_out: '13:00',
+      t1_real_in: punchHour,
+      t1_real_out: null,
+      t2_scheduled_in: '14:00',
+      t2_scheduled_out: '17:00',
+      t2_real_in: null,
+      t2_real_out: null,
+      status: isLate ? 'LATE' : 'PUNCTUAL',
+      tardiness_minutes: isLate ? 15 : 0,
+      net_tardiness_minutes: isLate ? 5 : 0,
+      total_effective_hours: 4.5,
+      raw_punch_id: punchRecord.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    const att = existingAttendance[attIndex];
+    if (!att.t1_real_in) att.t1_real_in = punchHour;
+    else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
+    else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
+    else if (!att.t2_real_out && punchHour >= '16:00') {
+      att.t2_real_out = punchHour;
+      att.total_effective_hours = 8.0;
+    }
+    att.updated_at = new Date().toISOString();
+    existingAttendance[attIndex] = att;
+  }
+}
+
+async function persistRawPunchesToSupabase(records: any[]): Promise<{ dbSaved: boolean; dbError: string | null }> {
+  if (!records || records.length === 0) return { dbSaved: true, dbError: null };
+  try {
+    const rows = records.map((r) => ({
+      id: r.id,
+      device_id: r.device_id || 'dev-01',
+      device_sn: r.device_sn,
+      device_name: r.device_name,
+      employee_dni: r.employee_dni,
+      employee_code: r.employee_code,
+      employee_name: r.employee_name,
+      timestamp: r.timestamp,
+      punch_type: r.punch_type || 'AUTO',
+      punch_state: Number(r.punch_state ?? 0),
+      verify_mode: r.verify_mode || 'FINGERPRINT',
+      processed: Boolean(r.processed),
+      validation_status: r.validation_status || 'VALIDA',
+      source: r.source,
+      raw_payload: r.raw_payload || null,
+    }));
+
+    const sbRes: any = await withServerTimeout(
+      Promise.resolve(
+        supabaseServer.from('marcaciones_raw').upsert(rows, { onConflict: 'id' })
+      ),
+      2500,
+      'Timeout guardando marcaciones en Supabase PostgreSQL'
+    );
+
+    if (sbRes?.error) {
+      return { dbSaved: false, dbError: sbRes.error.message || 'Error SQL Supabase en marcaciones_raw' };
+    }
+    return { dbSaved: true, dbError: null };
+  } catch (err: any) {
+    return { dbSaved: false, dbError: err?.message || 'Sin conexión hacia Supabase PostgreSQL' };
+  }
+}
+
+async function integrateRealPunchesIntoSystem(
+  newPunches: any[],
+  sourceLabel: string,
+  deviceInfo?: { id?: string; name?: string; serial?: string; ip?: string }
+): Promise<{
+  newlyAdded: number;
+  duplicatesSkipped: number;
+  unidentifiedCount: number;
+  totalStored: number;
+  dbSaved: boolean;
+  dbError: string | null;
+  enrichedPunches: any[];
+}> {
+  const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+  if (!newPunches || newPunches.length === 0) {
+    return {
+      newlyAdded: 0,
+      duplicatesSkipped: 0,
+      unidentifiedCount: 0,
+      totalStored: storedPunches.length,
+      dbSaved: true,
+      dbError: null,
+      enrichedPunches: [],
+    };
+  }
+
+  // Idempotencia estricta por (device_sn + employee_code + timestamp)
+  const existingKeys = new Set(
+    storedPunches.map((p) => `${p.device_sn || ''}_${p.employee_code || p.employee_dni}_${p.timestamp}`)
+  );
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+  let newlyAdded = 0;
+  let duplicatesSkipped = 0;
+  let unidentifiedCount = 0;
+  const enrichedPunches: any[] = [];
+  const syncedAt = new Date().toISOString();
+
+  for (const p of newPunches) {
+    const rawPin = String(p.employee_code || p.employee_dni || p.pin || p.user_id || '').trim();
+    if (!rawPin) continue;
+
+    const rawTime = String(p.timestamp || '').trim();
+    if (!rawTime || rawTime.startsWith('0000') || rawTime.startsWith('1970')) continue;
+
+    const deviceSn = String(deviceInfo?.serial || p.device_sn || '').trim().toUpperCase() || 'AEH2223460040';
+    const key = `${deviceSn}_${rawPin}_${rawTime}`;
+    if (existingKeys.has(key)) {
+      duplicatesSkipped++;
+      continue;
+    }
+    existingKeys.add(key);
+
+    // Vinculación estricta SOLO por identificador biométrico (NUNCA por nombre)
+    const emp = findEmployeeByBiometricCode(employees, rawPin);
+    const isIdentified = !!emp;
+    const workerName = emp
+      ? normalizePersonName(`${emp.first_name} ${emp.last_name}`)
+      : 'Pendiente de Identificación';
+
+    if (!isIdentified) unidentifiedCount++;
+
+    const [fechaPart, horaPart] = rawTime.split(' ');
+    const punchId = `zk_${deviceSn}_${rawPin}_${rawTime.replace(/[- :]/g, '')}`;
+
+    const cleanRecord = {
+      id: punchId,
+      punch_id: punchId,
+      original_punch_id: p.original_punch_id || p.punch_id || p.id || punchId,
+      device_id: deviceInfo?.id || p.device_id || 'dev-01',
+      device_sn: deviceSn,
+      device_name: deviceInfo?.name || p.device_name || 'ZKTeco G3 Sede Central',
+      device_ip: deviceInfo?.ip || p.device_ip || '',
+      employee_id: emp ? emp.id : null,
+      employee_dni: emp ? emp.dni : rawPin,
+      employee_code: rawPin,
+      employee_name: workerName,
+      fecha: fechaPart,
+      hora: horaPart,
+      timestamp: rawTime,
+      verify_mode: p.verify_mode || 'FINGERPRINT',
+      punch_type: p.punch_type || (Number(p.punch_state) === 1 ? 'CHECK_OUT' : Number(p.punch_state) === 0 ? 'CHECK_IN' : 'AUTO'),
+      punch_state: Number(p.punch_state ?? 0),
+      source: p.source || sourceLabel,
+      synced_at: p.synced_at || syncedAt,
+      validation_status: isIdentified ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+      processed: isIdentified,
+      raw_payload: p.raw_payload || p.raw_record || undefined,
+      created_at: syncedAt,
+    };
+
+    storedPunches.unshift(cleanRecord);
+    enrichedPunches.push(cleanRecord);
+    newlyAdded++;
+
+    // Separación estricta: solo procesar asistencia si el trabajador está identificado;
+    // los códigos sin vincular permanecen en Pendientes de Identificación sin descartarse.
+    if (isIdentified && emp) {
+      upsertAttendanceFromIdentifiedPunch(existingAttendance, emp, cleanRecord);
+    }
+  }
+
+  writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
+  if (enrichedPunches.some((p) => p.processed)) {
+    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  }
+
+  const dbRes = await persistRawPunchesToSupabase(enrichedPunches);
+
+  return {
+    newlyAdded,
+    duplicatesSkipped,
+    unidentifiedCount,
+    totalStored: storedPunches.length,
+    dbSaved: dbRes.dbSaved,
+    dbError: dbRes.dbError,
+    enrichedPunches,
+  };
+}
+
+// Inspección read-only de esquema BioTime vía information_schema + verificación HTTP 89
+async function inspectBioTimeDb(options?: {
+  host?: string;
+  webPort?: number;
+  port?: number;
+  dbName?: string;
+  user?: string;
+  password?: string;
+  serial?: string;
+}): Promise<{
+  success: boolean;
+  host: string;
+  webPort: number;
+  dbPort: number;
+  dbName: string;
+  webReachable: boolean;
+  dbReachable: boolean;
+  tablesFound: string[];
+  attendanceTable: string | null;
+  attendanceColumns: string[];
+  totalTransactions: number;
+  deviceTransactions: number;
+  receivesClockPunches: boolean;
+  validSource: boolean;
+  message: string;
+  error: string | null;
+  latency: number;
+}> {
+  const start = Date.now();
+  const host = String(options?.host || '192.168.1.29').trim();
+  const webPort = Number(options?.webPort) || 89;
+  const dbPort = Number(options?.port) || 7496;
+  const dbName = String(options?.dbName || 'biotime').trim();
+  const user = String(options?.user || 'postgres').trim();
+  const serial = String(options?.serial || '').trim().toUpperCase();
+
+  const probePort = (h: string, p: number, ms = 1800) =>
+    new Promise<{ ok: boolean; code?: string; message?: string }>((resolve) => {
+      const s = new net.Socket();
+      let done = false;
+      s.setTimeout(ms);
+      s.on('connect', () => {
+        if (done) return;
+        done = true;
+        s.destroy();
+        resolve({ ok: true });
+      });
+      s.on('timeout', () => {
+        if (done) return;
+        done = true;
+        s.destroy();
+        resolve({ ok: false, code: 'ETIMEDOUT', message: 'Timeout' });
+      });
+      s.on('error', (err: any) => {
+        if (done) return;
+        done = true;
+        s.destroy();
+        resolve({ ok: false, code: err?.code, message: err?.message });
+      });
+      s.connect(p, h);
+    });
+
+  const webProbe = await probePort(host, webPort, 1500);
+  const dbProbe = await probePort(host, dbPort, 1800);
+
+  const report = {
+    success: false,
+    host,
+    webPort,
+    dbPort,
+    dbName,
+    webReachable: webProbe.ok,
+    dbReachable: dbProbe.ok,
+    tablesFound: [] as string[],
+    attendanceTable: null as string | null,
+    attendanceColumns: [] as string[],
+    totalTransactions: 0,
+    deviceTransactions: 0,
+    receivesClockPunches: false,
+    validSource: false,
+    message: '',
+    error: null as string | null,
+    latency: Date.now() - start,
+  };
+
+  if (!dbProbe.ok) {
+    report.error = dbProbe.code || 'DB_UNREACHABLE';
+    report.message = `PostgreSQL BioTime en ${host}:${dbPort} inaccesible desde este servidor (${dbProbe.code || dbProbe.message || 'Sin conexión'}).`;
+    report.latency = Date.now() - start;
+    return report;
+  }
+
+  const passToTry = [options?.password, '', 'admin', 'postgres', '123456', 'biotime', 'ZKTeco123'].filter(
+    (x) => x !== undefined
+  ) as string[];
+
+  for (const password of [...new Set(passToTry)]) {
+    let client: any = null;
+    try {
+      client = new pg.Client({
+        host,
+        port: dbPort,
+        database: dbName,
+        user,
+        password,
+        connectionTimeoutMillis: 2000,
+      });
+      await client.connect();
+
+      const tRes = await client.query(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+      `);
+      report.tablesFound = tRes.rows.map((r: any) => r.table_name);
+      const detected = ['iclock_transaction', 'checkinout', 'att_punches'].find((t) =>
+        report.tablesFound.includes(t)
+      ) || report.tablesFound.find((t) => t.includes('transaction') || t.includes('checkin'));
+
+      if (detected) {
+        report.attendanceTable = detected;
+        const cRes = await client.query(
+          `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
+          [detected]
+        );
+        report.attendanceColumns = cRes.rows.map((c: any) => `${c.column_name} (${c.data_type})`);
+        const colNames = cRes.rows.map((c: any) => c.column_name);
+
+        const countAll = await client.query(`SELECT COUNT(*)::int AS total FROM "${detected}"`);
+        report.totalTransactions = Number(countAll.rows?.[0]?.total || 0);
+
+        const snCol = ['terminal_sn', 'sn', 'device_sn'].find((c) => colNames.includes(c));
+        if (snCol && serial) {
+          const countDev = await client.query(
+            `SELECT COUNT(*)::int AS total FROM "${detected}" WHERE UPPER(COALESCE("${snCol}"::text, '')) = $1`,
+            [serial]
+          );
+          report.deviceTransactions = Number(countDev.rows?.[0]?.total || 0);
+        } else {
+          report.deviceTransactions = report.totalTransactions;
+        }
+
+        report.receivesClockPunches = report.deviceTransactions > 0;
+        report.validSource = report.receivesClockPunches;
+        report.success = true;
+        report.message = report.receivesClockPunches
+          ? `BioTime inspeccionado (${detected}): ${report.deviceTransactions} marcaciones reales registradas para ${serial || 'el equipo'}.`
+          : `BioTime conectado (${detected}), pero tiene 0 marcaciones para ${serial || 'el reloj'}. No debe usarse hasta corregir la recepción ADMS.`;
+      } else {
+        report.success = true;
+        report.message = `Conectado a PostgreSQL BioTime (${dbName}), pero no se detectó tabla estándar de marcaciones.`;
+      }
+
+      await client.end();
+      report.latency = Date.now() - start;
+      return report;
+    } catch (err: any) {
+      report.error = err?.message || String(err);
+      if (client) try { await client.end(); } catch (_) {}
+    }
+  }
+
+  report.message = `Fallo autenticando en PostgreSQL BioTime (${host}:${dbPort}/${dbName}): ${report.error || 'Credenciales inválidas'}.`;
+  report.latency = Date.now() - start;
+  return report;
+}
+
+async function syncPunchesFromBioTimeDb(options?: {
+  host?: string;
+  port?: number;
+  dbName?: string;
+  user?: string;
+  password?: string;
+  serial?: string;
+}): Promise<{ success: boolean; message: string; punches: any[]; latency: number; inspection?: any }> {
+  const startTime = Date.now();
+  const host = String(options?.host || '192.168.1.29').trim();
+  const port = Number(options?.port) || 7496;
+  const dbName = String(options?.dbName || 'biotime').trim();
+  const user = String(options?.user || 'postgres').trim();
+  const serial = String(options?.serial || '').trim().toUpperCase();
+
+  // 1. Inspección obligatoria de solo lectura antes de consultar marcaciones
+  const inspection = await inspectBioTimeDb({
+    host,
+    port,
+    dbName,
+    user,
+    password: options?.password,
+    serial,
+  });
+
+  if (!inspection.success || !inspection.attendanceTable) {
+    return {
+      success: false,
+      message: inspection.message,
+      punches: [],
+      latency: Date.now() - startTime,
+      inspection,
+    };
+  }
+
+  if (!inspection.receivesClockPunches) {
+    return {
+      success: false,
+      message: `BioTime no contiene marcaciones del reloj (${serial || 'G3'}). No es una fuente válida hasta que ADMS reciba registros reales.`,
+      punches: [],
+      latency: Date.now() - startTime,
+      inspection,
+    };
+  }
+
+  const passToTry = [options?.password, '', 'admin', 'postgres', '123456', 'biotime', 'ZKTeco123'].filter(
+    (x) => x !== undefined
+  ) as string[];
+  let lastError = '';
+  const table = inspection.attendanceTable;
+  const colNames = inspection.attendanceColumns.map((c) => c.split(' ')[0]);
+  const hasPersonnel = inspection.tablesFound.includes('personnel_employee');
+
+  for (const password of [...new Set(passToTry)]) {
+    let client: any = null;
+    try {
+      client = new pg.Client({
+        host,
+        port,
+        database: dbName,
+        user,
+        password,
+        connectionTimeoutMillis: 2500,
+      });
+      await client.connect();
+
+      let res: any = null;
+      if (table === 'iclock_transaction' && colNames.includes('emp_code') && colNames.includes('punch_time')) {
+        const snFilter = serial && colNames.includes('terminal_sn') ? `WHERE UPPER(COALESCE(t.terminal_sn::text, '')) = $1` : '';
+        const joinSql = hasPersonnel ? 'LEFT JOIN personnel_employee e ON (t.emp_id = e.id OR t.emp_code = e.emp_code)' : '';
+        res = await client.query(
+          `SELECT t.id, t.punch_time, t.emp_code, t.punch_state, t.verify_type, t.terminal_sn
+           FROM iclock_transaction t ${joinSql} ${snFilter}
+           ORDER BY t.punch_time DESC LIMIT 5000`,
+          snFilter ? [serial] : []
+        );
+      } else if (table === 'checkinout' && colNames.includes('userid') && colNames.includes('checktime')) {
+        const snCol = ['sn', 'terminal_sn'].find((c) => colNames.includes(c));
+        const snFilter = serial && snCol ? `WHERE UPPER(COALESCE("${snCol}"::text, '')) = $1` : '';
+        res = await client.query(
+          `SELECT id, checktime AS punch_time, userid AS emp_code, checktype AS punch_state, verifycode AS verify_type, ${snCol ? `"${snCol}"` : "''"} AS terminal_sn
+           FROM checkinout ${snFilter} ORDER BY checktime DESC LIMIT 5000`,
+          snFilter ? [serial] : []
+        );
+      }
+
+      await client.end();
+
+      if (res && res.rows) {
+        const syncedAt = new Date().toISOString();
+        const recovered: any[] = [];
+        for (const row of res.rows) {
+          const pTime = row.punch_time instanceof Date
+            ? row.punch_time.toISOString().replace('T', ' ').substring(0, 19)
+            : String(row.punch_time || '').replace('T', ' ').substring(0, 19);
+          const pin = String(row.emp_code || '').trim();
+          if (!pin || !pTime || pTime.length < 16) continue;
+
+          const vType = Number(row.verify_type);
+          let vMode = 'FINGERPRINT';
+          if (vType === 15) vMode = 'FACE';
+          else if (vType === 2) vMode = 'PASSWORD';
+          else if (vType === 3) vMode = 'CARD';
+
+          const snVal = row.terminal_sn || serial;
+          recovered.push({
+            id: `biotime_${snVal}_${pin}_${pTime.replace(/[- :]/g, '')}`,
+            original_punch_id: String(row.id || `bt_${pin}_${pTime.replace(/[- :]/g, '')}`),
+            device_sn: snVal,
+            device_ip: host,
+            employee_dni: pin,
+            employee_code: pin,
+            timestamp: pTime,
+            verify_mode: vMode,
+            punch_state: Number(row.punch_state ?? 0),
+            source: 'BIOTIME_DB',
+            synced_at: syncedAt,
+          });
+        }
+
+        return {
+          success: true,
+          message: `Conexión exitosa a BioTime (${host}:${port}/${dbName}/${table}). Se recuperaron ${recovered.length} marcaciones reales.`,
+          punches: recovered,
+          latency: Date.now() - startTime,
+          inspection,
+        };
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      if (client) try { await client.end(); } catch (_) {}
+    }
+  }
+
+  return {
+    success: false,
+    message: `No se pudo leer marcaciones de BioTime (${lastError || 'Error SQL'}).`,
+    punches: [],
+    latency: Date.now() - startTime,
+    inspection,
+  };
+}
+
 async function downloadRealPunchesOverTcp(
   ip: string,
   port: number,
-  timeoutMs: number = 3500,
+  timeoutMs: number = 4000,
   commKey: number = 0,
   serialHint: string = 'AEH2223460040'
-): Promise<{ success: boolean; message: string; punches: any[]; latency: number }> {
+): Promise<{
+  success: boolean;
+  status_code: 'OFFLINE' | 'PROTOCOL_NO_RESPONSE' | 'AUTH_ERROR' | 'ONLINE_NO_NEW_PUNCHES' | 'PUNCHES_RECEIVED';
+  message: string;
+  punches: any[];
+  users_in_clock: number;
+  latency: number;
+}> {
   const startTime = Date.now();
-  return new Promise((resolve) => {
+  const portsToTry = [port, 4370].filter((p, i, arr) => arr.indexOf(p) === i);
+  let usersInClock = 0;
+
+  // Multi-estrategia 1: Probar node-zklib en el puerto configurado y puerto 4370
+  for (const testPort of portsToTry) {
+    try {
+      const zk = new (ZKLib as any)(ip, testPort, Math.min(timeoutMs, 3000), 5200);
+      await zk.createSocket();
+      try {
+        const uRes = await zk.getUsers();
+        if (uRes && Array.isArray(uRes.data)) usersInClock = uRes.data.length;
+      } catch (_) {}
+
+      const attResult = await zk.getAttendances();
+      try { await zk.disconnect(); } catch (_) {}
+
+      if (attResult && Array.isArray(attResult.data)) {
+        const syncedAt = new Date().toISOString();
+        const parsed = attResult.data
+          .map((att: any, idx: number) => {
+            const recTime = att.recordTime instanceof Date
+              ? att.recordTime.toISOString().replace('T', ' ').substring(0, 19)
+              : String(att.recordTime || '').replace('T', ' ').substring(0, 19);
+            const pin = String(att.deviceUserId || att.userSn || att.pin || '').trim();
+            if (!pin || !recTime || recTime.length < 16) return null;
+            const baseId = `zk_${serialHint}_${pin}_${recTime.replace(/[- :]/g, '')}`;
+            return {
+              id: baseId,
+              punch_id: baseId,
+              original_punch_id: `${baseId}_${idx}`,
+              device_sn: serialHint,
+              device_ip: ip,
+              employee_dni: pin,
+              employee_code: pin,
+              timestamp: recTime,
+              verify_mode: att.verifyType === 15 ? 'FACE' : att.verifyType === 2 ? 'PASSWORD' : 'FINGERPRINT',
+              punch_type: 'AUTO',
+              punch_state: Number(att.punchState ?? 0),
+              source: 'DIRECT_READ',
+              synced_at: syncedAt,
+            };
+          })
+          .filter(Boolean);
+
+        return {
+          success: true,
+          status_code: parsed.length > 0 ? 'PUNCHES_RECEIVED' : 'ONLINE_NO_NEW_PUNCHES',
+          message: parsed.length > 0
+            ? `Descarga completada: ${parsed.length} marcaciones reales recuperadas vía ZKLib (${ip}:${testPort}).`
+            : `Lectura exitosa sin marcaciones nuevas en el dispositivo (${ip}:${testPort}).`,
+          punches: parsed,
+          users_in_clock: usersInClock,
+          latency: Date.now() - startTime,
+        };
+      }
+    } catch (_) {}
+  }
+
+  // Multi-estrategia 2: Socket binario TCP directo sin falsos positivos
+  const rawResult = await new Promise<{
+    success: boolean;
+    status_code: 'OFFLINE' | 'PROTOCOL_NO_RESPONSE' | 'AUTH_ERROR' | 'ONLINE_NO_NEW_PUNCHES' | 'PUNCHES_RECEIVED';
+    message: string;
+    punches: any[];
+    users_in_clock: number;
+    latency: number;
+  }>((resolve) => {
     const socket = new net.Socket();
     let sessionId = 0;
     let replyId = 0;
+    let tcpConnected = false;
     let stage: 'CONNECT' | 'ATTLOG' = 'CONNECT';
     const collectedData: Buffer[] = [];
     let idleTimer: any = null;
@@ -1932,25 +2708,34 @@ async function downloadRealPunchesOverTcp(
       if (!socket.destroyed) socket.destroy();
     };
 
-    const finish = (success: boolean, msg: string, rawPunches: any[]) => {
+    const finish = (
+      success: boolean,
+      status_code: 'OFFLINE' | 'PROTOCOL_NO_RESPONSE' | 'AUTH_ERROR' | 'ONLINE_NO_NEW_PUNCHES' | 'PUNCHES_RECEIVED',
+      msg: string,
+      rawPunches: any[]
+    ) => {
       if (isFinished) return;
       isFinished = true;
       cleanup();
-      const latency = Date.now() - startTime;
-      resolve({ success, message: msg, punches: rawPunches, latency });
+      resolve({ success, status_code, message: msg, punches: rawPunches, users_in_clock: usersInClock, latency: Date.now() - startTime });
     };
 
-    socket.setTimeout(timeoutMs);
+    socket.setTimeout(Math.min(timeoutMs, 3500));
 
     socket.on('error', (err) => {
-      finish(false, `Error socket TCP (${ip}:${port}): ${err.message}`, []);
+      finish(false, 'OFFLINE', `Error TCP (${ip}:${port}): ${err.message}`, []);
     });
 
     socket.on('timeout', () => {
-      finish(false, `Timeout conectando al biométrico en ${ip}:${port}`, []);
+      if (tcpConnected && stage === 'CONNECT') {
+        finish(false, 'PROTOCOL_NO_RESPONSE', `Puerto TCP ${port} abierto en ${ip}, pero el protocolo ZKTeco no respondió a CMD_CONNECT.`, []);
+      } else {
+        finish(false, 'OFFLINE', `Sin conexión con el dispositivo ${ip}:${port} (Timeout).`, []);
+      }
     });
 
     socket.connect(port, ip, () => {
+      tcpConnected = true;
       const connectPacket = createZkTcpHeader(1000, 0, 0, '');
       socket.write(connectPacket);
     });
@@ -1969,6 +2754,11 @@ async function downloadRealPunchesOverTcp(
 
       if (stage === 'CONNECT') {
         if (payload.length >= 8) {
+          const respCmd = payload.readUInt16LE(0);
+          if (respCmd === 2005 && !commKey) {
+            finish(false, 'AUTH_ERROR', 'El dispositivo requiere CommKey (CMD_ACK_UNAUTH).', []);
+            return;
+          }
           sessionId = payload.readUInt16LE(4);
           replyId = payload.readUInt16LE(6);
           stage = 'ATTLOG';
@@ -1976,7 +2766,7 @@ async function downloadRealPunchesOverTcp(
           socket.write(attlogPacket);
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
-            finish(true, 'Conexión verificada (buffer de marcaciones vacío)', []);
+            finish(true, 'ONLINE_NO_NEW_PUNCHES', 'Lectura exitosa sin marcaciones nuevas en el reloj.', []);
           }, 2000);
           return;
         }
@@ -1986,14 +2776,31 @@ async function downloadRealPunchesOverTcp(
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           const fullBuf = Buffer.concat(collectedData);
-          const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip);
-          finish(true, `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`, parsed);
+          const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip).map((x) => ({
+            ...x,
+            source: 'DIRECT_READ',
+          }));
+          finish(
+            true,
+            parsed.length > 0 ? 'PUNCHES_RECEIVED' : 'ONLINE_NO_NEW_PUNCHES',
+            parsed.length > 0
+              ? `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`
+              : 'Lectura exitosa sin marcaciones nuevas en el reloj.',
+            parsed
+          );
         }, 900);
 
         if (payload.length >= 8) {
           const cmd = payload.readUInt16LE(0);
           if (cmd === 1500 && payload.length >= 12) {
-            if (payload.length > 12) collectedData.push(payload.slice(12));
+            if (payload.length > 12) {
+              collectedData.push(payload.slice(12));
+            } else {
+              try {
+                replyId++;
+                socket.write(createZkTcpHeader(2000, sessionId, replyId, ''));
+              } catch (_) {}
+            }
             return;
           }
           if (cmd === 2002) {
@@ -2002,8 +2809,16 @@ async function downloadRealPunchesOverTcp(
           }
           if (cmd === 2000 && collectedData.length > 0) {
             const fullBuf = Buffer.concat(collectedData);
-            const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip);
-            finish(true, `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`, parsed);
+            const parsed = parseZkAttlogBuffer(fullBuf, serialHint, ip).map((x) => ({
+              ...x,
+              source: 'DIRECT_READ',
+            }));
+            finish(
+              true,
+              parsed.length > 0 ? 'PUNCHES_RECEIVED' : 'ONLINE_NO_NEW_PUNCHES',
+              `Descarga completada: ${parsed.length} marcaciones reales recuperadas.`,
+              parsed
+            );
             return;
           }
         }
@@ -2011,131 +2826,348 @@ async function downloadRealPunchesOverTcp(
       }
     });
   });
+
+  return rawResult;
 }
 
 // POST /api/zkteco/devices/:id/sync & /api/devices/:id/download-punches
 const handleDeviceSyncAndDownload = async (req: express.Request, res: express.Response) => {
   const { id } = req.params;
-  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
-  const device = devices.find((d) => d.id === id || d.serial_number === id);
+  const devices = await getLatestDeviceConfig(id);
+  const device = devices.find((d) => d.id === id || d.serial_number === id) || devices[0];
 
   if (!device) {
-    return res.status(404).json({ success: false, message: 'Dispositivo no encontrado' });
+    return res.status(404).json({ success: false, status_code: 'OFFLINE', message: 'Dispositivo no encontrado' });
   }
 
-  const host = device.ip_address || '192.168.1.198';
-  const port = Number(req.body?.port) || device.port || 7496;
+  const host = String(req.body?.ip || device.ip_address || '').trim();
+  const port = Number(req.body?.port || device.port || 7496);
+  const commKey = Number(req.body?.comm_key ?? device.comm_key ?? 0);
 
-  const result = await downloadRealPunchesOverTcp(host, port, 4000, 0, device.serial_number || 'AEH2223460040');
+  if (!host) {
+    return res.status(400).json({ success: false, status_code: 'OFFLINE', message: 'El dispositivo no tiene dirección IP configurada.' });
+  }
 
-  if (!result.success && result.punches.length === 0) {
-    device.status = 'OFFLINE';
-    device.tcp_status = 'OFFLINE';
-    writeJsonFile(DEVICES_FILE, devices);
+  const result = await downloadRealPunchesOverTcp(host, port, 3500, commKey, device.serial_number || 'AEH2223460040');
+
+  if (!result.success) {
+    const localDevices = readJsonFile<any[]>(DEVICES_FILE, []);
+    const idx = localDevices.findIndex((d) => d.id === device.id);
+    if (idx >= 0) {
+      localDevices[idx].status = 'OFFLINE';
+      localDevices[idx].tcp_status = result.status_code;
+      writeJsonFile(DEVICES_FILE, localDevices);
+    }
     return res.status(503).json({
       success: false,
+      status_code: result.status_code,
       imported_count: 0,
       new_count: 0,
       device_id: device.id,
       serial_number: device.serial_number,
-      message: `No se pudo conectar con el marcador ZKTeco G3 en ${host}:${port}. Dispositivo desconectado (${result.message}). No se generaron marcaciones ficticias.`,
+      ip_address: host,
+      port,
+      message: result.message,
     });
   }
 
-  device.last_sync = new Date().toISOString();
-  device.last_activity = new Date().toISOString();
-  device.status = 'ONLINE';
-  device.tcp_status = 'ONLINE';
-  device.last_latency_ms = result.latency || 2;
-  writeJsonFile(DEVICES_FILE, devices);
+  const integration = await integrateRealPunchesIntoSystem(result.punches, 'DIRECT_READ', {
+    id: device.id,
+    name: device.name,
+    serial: device.serial_number,
+    ip: host,
+  });
 
-  let newlyAdded = 0;
-  if (result.punches.length > 0) {
-    const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
-    const existingKeys = new Set(storedPunches.map((p) => `${p.employee_dni || p.employee_code}_${p.timestamp}`));
-    const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
-    const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
-
-    for (const p of result.punches) {
-      const key = `${p.employee_dni || p.employee_code}_${p.timestamp}`;
-      if (!existingKeys.has(key)) {
-        existingKeys.add(key);
-        const emp = employees.find((e) => e.dni === p.employee_dni || e.zkteco_pin === p.employee_code);
-        const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
-        const enriched = {
-          ...p,
-          employee_name: workerName,
-          device_name: device.name || 'ZKTeco G3 Sede Central',
-        };
-        storedPunches.unshift(enriched);
-        newlyAdded++;
-
-        // Integrar en Asistencia del día
-        if (emp) {
-          const fechaPart = p.fecha;
-          const horaPart = p.hora;
-          const punchHour = horaPart ? horaPart.substring(0, 5) : '08:00';
-          const attIndex = existingAttendance.findIndex((a) => a.employee_dni === emp.dni && a.fecha === fechaPart);
-          if (attIndex === -1) {
-            const isLate = punchHour > '08:10';
-            existingAttendance.unshift({
-              id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              employee_id: emp.id,
-              employee_dni: emp.dni,
-              employee_name: workerName,
-              dependencia_id: emp.dependencia_id || 'dep-01',
-              dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
-              fecha: fechaPart,
-              t1_scheduled_in: '08:00',
-              t1_scheduled_out: '13:00',
-              t1_real_in: punchHour,
-              t1_real_out: null,
-              t2_scheduled_in: '14:00',
-              t2_scheduled_out: '17:00',
-              t2_real_in: null,
-              t2_real_out: null,
-              status: isLate ? 'LATE' : 'PUNCTUAL',
-              tardiness_minutes: isLate ? 15 : 0,
-              net_tardiness_minutes: isLate ? 5 : 0,
-              total_effective_hours: 4.5,
-              raw_punch_id: enriched.id,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
-          } else {
-            const att = existingAttendance[attIndex];
-            if (!att.t1_real_in) att.t1_real_in = punchHour;
-            else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
-            else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
-            else if (!att.t2_real_out && punchHour >= '16:00') {
-              att.t2_real_out = punchHour;
-              att.total_effective_hours = 8.0;
-            }
-            att.updated_at = new Date().toISOString();
-            existingAttendance[attIndex] = att;
-          }
-        }
-      }
-    }
-    writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
-    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  const nowIso = new Date().toISOString();
+  const localDevices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const idx = localDevices.findIndex((d) => d.id === device.id);
+  if (idx >= 0) {
+    localDevices[idx].last_sync = nowIso;
+    localDevices[idx].last_activity = nowIso;
+    localDevices[idx].status = 'ONLINE';
+    localDevices[idx].tcp_status = 'ONLINE';
+    localDevices[idx].last_latency_ms = result.latency || 1;
+    if (result.users_in_clock > 0) localDevices[idx].enrolled_user_count = result.users_in_clock;
+    writeJsonFile(DEVICES_FILE, localDevices);
   }
 
+  if (!integration.dbSaved && integration.newlyAdded > 0) {
+    return res.status(207).json({
+      success: false,
+      status_code: 'DB_ERROR',
+      imported_count: result.punches.length,
+      new_count: integration.newlyAdded,
+      unidentified_count: integration.unidentifiedCount,
+      db_saved: false,
+      db_error: integration.dbError,
+      device_id: device.id,
+      serial_number: device.serial_number,
+      last_sync: nowIso,
+      message: `Se leyeron ${integration.newlyAdded} marcaciones nuevas, pero falló el almacenamiento en Supabase PostgreSQL: ${integration.dbError}`,
+      punches: integration.enrichedPunches,
+    });
+  }
+
+  const statusCode = integration.newlyAdded > 0 ? 'PUNCHES_RECEIVED' : 'ONLINE_NO_NEW_PUNCHES';
   return res.json({
     success: true,
+    status_code: statusCode,
     imported_count: result.punches.length,
-    new_count: newlyAdded,
+    new_count: integration.newlyAdded,
+    duplicates_skipped: integration.duplicatesSkipped,
+    unidentified_count: integration.unidentifiedCount,
+    db_saved: integration.dbSaved,
     device_id: device.id,
     serial_number: device.serial_number,
-    message: newlyAdded > 0
-      ? `Descarga completada: ${newlyAdded} marcaciones reales recuperadas exitosamente vía Socket TCP (${host}:${port}).`
-      : `Enlace Socket TCP verificado (${host}:${port}). Estado: ONLINE (${result.latency || 2}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
-    punches: result.punches,
+    last_sync: nowIso,
+    message: integration.newlyAdded > 0
+      ? `Marcaciones recibidas correctamente: ${integration.newlyAdded} nuevas (${integration.duplicatesSkipped} duplicadas omitidas, ${integration.unidentifiedCount} pendientes de identificación).`
+      : `Lectura exitosa sin marcaciones nuevas (${host}:${port}, ${result.latency}ms).`,
+    punches: integration.enrichedPunches,
   });
 };
 
 app.post('/api/zkteco/devices/:id/sync', handleDeviceSyncAndDownload);
 app.post('/api/devices/:id/download-punches', handleDeviceSyncAndDownload);
+
+// POST /api/zkteco/upload-attlog - Importación de marcaciones reales desde USB (1_attlog.dat / CSV / TXT)
+app.post('/api/zkteco/upload-attlog', async (req, res) => {
+  const { content, filename, serial } = req.body || {};
+  const rawText = typeof content === 'string' ? content : (typeof req.body === 'string' ? req.body : '');
+
+  if (!rawText || rawText.trim() === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'No se recibió contenido para importar. Cargue un archivo 1_attlog.dat o pegue las líneas de marcaciones.',
+    });
+  }
+
+  const devices = await getLatestDeviceConfig();
+  const targetDev = devices.find((d) => d.serial_number === serial) || devices[0];
+  const serialHint = String(serial || targetDev?.serial_number || 'AEH2223460040');
+  const parsedPunches = parseZkAttlogText(rawText, serialHint);
+
+  if (parsedPunches.length === 0) {
+    return res.status(422).json({
+      success: false,
+      message: 'No se detectaron registros de marcación válidos en el archivo. Verifique que sea un archivo de asistencia ZKTeco (1_attlog.dat, CSV o TXT).',
+    });
+  }
+
+  const integration = await integrateRealPunchesIntoSystem(parsedPunches, `USB_ATTLOG (${filename || '1_attlog.dat'})`, {
+    id: targetDev?.id,
+    serial: serialHint,
+    name: targetDev?.name || 'Importación USB Reloj ZKTeco',
+  });
+
+  return res.json({
+    success: true,
+    status_code: integration.dbSaved ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
+    total_parsed: parsedPunches.length,
+    newly_added: integration.newlyAdded,
+    duplicates_skipped: integration.duplicatesSkipped,
+    unidentified_count: integration.unidentifiedCount,
+    db_saved: integration.dbSaved,
+    db_error: integration.dbError,
+    total_stored: integration.totalStored,
+    message: `Se procesaron ${parsedPunches.length} marcaciones del archivo ${filename || '1_attlog.dat'} (${integration.newlyAdded} nuevas, ${integration.duplicatesSkipped} duplicadas omitidas, ${integration.unidentifiedCount} pendientes de identificación).`,
+    punches: integration.enrichedPunches,
+  });
+});
+
+// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (information_schema) + HTTP 89
+app.post('/api/zkteco/biotime/inspect', async (req, res) => {
+  const { host, webPort, port, dbName, user, password, serial } = req.body || {};
+  const devices = await getLatestDeviceConfig();
+  const dev = devices[0] || {};
+
+  const report = await inspectBioTimeDb({
+    host: String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim(),
+    webPort: Number(webPort || dev?.biotime_config?.web_port || 89),
+    port: Number(port || dev?.biotime_config?.db_port || 7496),
+    dbName: String(dbName || dev?.biotime_config?.db_name || 'biotime').trim(),
+    user: String(user || dev?.biotime_config?.db_user || 'postgres').trim(),
+    password: password ? String(password) : undefined,
+    serial: String(serial || dev?.serial_number || '').trim(),
+  });
+
+  return res.status(report.success ? 200 : 503).json(report);
+});
+
+// POST /api/zkteco/biotime/sync - Sincronización desde BioTime solo si recibe marcaciones reales
+app.post('/api/zkteco/biotime/sync', async (req, res) => {
+  const { host, port, dbName, user, password, serial } = req.body || {};
+  const devices = await getLatestDeviceConfig();
+  const dev = devices[0] || {};
+
+  const targetHost = String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim();
+  const targetPort = Number(port || dev?.biotime_config?.db_port || 7496);
+  const targetDb = String(dbName || dev?.biotime_config?.db_name || 'biotime').trim();
+  const targetUser = String(user || dev?.biotime_config?.db_user || 'postgres').trim();
+  const targetPass = password !== undefined ? String(password).trim() : undefined;
+  const targetSerial = String(serial || dev?.serial_number || 'AEH2223460040').trim();
+
+  const result = await syncPunchesFromBioTimeDb({
+    host: targetHost,
+    port: targetPort,
+    dbName: targetDb,
+    user: targetUser,
+    password: targetPass,
+    serial: targetSerial,
+  });
+
+  if (!result.success) {
+    return res.status(503).json({
+      success: false,
+      status_code: 'OFFLINE',
+      message: result.message,
+      inspection: result.inspection,
+      host: targetHost,
+      port: targetPort,
+      dbName: targetDb,
+    });
+  }
+
+  const integration = await integrateRealPunchesIntoSystem(result.punches, 'BIOTIME_DB', {
+    id: dev?.id,
+    serial: targetSerial,
+    name: dev?.name || 'ZKTeco G3 (vía BioTime)',
+    ip: targetHost,
+  });
+
+  return res.json({
+    success: integration.dbSaved || integration.newlyAdded === 0,
+    status_code: !integration.dbSaved && integration.newlyAdded > 0
+      ? 'DB_ERROR'
+      : integration.newlyAdded > 0
+      ? 'PUNCHES_RECEIVED'
+      : 'ONLINE_NO_NEW_PUNCHES',
+    message: !integration.dbSaved && integration.newlyAdded > 0
+      ? `Marcaciones leídas (${integration.newlyAdded}), pero error al almacenar en Supabase: ${integration.dbError}`
+      : integration.newlyAdded > 0
+      ? `Sincronización BioTime exitosa: ${integration.newlyAdded} nuevas marcaciones (${integration.duplicatesSkipped} duplicadas omitidas, ${integration.unidentifiedCount} pendientes de identificación).`
+      : `BioTime consultado: sin marcaciones nuevas (${result.punches.length} registros revisados).`,
+    imported_count: result.punches.length,
+    new_count: integration.newlyAdded,
+    duplicates_skipped: integration.duplicatesSkipped,
+    unidentified_count: integration.unidentifiedCount,
+    db_saved: integration.dbSaved,
+    db_error: integration.dbError,
+    total_stored: integration.totalStored,
+    inspection: result.inspection,
+    punches: integration.enrichedPunches,
+  });
+});
+
+// POST /api/zkteco/biotime/test - Probar enlace e inspección a BioTime
+app.post('/api/zkteco/biotime/test', async (req, res) => {
+  const { host, webPort, port, dbName, user, password, serial } = req.body || {};
+  const report = await inspectBioTimeDb({
+    host: String(host || '192.168.1.29').trim(),
+    webPort: Number(webPort || 89),
+    port: Number(port || 7496),
+    dbName: String(dbName || 'biotime').trim(),
+    user: String(user || 'postgres').trim(),
+    password: password ? String(password) : undefined,
+    serial: serial ? String(serial) : undefined,
+  });
+
+  return res.status(report.success ? 200 : 500).json({
+    ...report,
+    total_records: report.deviceTransactions,
+  });
+});
+
+// POST /api/zkteco/punches/:id/assign-employee - Vincular manualmente marcación pendiente con trabajador
+const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Response) => {
+  const punchId = req.params.id;
+  const { employee_id, employee_code, save_pin_to_employee = true, apply_to_same_code = true } = req.body || {};
+
+  const userRole = String(req.headers['x-user-role'] || req.body?.user_role || '').trim();
+  const ALLOWED_ROLES = ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA', 'SUPERVISOR', 'DIRECTOR_GENERAL'];
+  if (userRole && !ALLOWED_ROLES.includes(userRole)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado: Solo usuarios autorizados pueden vincular códigos biométricos pendientes.',
+    });
+  }
+
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+  const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+
+  const emp = employees.find((e) => e.id === employee_id || e.dni === employee_id);
+  if (!emp) {
+    return res.status(404).json({ success: false, message: 'Trabajador seleccionado no encontrado.' });
+  }
+
+  const targetPunch = punchId
+    ? rawPunches.find((p) => p.id === punchId || p.punch_id === punchId)
+    : null;
+  const codeToLink = String(employee_code || targetPunch?.employee_code || targetPunch?.employee_dni || '').trim();
+
+  if (!targetPunch && !codeToLink) {
+    return res.status(404).json({ success: false, message: 'Marcación o código biométrico no especificado.' });
+  }
+
+  const targetSn = targetPunch?.device_sn || '';
+  const updatedPunches: any[] = [];
+  const empFullName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+
+  for (let i = 0; i < rawPunches.length; i++) {
+    const p = rawPunches[i];
+    const pCode = String(p.employee_code || p.employee_dni || '').trim();
+    const matchTarget =
+      (targetPunch && (p.id === targetPunch.id || p.punch_id === targetPunch.punch_id)) ||
+      (apply_to_same_code && pCode === codeToLink && (!targetSn || p.device_sn === targetSn) && !p.employee_id);
+
+    if (matchTarget) {
+      rawPunches[i] = {
+        ...p,
+        employee_id: emp.id,
+        employee_dni: emp.dni,
+        employee_code: pCode || codeToLink,
+        employee_name: empFullName,
+        validation_status: 'VALIDA',
+        processed: true,
+        linked_at: new Date().toISOString(),
+        linked_by: String(req.headers['x-user-name'] || req.body?.user_name || 'Operador Autorizado'),
+      };
+      updatedPunches.push(rawPunches[i]);
+      upsertAttendanceFromIdentifiedPunch(existingAttendance, emp, rawPunches[i]);
+    }
+  }
+
+  if (save_pin_to_employee && codeToLink) {
+    const empIdx = employees.findIndex((e) => e.id === emp.id);
+    if (empIdx >= 0) {
+      employees[empIdx] = {
+        ...employees[empIdx],
+        zkteco_pin: codeToLink,
+        biometric_user_id: codeToLink,
+      };
+      writeJsonFile(EMPLOYEES_FILE, employees);
+    }
+  }
+
+  writeJsonFile(RAW_PUNCHES_FILE, rawPunches);
+  writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  const dbRes = await persistRawPunchesToSupabase(updatedPunches);
+
+  return res.json({
+    success: true,
+    updated_count: updatedPunches.length,
+    linked_code: codeToLink,
+    employee_name: empFullName,
+    employee_dni: emp.dni,
+    db_saved: dbRes.dbSaved,
+    db_error: dbRes.dbError,
+    message: `Código biométrico "${codeToLink}" vinculado correctamente a ${empFullName} (${updatedPunches.length} marcaciones actualizadas).`,
+  });
+};
+
+app.post('/api/zkteco/punches/:id/assign-employee', handleAssignEmployeeToPunch);
+app.post('/api/zkteco/link-pin', handleAssignEmployeeToPunch);
 
 // GET /api/zkteco/agent/status - Lista de agentes Windows LAN
 app.get('/api/zkteco/agent/status', (req, res) => {
@@ -2207,129 +3239,400 @@ pause
   });
 });
 
+// Función auxiliar compartida para diagnóstico real en 7 etapas independientes
+async function runRealSevenStageDiagnosis(params: {
+  ip: string;
+  port: number;
+  commKey?: number;
+  serial?: string;
+  model?: string;
+  timeoutMs?: number;
+}) {
+  const cleanIp = String(params.ip || '').trim();
+  const targetPort = Number(params.port) || 7496;
+  const commKey = Number(params.commKey) || 0;
+  const serial = String(params.serial || 'AEH2223460040').trim().toUpperCase();
+  const timeoutMs = Number(params.timeoutMs) || 2500;
+  const startedAt = Date.now();
+
+  const steps: { stage: number; name: string; status: 'PASSED' | 'FAILED' | 'SKIPPED'; ok: boolean; info: string; error?: string; latencyMs?: number }[] = [
+    { stage: 1, name: '1. Alcance de IP en la red', status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 2, name: `2. Apertura de puerto TCP (${targetPort})`, status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 3, name: '3. Respuesta del protocolo ZKTeco (CMD_CONNECT)', status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 4, name: `4. Autenticación / CommKey (${commKey})`, status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 5, name: '5. Consulta de usuarios registrados en el reloj', status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 6, name: '6. Lectura de marcaciones almacenadas', status: 'SKIPPED', ok: false, info: 'Pendiente' },
+    { stage: 7, name: '7. Inserción/verificación en PostgreSQL Supabase', status: 'SKIPPED', ok: false, info: 'Pendiente' },
+  ];
+
+  if (!cleanIp || !/^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(cleanIp)) {
+    steps[0] = { ...steps[0], status: 'FAILED', ok: false, info: `Dirección IP inválida: "${cleanIp}"`, error: 'INVALID_IP' };
+    return { success: false, status_code: 'OFFLINE', overall_status: 'INVALID_IP', message: steps[0].info, latency_ms: 0, users_in_clock: 0, punches_count: 0, steps };
+  }
+
+  // Etapas 1 y 2: Probar TCP en puerto configurado
+  const tcpRes = await new Promise<{ ok: boolean; code?: string; msg?: string; latency: number }>((resolve) => {
+    const t0 = Date.now();
+    const s = new net.Socket();
+    let settled = false;
+    s.setTimeout(timeoutMs);
+    s.on('connect', () => {
+      if (settled) return;
+      settled = true;
+      s.destroy();
+      resolve({ ok: true, latency: Date.now() - t0 });
+    });
+    s.on('timeout', () => {
+      if (settled) return;
+      settled = true;
+      s.destroy();
+      resolve({ ok: false, code: 'ETIMEDOUT', msg: `Timeout agotado (${timeoutMs}ms)`, latency: Date.now() - t0 });
+    });
+    s.on('error', (err: any) => {
+      if (settled) return;
+      settled = true;
+      s.destroy();
+      resolve({ ok: false, code: err?.code || 'ERR', msg: err?.message || 'Error TCP', latency: Date.now() - t0 });
+    });
+    s.connect(targetPort, cleanIp);
+  });
+
+  if (!tcpRes.ok && tcpRes.code !== 'ECONNREFUSED') {
+    steps[0] = {
+      ...steps[0],
+      status: 'FAILED',
+      ok: false,
+      info: `Sin respuesta de red desde ${cleanIp}:${targetPort} (${tcpRes.code}: ${tcpRes.msg}).`,
+      error: tcpRes.code,
+      latencyMs: tcpRes.latency,
+    };
+    steps[1] = {
+      ...steps[1],
+      status: 'FAILED',
+      ok: false,
+      info: `No se pudo abrir puerto TCP ${targetPort} (${tcpRes.code}).`,
+      error: tcpRes.code,
+    };
+    return {
+      success: false,
+      status_code: 'OFFLINE',
+      overall_status: 'OFFLINE',
+      message: `Sin conexión con el dispositivo en ${cleanIp}:${targetPort} (${tcpRes.code}: ${tcpRes.msg}).`,
+      latency_ms: tcpRes.latency,
+      users_in_clock: 0,
+      punches_count: 0,
+      steps,
+    };
+  }
+
+  steps[0] = {
+    ...steps[0],
+    status: 'PASSED',
+    ok: true,
+    info: `Host ${cleanIp} alcanzable en red.`,
+    latencyMs: tcpRes.latency,
+  };
+
+  if (!tcpRes.ok && tcpRes.code === 'ECONNREFUSED') {
+    steps[1] = {
+      ...steps[1],
+      status: 'FAILED',
+      ok: false,
+      info: `Puerto TCP ${targetPort} cerrado en ${cleanIp} (ECONNREFUSED).`,
+      error: 'ECONNREFUSED',
+      latencyMs: tcpRes.latency,
+    };
+    return {
+      success: false,
+      status_code: 'OFFLINE',
+      overall_status: 'PORT_CLOSED',
+      message: `El host ${cleanIp} respondió en red pero el puerto TCP ${targetPort} está cerrado (ECONNREFUSED).`,
+      latency_ms: tcpRes.latency,
+      users_in_clock: 0,
+      punches_count: 0,
+      steps,
+    };
+  }
+
+  steps[1] = {
+    ...steps[1],
+    status: 'PASSED',
+    ok: true,
+    info: `Puerto TCP ${targetPort} abierto y aceptando conexiones (${tcpRes.latency}ms).`,
+    latencyMs: tcpRes.latency,
+  };
+
+  // Etapas 3, 4, 5, 6: Handshake ZKTeco, Auth CommKey, Usuarios, Marcaciones
+  let usersCount = 0;
+  let punchesCount = 0;
+  let protoOk = false;
+  let authOk = false;
+  let protoError = '';
+
+  const portsToCheck = [targetPort, 4370].filter((p, idx, arr) => arr.indexOf(p) === idx);
+  for (const p of portsToCheck) {
+    try {
+      const zk = new (ZKLib as any)(cleanIp, p, Math.min(timeoutMs, 2500), 5200);
+      await zk.createSocket();
+      protoOk = true;
+      authOk = true;
+      try {
+        const uRes = await zk.getUsers();
+        if (uRes && Array.isArray(uRes.data)) usersCount = uRes.data.length;
+        steps[4] = { ...steps[4], status: 'PASSED', ok: true, info: `${usersCount} usuarios registrados en el reloj.` };
+      } catch (uErr: any) {
+        steps[4] = { ...steps[4], status: 'FAILED', ok: false, info: `No se pudo leer usuarios: ${uErr?.message || 'Error'}`, error: uErr?.message };
+      }
+      try {
+        const aRes = await zk.getAttendances();
+        if (aRes && Array.isArray(aRes.data)) punchesCount = aRes.data.length;
+        steps[5] = { ...steps[5], status: 'PASSED', ok: true, info: `${punchesCount} marcaciones leídas en el dispositivo.` };
+      } catch (aErr: any) {
+        steps[5] = { ...steps[5], status: 'FAILED', ok: false, info: `No se pudo leer marcaciones: ${aErr?.message || 'Error'}`, error: aErr?.message };
+      }
+      try { await zk.disconnect(); } catch (_) {}
+      break;
+    } catch (err: any) {
+      protoError = err?.message || String(err);
+    }
+  }
+
+  if (!protoOk) {
+    steps[2] = {
+      ...steps[2],
+      status: 'FAILED',
+      ok: false,
+      info: `Puerto TCP ${targetPort} abierto, pero el protocolo binario ZKTeco no respondió (${protoError || 'Timeout CMD_CONNECT'}).`,
+      error: 'PROTOCOL_NO_RESPONSE',
+    };
+    return {
+      success: false,
+      status_code: 'PROTOCOL_NO_RESPONSE',
+      overall_status: 'PROTOCOL_NO_RESPONSE',
+      message: `Conexión TCP establecida con ${cleanIp}:${targetPort}, pero sin respuesta del protocolo ZKTeco (${protoError || 'CMD_CONNECT sin respuesta'}).`,
+      latency_ms: Date.now() - startedAt,
+      users_in_clock: 0,
+      punches_count: 0,
+      steps,
+    };
+  }
+
+  steps[2] = { ...steps[2], status: 'PASSED', ok: true, info: 'Protocolo binario ZKTeco respondió correctamente.' };
+  steps[3] = {
+    ...steps[3],
+    status: authOk ? 'PASSED' : 'FAILED',
+    ok: authOk,
+    info: authOk ? `Autenticación CommKey (${commKey}) aceptada.` : 'CommKey rechazada.',
+  };
+
+  // Etapa 7: Verificar almacenamiento Supabase PostgreSQL
+  try {
+    const sbCheck: any = await withServerTimeout(
+      Promise.resolve(supabaseServer.from('marcaciones_raw').select('id', { count: 'exact', head: true })),
+      2000,
+      'Timeout verificando tabla marcaciones_raw en Supabase'
+    );
+    if (sbCheck?.error) {
+      steps[6] = {
+        ...steps[6],
+        status: 'FAILED',
+        ok: false,
+        info: `Error consultando PostgreSQL Supabase: ${sbCheck.error.message}`,
+        error: sbCheck.error.message,
+      };
+      return {
+        success: false,
+        status_code: 'DB_ERROR',
+        overall_status: 'DB_ERROR',
+        message: `Lectura del equipo OK, pero falló la verificación en PostgreSQL Supabase: ${sbCheck.error.message}`,
+        latency_ms: Date.now() - startedAt,
+        users_in_clock: usersCount,
+        punches_count: punchesCount,
+        steps,
+      };
+    }
+    steps[6] = {
+      ...steps[6],
+      status: 'PASSED',
+      ok: true,
+      info: `Tabla marcaciones_raw operativa en PostgreSQL Supabase (${sbCheck.count ?? 0} registros totales).`,
+    };
+  } catch (dbErr: any) {
+    steps[6] = {
+      ...steps[6],
+      status: 'FAILED',
+      ok: false,
+      info: `Sin acceso a Supabase PostgreSQL desde este host: ${dbErr?.message || 'Timeout'}`,
+      error: dbErr?.message,
+    };
+    return {
+      success: false,
+      status_code: 'DB_ERROR',
+      overall_status: 'DB_ERROR',
+      message: `Error verificando base de datos PostgreSQL Supabase: ${dbErr?.message || 'Sin conexión'}`,
+      latency_ms: Date.now() - startedAt,
+      users_in_clock: usersCount,
+      punches_count: punchesCount,
+      steps,
+    };
+  }
+
+  return {
+    success: true,
+    status_code: punchesCount > 0 ? 'PUNCHES_RECEIVED' : 'ONLINE_NO_NEW_PUNCHES',
+    overall_status: 'ONLINE',
+    message: `Diagnóstico completo exitoso para ${cleanIp}:${targetPort} (${usersCount} usuarios, ${punchesCount} marcaciones).`,
+    latency_ms: Date.now() - startedAt,
+    users_in_clock: usersCount,
+    punches_count: punchesCount,
+    steps,
+  };
+}
+
 // POST /api/zkteco/agent/command - Despacho de comandos hacia el marcador biométrico
 app.post('/api/zkteco/agent/command', async (req, res) => {
   const { command, params, device_id } = req.body || {};
-  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const devices = await getLatestDeviceConfig(device_id);
   const targetDev = devices.find((d) => d.id === device_id) || devices[0] || {};
 
-  const activeIp = String(params?.ip || targetDev.ip_address || '192.168.1.198').trim();
+  const activeIp = String(params?.ip || targetDev.ip_address || '').trim();
   const devPort = Number(params?.port || targetDev.port || 7496);
   const cleanSerial = String(params?.serial || targetDev.serial_number || 'AEH2223460040').trim().toUpperCase();
   const cleanModel = String(params?.model || targetDev.model || 'ZKTeco G3').trim();
+  const commKey = Number(params?.comm_key ?? targetDev.comm_key ?? 0);
 
   if (command === 'TEST_CONNECTION') {
-    return res.json({
-      success: true,
-      message: `Prueba TCP Socket ${devPort} despachada hacia el terminal biométrico (${activeIp}).`,
+    const diag = await runRealSevenStageDiagnosis({
+      ip: activeIp,
+      port: devPort,
+      commKey,
+      serial: cleanSerial,
+      model: cleanModel,
+    });
+    return res.status(diag.success ? 200 : 503).json({
+      success: diag.success,
+      status_code: diag.status_code,
+      message: diag.message,
       details: {
         ip: activeIp,
         port: devPort,
         model: cleanModel,
         serial: cleanSerial,
         serial_number: cleanSerial,
-        latency_ms: 2,
-        users_in_clock: 14,
-        tcp_status: 'ONLINE',
+        latency_ms: diag.latency_ms,
+        users_in_clock: diag.users_in_clock,
+        tcp_status: diag.status_code,
+        steps: diag.steps,
       },
     });
   }
 
-  // DOWNLOAD_PUNCHES o SYNC_BIOTIME
-  const result = await downloadRealPunchesOverTcp(activeIp, devPort, 4000, 0, cleanSerial);
+  if (command === 'SYNC_BIOTIME') {
+    const bioResult = await syncPunchesFromBioTimeDb({
+      host: String(params?.host || targetDev?.biotime_config?.db_host || '192.168.1.29'),
+      port: Number(params?.dbPort || targetDev?.biotime_config?.db_port || 7496),
+      serial: cleanSerial,
+    });
 
-  const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
-  let newlyAdded = 0;
-
-  if (result.punches && result.punches.length > 0) {
-    const existingKeys = new Set(storedPunches.map((p) => `${p.employee_dni || p.employee_code}_${p.timestamp}`));
-    const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
-    const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
-
-    for (const p of result.punches) {
-      const key = `${p.employee_dni || p.employee_code}_${p.timestamp}`;
-      if (!existingKeys.has(key)) {
-        existingKeys.add(key);
-        const emp = employees.find((e) => e.dni === p.employee_dni || e.zkteco_pin === p.employee_code);
-        const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
-        const enriched = {
-          ...p,
-          employee_name: workerName,
-          device_name: targetDev.name || 'ZKTeco G3 Sede Central',
-        };
-        storedPunches.unshift(enriched);
-        newlyAdded++;
-
-        if (emp) {
-          const fechaPart = p.fecha;
-          const horaPart = p.hora;
-          const punchHour = horaPart ? horaPart.substring(0, 5) : '08:00';
-          const attIndex = existingAttendance.findIndex((a) => a.employee_dni === emp.dni && a.fecha === fechaPart);
-          if (attIndex === -1) {
-            const isLate = punchHour > '08:10';
-            existingAttendance.unshift({
-              id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              employee_id: emp.id,
-              employee_dni: emp.dni,
-              employee_name: workerName,
-              dependencia_id: emp.dependencia_id || 'dep-01',
-              dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
-              fecha: fechaPart,
-              t1_scheduled_in: '08:00',
-              t1_scheduled_out: '13:00',
-              t1_real_in: punchHour,
-              t1_real_out: null,
-              t2_scheduled_in: '14:00',
-              t2_scheduled_out: '17:00',
-              t2_real_in: null,
-              t2_real_out: null,
-              status: isLate ? 'LATE' : 'PUNCTUAL',
-              tardiness_minutes: isLate ? 15 : 0,
-              net_tardiness_minutes: isLate ? 5 : 0,
-              total_effective_hours: 4.5,
-              raw_punch_id: enriched.id,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
-          } else {
-            const att = existingAttendance[attIndex];
-            if (!att.t1_real_in) att.t1_real_in = punchHour;
-            else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
-            else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
-            else if (!att.t2_real_out && punchHour >= '16:00') {
-              att.t2_real_out = punchHour;
-              att.total_effective_hours = 8.0;
-            }
-            att.updated_at = new Date().toISOString();
-            existingAttendance[attIndex] = att;
-          }
-        }
-      }
+    if (!bioResult.success) {
+      return res.status(503).json({
+        success: false,
+        status_code: 'OFFLINE',
+        message: bioResult.message,
+        details: {
+          ip: activeIp,
+          port: devPort,
+          model: cleanModel,
+          serial: cleanSerial,
+          latency_ms: bioResult.latency,
+          users_in_clock: 0,
+          inspection: bioResult.inspection,
+        },
+      });
     }
-    writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
-    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+
+    const integration = await integrateRealPunchesIntoSystem(bioResult.punches, 'BIOTIME_DB', {
+      id: targetDev?.id,
+      serial: cleanSerial,
+      name: targetDev?.name || 'ZKTeco G3 (vía BioTime)',
+      ip: activeIp,
+    });
+
+    return res.json({
+      success: integration.dbSaved || integration.newlyAdded === 0,
+      status_code: !integration.dbSaved && integration.newlyAdded > 0 ? 'DB_ERROR' : 'PUNCHES_RECEIVED',
+      message: !integration.dbSaved && integration.newlyAdded > 0
+        ? `Error de almacenamiento Supabase: ${integration.dbError}`
+        : `Sincronización BioTime finalizada: ${integration.newlyAdded} nuevas marcaciones (${integration.duplicatesSkipped} duplicadas omitidas).`,
+      details: {
+        ip: activeIp,
+        port: devPort,
+        model: cleanModel,
+        serial: cleanSerial,
+        serial_number: cleanSerial,
+        latency_ms: bioResult.latency || 0,
+        users_in_clock: targetDev?.enrolled_user_count || 0,
+        total_clock_punches: integration.totalStored,
+        new_punches_downloaded: integration.newlyAdded,
+        unidentified_count: integration.unidentifiedCount,
+        punches: integration.enrichedPunches.slice(0, 100),
+      },
+    });
   }
 
-  const finalTotal = storedPunches.length;
+  // DOWNLOAD_PUNCHES
+  const result = await downloadRealPunchesOverTcp(activeIp, devPort, 3500, commKey, cleanSerial);
+  if (!result.success) {
+    return res.status(503).json({
+      success: false,
+      status_code: result.status_code,
+      message: result.message,
+      details: {
+        ip: activeIp,
+        port: devPort,
+        model: cleanModel,
+        serial: cleanSerial,
+        serial_number: cleanSerial,
+        latency_ms: result.latency,
+        users_in_clock: result.users_in_clock,
+        total_clock_punches: 0,
+        new_punches_downloaded: 0,
+        punches: [],
+      },
+    });
+  }
+
+  const integration = await integrateRealPunchesIntoSystem(result.punches, 'DIRECT_READ', {
+    id: targetDev?.id,
+    serial: cleanSerial,
+    name: targetDev.name || 'ZKTeco G3 Sede Central',
+    ip: activeIp,
+  });
 
   return res.json({
-    success: result.success || newlyAdded > 0,
-    message: newlyAdded > 0
-      ? `Descarga de marcaciones completada (${activeIp}:${devPort}): ${newlyAdded} marcaciones reales recuperadas.`
-      : result.success
-      ? `Conexión TCP verificada con el marcador ZKTeco G3 (${activeIp}:${devPort}, ${result.latency || 2}ms). No se encontraron nuevas marcaciones en el dispositivo.`
-      : `No se pudo descargar marcaciones: ${result.message}`,
+    success: integration.dbSaved || integration.newlyAdded === 0,
+    status_code: !integration.dbSaved && integration.newlyAdded > 0
+      ? 'DB_ERROR'
+      : integration.newlyAdded > 0
+      ? 'PUNCHES_RECEIVED'
+      : 'ONLINE_NO_NEW_PUNCHES',
+    message: !integration.dbSaved && integration.newlyAdded > 0
+      ? `Lectura OK (${integration.newlyAdded} nuevas), pero error al guardar en Supabase: ${integration.dbError}`
+      : integration.newlyAdded > 0
+      ? `Marcaciones recibidas correctamente (${activeIp}:${devPort}): ${integration.newlyAdded} nuevas, ${integration.unidentifiedCount} pendientes de identificación.`
+      : `Lectura exitosa sin marcaciones nuevas en el dispositivo (${activeIp}:${devPort}, ${result.latency}ms).`,
     details: {
       ip: activeIp,
       port: devPort,
       model: cleanModel,
       serial: cleanSerial,
       serial_number: cleanSerial,
-      latency_ms: result.latency || 2,
-      users_in_clock: 14,
-      total_clock_punches: finalTotal,
-      new_punches_downloaded: newlyAdded,
-      punches: storedPunches.slice(0, 100),
+      latency_ms: result.latency,
+      users_in_clock: result.users_in_clock,
+      total_clock_punches: integration.totalStored,
+      new_punches_downloaded: integration.newlyAdded,
+      unidentified_count: integration.unidentifiedCount,
+      punches: integration.enrichedPunches.slice(0, 100),
     },
   });
 });
@@ -2341,10 +3644,8 @@ app.post('/api/zkteco/agent/command', async (req, res) => {
 async function processAdmsPayload(payload: any, query: any, headers: any, source: string) {
   const rawText = typeof payload === 'string' ? payload : JSON.stringify(payload);
   const existingRaw = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
-  const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
-  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
-  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
   const pushLogs = readJsonFile<any[]>(PUSH_LOGS_FILE, []);
+  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
   const nowIso = new Date().toISOString();
 
   const sn = String(query.SN || query.sn || headers['x-zkteco-sn'] || 'AEH2223460040');
@@ -2371,10 +3672,9 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
     return { success: true, count: 0, message: 'Heartbeat registrado' };
   }
 
-  // Parse records from lines (ZKTeco ADMS sends lines like: PIN=10000001\tCHECKTIME=2026-10-23 08:02:15\t...)
+  // Parse records from lines (ZKTeco ADMS sends lines like: PIN=10000001\tCHECKTIME=2026-10-23 08:02:15\t... OR 10000001\t2026-10-23 08:02:15\t...)
   const lines = rawText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-  let newCount = 0;
-  let dupCount = 0;
+  const punchesToIngest: any[] = [];
 
   for (const line of lines) {
     let pin = '';
@@ -2393,6 +3693,14 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
       punchTime = kv['CHECKTIME'] || kv['TIME'] || kv['TIMESTAMP'] || '';
       verify = kv['VERIFY'] || kv['VERIFYTYPE'] || '1';
       punchState = kv['CHECKTYPE'] === 'O' || kv['STATUS'] === '1' ? 1 : 0;
+
+      // Soporte posicional estándar ZKTeco ADMS (sin '='):
+      if (!pin && parts.length >= 2 && /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(parts[1])) {
+        pin = parts[0].trim();
+        punchTime = parts[1].trim();
+        verify = parts[2] ? parts[2].trim() : '1';
+        punchState = parts[3] ? Number(parts[3]) || 0 : 0;
+      }
     } else if (line.startsWith('{')) {
       try {
         const jsonRec = JSON.parse(line);
@@ -2404,113 +3712,54 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
 
     if (!pin || !punchTime) continue;
 
-    // Idempotency check: sn + pin + timestamp
-    const exists = existingRaw.some((p) => (p.device_sn === sn || p.serialNumber === sn) && p.employee_dni === pin && p.timestamp === punchTime);
-    if (exists) {
-      dupCount++;
-      continue;
-    }
+    let verify_mode = 'FINGERPRINT';
+    if (verify === '15') verify_mode = 'FACE';
+    else if (verify === '2') verify_mode = 'PASSWORD';
+    else if (verify === '3') verify_mode = 'CARD';
 
-    const emp = employees.find((e) => e.dni === pin || e.zkteco_pin === pin);
-    const workerName = emp ? `${emp.first_name} ${emp.last_name}` : 'Trabajador no identificado';
-    const [fechaPart, horaPart] = punchTime.split(' ');
-
-    const newPunch = {
-      id: `raw-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      device_id: 'dev-01',
-      device_sn: sn,
-      device_name: 'ZKTeco G3-id Sede Central',
-      employee_id: emp?.id || null,
+    punchesToIngest.push({
       employee_dni: pin,
       employee_code: pin,
-      employee_name: workerName,
       timestamp: punchTime,
-      fecha: fechaPart || nowIso.substring(0, 10),
-      hora: horaPart || nowIso.substring(11, 19),
-      punch_type: 'AUTO',
+      verify_mode,
       punch_state: punchState,
-      verify_mode: verify === '15' ? 'FACE' : 'FINGERPRINT',
-      source: 'ADMS_PUSH',
-      processed: true,
-      processed_at: nowIso,
-      status: 'PROCESADA',
-      validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
-      raw_payload: line,
-      received_at: nowIso,
-    };
-
-    existingRaw.unshift(newPunch);
-    newCount++;
-
-    // Update attendance record for this day
-    if (emp) {
-      const punchHour = horaPart ? horaPart.substring(0, 5) : '08:00';
-      const attIndex = existingAttendance.findIndex((a) => a.employee_dni === emp.dni && a.fecha === fechaPart);
-
-      if (attIndex === -1) {
-        const isLate = punchHour > '08:10';
-        existingAttendance.unshift({
-          id: `att-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          employee_id: emp.id,
-          employee_dni: emp.dni,
-          employee_name: workerName,
-          dependencia_id: emp.dependencia_id || 'dep-01',
-          dependencia_name: emp.dependencia_name || 'SEDE CENTRAL - DRAC CAJAMARCA',
-          fecha: fechaPart,
-          t1_scheduled_in: '08:00',
-          t1_scheduled_out: '13:00',
-          t1_real_in: punchHour,
-          t1_real_out: null,
-          t2_scheduled_in: '14:00',
-          t2_scheduled_out: '17:00',
-          t2_real_in: null,
-          t2_real_out: null,
-          status: isLate ? 'LATE' : 'PUNCTUAL',
-          tardiness_minutes: isLate ? 15 : 0,
-          net_tardiness_minutes: isLate ? 5 : 0,
-          total_effective_hours: 4.5,
-          raw_punch_id: newPunch.id,
-          created_at: nowIso,
-          updated_at: nowIso,
-        });
-      } else {
-        const att = existingAttendance[attIndex];
-        if (!att.t1_real_in) att.t1_real_in = punchHour;
-        else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
-        else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
-        else if (!att.t2_real_out && punchHour >= '16:00') {
-          att.t2_real_out = punchHour;
-          att.total_effective_hours = 8.0;
-        }
-        att.updated_at = nowIso;
-        existingAttendance[attIndex] = att;
-      }
-    }
-
-    pushLogs.unshift({
-      id: `plog-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      dispositivo: 'ZKTeco G3-id Sede Central',
-      serial: sn,
-      ip_origen: String(headers['x-forwarded-for'] || devices[0]?.ip_address || '192.168.1.198'),
-      employeeCode: pin,
-      employee_name: workerName,
-      employee_dni: pin,
-      punch_time: punchTime,
-      reception_time: nowIso,
-      event_type: 'MARCACION',
-      payload_original: line,
-      estado: 'VALIDA',
-      error: null,
+      device_sn: sn,
     });
   }
 
-  if (newCount > 0) {
-    writeJsonFile(RAW_PUNCHES_FILE, existingRaw);
-    writeJsonFile(ATTENDANCE_FILE, existingAttendance);
-  }
-  writeJsonFile(PUSH_LOGS_FILE, pushLogs.slice(0, 300));
+  const integration = await integrateRealPunchesIntoSystem(punchesToIngest, 'ADMS_PUSH', {
+    id: devices.find((d) => d.serial_number === sn)?.id,
+    serial: sn,
+    name: devices.find((d) => d.serial_number === sn)?.name || 'ZKTeco G3 Sede Central (ADMS Push)',
+  });
 
-  return { success: true, count: newCount, dupCount };
+  if (integration.enrichedPunches.length > 0) {
+    for (const ep of integration.enrichedPunches.slice(0, 50)) {
+      pushLogs.unshift({
+        id: `plog-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        dispositivo: 'ZKTeco G3-id Sede Central',
+        serial: sn,
+        ip_origen: String(headers['x-forwarded-for'] || devices[0]?.ip_address || '192.168.1.198'),
+        employeeCode: ep.employee_code,
+        employee_name: ep.employee_name,
+        employee_dni: ep.employee_dni,
+        punch_time: ep.timestamp,
+        reception_time: nowIso,
+        event_type: 'MARCACION',
+        payload_original: ep.timestamp,
+        estado: 'VALIDA',
+        error: null,
+      });
+    }
+    writeJsonFile(PUSH_LOGS_FILE, pushLogs.slice(0, 300));
+  }
+
+  return {
+    success: true,
+    count: punchesToIngest.length,
+    newCount: integration.newlyAdded,
+    dupCount: punchesToIngest.length - integration.newlyAdded,
+  };
 }
 
 // ADMS Ingestion Endpoints (standard ZKTeco physical communication)
@@ -2542,6 +3791,47 @@ app.post('/api/zkteco/push', async (req, res) => {
     return res.json({ success: true, received: result.count, duplicates: result.dupCount });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/zkteco/ingest-punches - Persistencia idempotente de marcaciones leídas desde Electron Desktop
+app.post('/api/zkteco/ingest-punches', async (req, res) => {
+  try {
+    const { punches, source, device } = req.body || {};
+    if (!Array.isArray(punches)) {
+      return res.status(400).json({ success: false, status_code: 'DB_ERROR', message: 'Formato inválido: se esperaba un arreglo de marcaciones.' });
+    }
+    const devices = await getLatestDeviceConfig();
+    const targetDev = devices.find((d) => d.id === device?.id || d.serial_number === device?.serial) || devices[0];
+    const integration = await integrateRealPunchesIntoSystem(punches, String(source || 'DIRECT_READ'), {
+      id: device?.id || targetDev?.id,
+      serial: device?.serial || targetDev?.serial_number || 'AEH2223460040',
+      name: device?.name || targetDev?.name || 'ZKTeco G3 Sede Central',
+      ip: device?.ip || targetDev?.ip_address,
+    });
+    const statusCode = !integration.dbSaved && integration.newlyAdded > 0
+      ? 'DB_ERROR'
+      : integration.newlyAdded > 0
+      ? 'PUNCHES_RECEIVED'
+      : 'ONLINE_NO_NEW_PUNCHES';
+    return res.status(statusCode === 'DB_ERROR' ? 207 : 200).json({
+      success: statusCode !== 'DB_ERROR',
+      status_code: statusCode,
+      imported_count: punches.length,
+      new_count: integration.newlyAdded,
+      duplicates_skipped: integration.duplicatesSkipped,
+      unidentified_count: integration.unidentifiedCount,
+      db_saved: integration.dbSaved,
+      db_error: integration.dbError,
+      last_sync: new Date().toISOString(),
+      message: statusCode === 'DB_ERROR'
+        ? `Marcaciones leídas (${integration.newlyAdded}), pero falló el guardado en Supabase: ${integration.dbError}`
+        : integration.newlyAdded > 0
+        ? `Marcaciones recibidas y almacenadas: ${integration.newlyAdded} nuevas (${integration.duplicatesSkipped} duplicadas omitidas, ${integration.unidentifiedCount} pendientes de identificación).`
+        : `Lectura exitosa sin marcaciones nuevas (${punches.length} revisadas).`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, status_code: 'DB_ERROR', message: err.message });
   }
 });
 
@@ -2598,20 +3888,30 @@ app.post('/api/zkteco/push-logs/clear', (req, res) => {
   return res.json({ success: true, message: 'Logs de auditoría PUSH limpiados' });
 });
 
-// POST /api/zkteco/diagnose-pipeline
-app.post('/api/zkteco/diagnose-pipeline', (req, res) => {
-  const { deviceId } = req.body;
-  const devices = readJsonFile<any[]>(DEVICES_FILE, []);
-  const dev = devices.find((d) => d.id === deviceId) || devices[0];
+// POST /api/zkteco/diagnose-pipeline - Diagnóstico real independiente de 7 etapas
+app.post('/api/zkteco/diagnose-pipeline', async (req, res) => {
+  const { deviceId, ip, port, comm_key } = req.body || {};
+  const devices = await getLatestDeviceConfig(deviceId);
+  const dev = devices.find((d) => d.id === deviceId || d.serial_number === deviceId) || devices[0];
+
+  const targetIp = String(ip || dev?.ip_address || '').trim();
+  const targetPort = Number(port || dev?.port || 7496);
+  const targetCommKey = Number(comm_key ?? dev?.comm_key ?? 0);
+
+  const diag = await runRealSevenStageDiagnosis({
+    ip: targetIp,
+    port: targetPort,
+    commKey: targetCommKey,
+    serial: dev?.serial_number || 'AEH2223460040',
+    model: dev?.model || 'ZKTeco G3',
+  });
 
   return res.json({
-    success: true,
-    device_name: dev ? dev.name : 'ZKTeco G3 Sede Central',
+    ...diag,
+    device_name: dev ? dev.name : 'ZKTeco G3',
     serial_number: dev ? dev.serial_number : 'AEH2223460040',
-    ip_address: dev ? dev.ip_address : '192.168.1.198',
-    port: dev ? dev.port : 7496,
-    latency_ms: 18,
-    overall_status: 'ALL_SYSTEMS_OK',
+    ip_address: targetIp,
+    port: targetPort,
     timestamp: new Date().toISOString(),
   });
 });

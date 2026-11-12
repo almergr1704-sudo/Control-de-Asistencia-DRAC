@@ -275,21 +275,22 @@ ipcMain.handle(
         model: res.model || cleanModel,
         serial: res.serial || res.serial_number || cleanSerial,
         serial_number: res.serial_number || res.serial || cleanSerial,
-        latency_ms: res.latency_ms !== undefined ? res.latency_ms : 2,
-        users_in_clock: res.users_in_clock || 14,
+        latency_ms: res.latency_ms !== undefined ? res.latency_ms : 0,
+        users_in_clock: res.users_in_clock ?? 0,
       };
     } catch (err) {
       log(`Error en readZkDevicePunches: ${err.message}`);
       return {
         success: false,
+        status: 'OFFLINE',
         message: `Error al descargar marcaciones: ${err.message}`,
         ip,
         port: targetPort,
         model: cleanModel,
         serial: cleanSerial,
         serial_number: cleanSerial,
-        latency_ms: 2,
-        users_in_clock: 14,
+        latency_ms: 0,
+        users_in_clock: 0,
         punches: [],
         timestamp: new Date().toISOString(),
       };
@@ -441,8 +442,19 @@ ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
   }
 });
 
+ipcMain.handle('biotime:inspect-database', async (_event, params = {}) => {
+  try {
+    if (typeof zktecoDriver.inspectBioTimeDatabase === 'function') {
+      return await zktecoDriver.inspectBioTimeDatabase(params);
+    }
+    return { success: false, message: 'inspectBioTimeDatabase no disponible en driver.' };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
 ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
-  let fallbackIp = '192.168.1.198';
+  let fallbackIp = '';
   try {
     const dPath = getStorageFilePath('devices.json');
     if (fs.existsSync(dPath)) {
@@ -465,7 +477,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
     const status = typeof zktecoDriver.checkBioTimeService === 'function'
       ? await zktecoDriver.checkBioTimeService(host, webPort, dbPort, serial)
-      : { success: true };
+      : { success: false };
 
     const punchesPath = getStorageFilePath('raw-punches.json');
     let loadedPunches = [];
@@ -475,8 +487,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       }
     } catch (_) {}
 
-    // Invocación del extractor real
-    let syncResult = { punches: [], source: 'NONE', details: '' };
+    let syncResult = { success: false, punches: [], source: 'NONE', details: 'Extractor no disponible.' };
     if (typeof zktecoDriver.syncBioTimeRecords === 'function') {
       syncResult = await zktecoDriver.syncBioTimeRecords({
         host,
@@ -485,19 +496,33 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
         serial,
         deviceIp,
         devicePort,
-        existingPunches: loadedPunches,
       });
     }
 
-    // Deduplicación y fusión por (employee_dni, timestamp)
+    if (!syncResult.success) {
+      return {
+        success: false,
+        message: syncResult.details || 'No se pudieron obtener marcaciones desde BioTime.',
+        serial,
+        deviceId,
+        source: syncResult.source || 'NONE',
+        inspection: syncResult.inspection || null,
+        new_count: 0,
+        punches_count: loadedPunches.length,
+        punches: [],
+        status,
+        timestamp: nowStr,
+      };
+    }
+
     const existingKeys = new Set(
-      loadedPunches.map((p) => `${p.employee_dni || p.pin}_${p.timestamp}`)
+      loadedPunches.map((p) => `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`)
     );
 
     const newlyAdded = [];
     if (Array.isArray(syncResult.punches) && syncResult.punches.length > 0) {
       for (const p of syncResult.punches) {
-        const key = `${p.employee_dni || p.pin}_${p.timestamp}`;
+        const key = `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`;
         if (!existingKeys.has(key)) {
           existingKeys.add(key);
           newlyAdded.push(p);
@@ -506,22 +531,24 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     }
 
     const mergedPunches = [...newlyAdded, ...loadedPunches];
-
-    try {
-      fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
-      log(`Guardadas ${mergedPunches.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
-    } catch (writeErr) {
-      log(`Aviso al persistir raw-punches.json: ${writeErr.message}`);
+    if (newlyAdded.length > 0) {
+      try {
+        fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
+        log(`Guardadas ${mergedPunches.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
+      } catch (writeErr) {
+        log(`Aviso al persistir raw-punches.json: ${writeErr.message}`);
+      }
     }
 
     return {
       success: true,
       message: newlyAdded.length > 0
-        ? `Sincronización completada: ${newlyAdded.length} marcaciones nuevas extraídas desde ${syncResult.source}. Total en staging: ${mergedPunches.length}.`
-        : `Sincronización completada con ${syncResult.source || 'BioTime'}. Todas las marcaciones se encuentran actualizadas (${mergedPunches.length} registros).`,
+        ? `Sincronización completada: ${newlyAdded.length} marcaciones nuevas extraídas desde ${syncResult.source}.`
+        : `Sincronización completada con ${syncResult.source}. Sin marcaciones nuevas (${mergedPunches.length} almacenadas).`,
       serial,
       deviceId,
       source: syncResult.source,
+      inspection: syncResult.inspection || null,
       new_count: newlyAdded.length,
       punches_count: mergedPunches.length,
       punches: mergedPunches,

@@ -119,8 +119,9 @@ function createRawHeader(cmd, sessionId, replyId, data = '') {
 }
 
 // Decodificador universal de fecha y hora ZKTeco (soporta packed 32-bit time y standard Unix timestamp)
+// NUNCA inventar fecha actual si el valor binario es inválido o vacío
 function decodeZkTime(t) {
-  if (!t || isNaN(t)) return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  if (!t || isNaN(t)) return '';
   // Timestamp Unix estándar
   if (t > 1500000000 && t < 2200000000) {
     return new Date(t * 1000).toISOString().replace('T', ' ').substring(0, 19);
@@ -143,7 +144,7 @@ function decodeZkTime(t) {
       return `${year}-${pad(month)}-${pad(day)} ${pad(hour)}:${pad(minute)}:${pad(second)}`;
     }
   } catch (_) {}
-  return new Date().toISOString().replace('T', ' ').substring(0, 19);
+  return '';
 }
 
 // Resolución segura de rutas de archivos de datos (compatible con desarrollo y producción Electron userData)
@@ -394,6 +395,12 @@ class ZKLibTCP {
               const dataPart = payload.slice(12);
               collectedBuffers.push(dataPart);
               totalReceived += dataPart.length;
+            } else {
+              try {
+                this.replyId++;
+                const ackPacket = createHeader(COMMANDS.CMD_ACK_OK, this.sessionId, this.replyId, '');
+                this.socket.write(ackPacket);
+              } catch (_) {}
             }
             return;
           }
@@ -498,7 +505,7 @@ class ZKLibTCP {
               punchTime = decodeZkTime(rawTime);
             }
 
-            if (pin) {
+            if (pin && punchTime) {
               punches.push({
                 deviceUserId: pin,
                 pin,
@@ -519,14 +526,16 @@ class ZKLibTCP {
             if (userSn > 0) {
               const rawTime = chunk.readUInt32LE(2);
               const punchTime = decodeZkTime(rawTime);
-              punches.push({
-                deviceUserId: String(userSn),
-                userSn,
-                pin: String(userSn),
-                recordTime: punchTime,
-                verifyType: chunk[6] || 1,
-                punchState: chunk[7] || 0,
-              });
+              if (punchTime) {
+                punches.push({
+                  deviceUserId: String(userSn),
+                  userSn,
+                  pin: String(userSn),
+                  recordTime: punchTime,
+                  verifyType: chunk[6] || 1,
+                  punchState: chunk[7] || 0,
+                });
+              }
             }
           }
         }
@@ -540,14 +549,16 @@ class ZKLibTCP {
             if (userSn > 0) {
               const rawTime = chunk.readUInt32LE(3);
               const punchTime = decodeZkTime(rawTime);
-              punches.push({
-                deviceUserId: String(userSn),
-                userSn,
-                pin: String(userSn),
-                recordTime: punchTime,
-                verifyType: 1,
-                punchState: chunk[7] || 0,
-              });
+              if (punchTime) {
+                punches.push({
+                  deviceUserId: String(userSn),
+                  userSn,
+                  pin: String(userSn),
+                  recordTime: punchTime,
+                  verifyType: 1,
+                  punchState: chunk[7] || 0,
+                });
+              }
             }
           }
         }
@@ -1157,81 +1168,52 @@ async function diagnoseZkDevice(ip, port = 7496, timeoutMs = 3000, modelHint = '
     stages[3].latencyMs = Date.now() - t4;
 
     if (!connected || !zkInstance) {
-      if (tcpProbe.ok) {
-        // El terminal responde por TCP en 1-2ms y opera en modo ADMS PUSH / Servidor Central
-        stages[3].status = 'PASSED';
-        stages[3].message = `Socket TCP activo en ${cleanIp}:${targetPort} (${tcpProbe.latency}ms). Dispositivo ZKTeco G3 verificado en modo ADMS PUSH / Servidor Central.`;
-
-        stages[4].status = 'PASSED';
-        stages[4].message = `Hardware verificado: ${modelHint} (Serial: ${snHint || 'AEH2223460040'}).`;
-        stages[4].latencyMs = 1;
-
-        stages[5].status = 'PASSED';
-        stages[5].message = `14 usuarios registrados en el biométrico institucional.`;
-        stages[5].latencyMs = 1;
-
-        stages[6].status = 'PASSED';
-        stages[6].message = `Marcaciones sincronizadas a través del canal ADMS PUSH institucional.`;
-        stages[6].latencyMs = 1;
-
-        stages[7].status = 'PASSED';
-        stages[7].message = `Deduplicación completada: registros validados por (DNI + Timestamp).`;
-        stages[7].latencyMs = 1;
-
-        stages[8].status = 'PASSED';
-        stages[8].message = `Sincronización y persistencia en base de datos activa.`;
-        stages[8].latencyMs = 1;
-
-        stages[9].status = 'PASSED';
-        stages[9].message = `Verificación de registros guardados en base de datos completada exitosamente.`;
-        stages[9].latencyMs = 1;
-
-        return buildDiagnosisResult(
-          true,
-          'ONLINE',
-          `Conexión exitosa con ${modelHint} (${cleanIp}:${targetPort}). Estado: ONLINE (Latencia: ${tcpProbe.latency}ms). Modo ADMS PUSH activo.`,
-          null,
-          cleanIp,
-          targetPort,
-          modelHint,
-          snHint || 'AEH2223460040',
-          stages,
-          nowStr,
-          14,
-          0,
-          'Ver 1.14.0',
-          nowStr
-        );
-      }
+      const isAuthFail =
+        authError?.includes('Clave de comunicación inválida') ||
+        authError?.includes('CMD_AUTH') ||
+        authError?.includes('Autenticación');
 
       stages[3].status = 'FAILED';
-      stages[3].message = authError
-        ? `Fallo de autenticación: ${authError}`
-        : `Handshake ZKTeco fallido en puerto ${targetPort}.`;
-      skipRemainingStages(4, 'Sesión del protocolo ZKTeco no autenticada.');
+      stages[3].message = isAuthFail
+        ? `Fallo de autenticación (CommKey): ${authError}`
+        : tcpProbe.ok
+        ? `Puerto TCP ${targetPort} abierto (${tcpProbe.latency}ms), pero el protocolo ZKTeco no respondió al handshake (${authError || 'sin respuesta CMD_CONNECT'}).`
+        : `Handshake ZKTeco fallido en puerto ${targetPort}: ${authError || 'sin respuesta'}.`;
 
-      let friendlyCause = authError || `El equipo respondió a la red pero rechazó el protocolo ZKTeco. Verifique la clave de comunicación (CommKey) en Menú > Comunicación > Red (actualmente probada: ${numericCommKey}).`;
-      if (authError?.includes('Timeout CMD_CONNECT')) {
-        friendlyCause = `El socket TCP abrió exitosamente en puerto ${targetPort} (${tcpProbe.latency}ms), pero el host en ${cleanIp} no respondió al comando binario CMD_CONNECT del protocolo ZKTeco.
+      skipRemainingStages(
+        4,
+        isAuthFail
+          ? 'Autenticación CommKey rechazada.'
+          : 'Protocolo ZKTeco no respondió tras apertura TCP.'
+      );
 
-Causas técnicas y soluciones recomendadas:
-1. Terminal en modo ADMS PUSH: Cuando el marcador ZKTeco G3 tiene configurado el Servidor Cloud hacia BioTime (http://192.168.1.29:89/iclock/cdata), el reloj actúa exclusivamente como cliente HTTP saliente y desactiva el listener de comandos SDK standalone en el puerto TCP. En este modo, utilice la opción "Sincronizar Vía BioTime" para descargar marcaciones sin requerir socket TCP directo.
-2. Puerto SDK en el menú físico: Muchos marcadores ZKTeco G3 tienen su puerto SDK configurado de fábrica en 4370 (Menú > Comunicaciones > Red > Ethernet > Puerto TCP). Si el puerto configurado en el sistema es 7496, pruebe alternar a 4370 o configure 7496 en la pantalla del reloj.
-3. Clave de Comunicación (CommKey): Si en el menú físico del marcador se asignó una contraseña de comunicación distinta de 0 (Menú > Comunicaciones > Red > Clave Com), la conexión se rechaza por timeout.
-4. Conflicto de Servicio: Si la dirección ${cleanIp} o el puerto ${targetPort} están siendo atendidos por otro servicio o base de datos que no procesa el protocolo ZKTeco binario.`;
+      let friendlyCause = authError || `El equipo no completó el protocolo ZKTeco (CommKey probada: ${numericCommKey}).`;
+      if (tcpProbe.ok && !isAuthFail) {
+        friendlyCause = `El socket TCP abrió en ${cleanIp}:${targetPort} (${tcpProbe.latency}ms), pero el terminal no respondió al protocolo binario ZKTeco (CMD_CONNECT).
+Causas reales posibles:
+1. Puerto SDK del equipo: El ZKTeco G3 suele usar el puerto TCP 4370 por defecto para comandos SDK, mientras que ${targetPort} puede estar cerrado para comandos binarios o corresponder a otro servicio.
+2. Modo ADMS Push exclusivo: Si el equipo apunta a un servidor BioTime (ej. http://192.168.1.29:89/iclock/cdata), verifique en el reloj si el puerto SDK local está habilitado o consulte BioTime solo si efectivamente está recibiendo marcaciones.
+3. CommKey configurada: Verifique Menú > Comunicaciones > Red > Clave Com en el dispositivo.`;
       }
 
+      const diagStatus = isAuthFail ? 'AUTH_ERROR' : tcpProbe.ok ? 'PROTOCOL_NO_RESPONSE' : 'OFFLINE';
       return buildDiagnosisResult(
         false,
-        'OFFLINE',
-        'Fallo de protocolo o autenticación.',
+        diagStatus,
+        isAuthFail
+          ? `Fallo de autenticación CommKey en ${cleanIp}:${targetPort}.`
+          : tcpProbe.ok
+          ? `Conexión TCP establecida (${cleanIp}:${targetPort}), pero sin respuesta del protocolo ZKTeco.`
+          : `Sin conexión con el dispositivo en ${cleanIp}:${targetPort}.`,
         friendlyCause,
         cleanIp,
         targetPort,
         modelHint,
         snHint,
         stages,
-        nowStr
+        nowStr,
+        0,
+        0
       );
     }
 
@@ -1388,7 +1370,7 @@ async function readZkDevicePunches(
   modelHint = 'ZKTeco G3',
   snHint = 'AEH2223460040'
 ) {
-  const cleanIp = String(ip || '192.168.1.198').trim();
+  const cleanIp = String(ip || '').trim();
   const targetPort = Number(port) || 7496;
   const numericCommKey = Number(commKey) || 0;
   const timeout = Math.min(6000, Math.max(1500, Number(timeoutMs) || 4000));
@@ -1398,6 +1380,7 @@ async function readZkDevicePunches(
   if (!isValidIpv4(cleanIp)) {
     return {
       success: false,
+      status: 'OFFLINE',
       message: `Dirección IP inválida: "${cleanIp}"`,
       ip: cleanIp,
       port: targetPort,
@@ -1405,7 +1388,7 @@ async function readZkDevicePunches(
       serial: cleanSerial,
       serial_number: cleanSerial,
       latency_ms: 0,
-      users_in_clock: 14,
+      users_in_clock: 0,
       punches: [],
       timestamp: new Date().toISOString(),
     };
@@ -1413,12 +1396,13 @@ async function readZkDevicePunches(
 
   // Medir latencia física TCP hacia el marcador
   const tcpProbe = await probeTcpPort(cleanIp, targetPort, 1500);
-  const latency = tcpProbe.latency || 2;
+  const latency = tcpProbe.latency || 0;
 
   const lockKey = `${cleanIp}:${targetPort}`;
   if (activeConnections.has(lockKey)) {
     return {
       success: false,
+      status: 'BUSY',
       message: 'El biométrico está ocupado atendiendo otra consulta.',
       ip: cleanIp,
       port: targetPort,
@@ -1426,7 +1410,7 @@ async function readZkDevicePunches(
       serial: cleanSerial,
       serial_number: cleanSerial,
       latency_ms: latency,
-      users_in_clock: 14,
+      users_in_clock: 0,
       punches: [],
       timestamp: new Date().toISOString(),
     };
@@ -1436,30 +1420,104 @@ async function readZkDevicePunches(
   let zkInstance = null;
   let activePortUsed = targetPort;
   let lastError = null;
+  let detectedUsersCount = 0;
 
   try {
-    // 1. Intentar TCP en el puerto configurado (ej: 7496)
+    // 0. Intentar node-zklib en puerto configurado y puerto estándar 4370
+    const candidatePorts = [targetPort, 4370].filter((p, idx, arr) => arr.indexOf(p) === idx);
     try {
-      const tcpZk = new ZKLibTCP(cleanIp, targetPort, timeout);
-      await withTimeout(tcpZk.createSocket(), timeout, `Timeout creando socket TCP en ${targetPort}`);
-      const reply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_CONNECT, ''), timeout, 'Timeout CMD_CONNECT');
-      const responseCode = reply && reply.length >= 2 ? reply.readUInt16LE(0) : 0;
-      const sessionId = tcpZk.sessionId || (reply && reply.length >= 6 ? reply.readUInt16LE(4) : 0);
+      const NodeZkLib = require('node-zklib');
+      for (const testPort of candidatePorts) {
+        try {
+          const zk = new NodeZkLib(cleanIp, testPort, Math.min(timeout, 3500), 5200);
+          await zk.createSocket();
+          try {
+            const usersRes = await zk.getUsers();
+            if (usersRes && Array.isArray(usersRes.data)) detectedUsersCount = usersRes.data.length;
+          } catch (_) {}
 
-      if (responseCode === COMMANDS.CMD_ACK_UNAUTH || numericCommKey > 0) {
-        const authPacket = makeCommkey(numericCommKey, sessionId);
-        const authReply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_AUTH, authPacket), timeout, 'Timeout CMD_AUTH');
-        const authCode = authReply && authReply.length >= 2 ? authReply.readUInt16LE(0) : 0;
+          const attResult = await zk.getAttendances();
+          try { await zk.disconnect(); } catch (_) {}
 
-        if (authCode !== COMMANDS.CMD_ACK_OK) {
-          throw new Error(`Autenticación rechazada por el biométrico (CommKey=${numericCommKey}).`);
+          if (attResult && Array.isArray(attResult.data)) {
+            const formatted = attResult.data
+              .map((item, idx) => {
+                const dni = String(item.deviceUserId || item.userSn || item.pin || '').trim();
+                const recTimeStr = item.recordTime instanceof Date
+                  ? item.recordTime.toISOString().replace('T', ' ').substring(0, 19)
+                  : String(item.recordTime || '').replace('T', ' ').substring(0, 19);
+                if (!dni || !recTimeStr || recTimeStr.length < 16) return null;
+                const [fechaPart, horaPart] = recTimeStr.split(' ');
+                const originalId = `zk_${cleanSerial}_${dni}_${recTimeStr.replace(/[- :]/g, '')}`;
+                return {
+                  id: originalId,
+                  punch_id: originalId,
+                  original_punch_id: `${originalId}_${idx}`,
+                  device_sn: cleanSerial,
+                  device_ip: cleanIp,
+                  employee_dni: dni,
+                  employee_code: dni,
+                  fecha: fechaPart,
+                  hora: horaPart,
+                  timestamp: recTimeStr,
+                  verify_mode: item.verifyType === 15 ? 'FACE' : item.verifyType === 2 ? 'PASSWORD' : item.verifyType === 3 ? 'CARD' : 'FINGERPRINT',
+                  punch_type: 'AUTO',
+                  punch_state: Number(item.punchState ?? item.state ?? 0),
+                  source: 'DIRECT_READ',
+                  synced_at: new Date().toISOString(),
+                };
+              })
+              .filter(Boolean);
+
+            if (formatted.length > 0) {
+              return {
+                success: true,
+                status: 'PUNCHES_RECEIVED',
+                message: `Descarga completada: ${formatted.length} marcaciones reales recuperadas vía lectura directa (${cleanIp}:${testPort}).`,
+                serial_number: cleanSerial,
+                serial: cleanSerial,
+                ip: cleanIp,
+                port: testPort,
+                model: cleanModel,
+                latency_ms: latency,
+                users_in_clock: detectedUsersCount,
+                total_clock_punches: formatted.length,
+                punches: formatted,
+                timestamp: new Date().toISOString(),
+              };
+            }
+          }
+        } catch (zkErr) {
+          lastError = zkErr;
         }
       }
+    } catch (_) {}
 
-      zkInstance = tcpZk;
-      activePortUsed = targetPort;
-    } catch (err7496) {
-      lastError = err7496;
+    // 1. Intentar driver TCP nativo en puerto configurado y puerto alternativo 4370
+    for (const testPort of candidatePorts) {
+      try {
+        const tcpZk = new ZKLibTCP(cleanIp, testPort, timeout);
+        await withTimeout(tcpZk.createSocket(), timeout, `Timeout creando socket TCP en ${testPort}`);
+        const reply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_CONNECT, ''), timeout, 'Timeout CMD_CONNECT');
+        const responseCode = reply && reply.length >= 2 ? reply.readUInt16LE(0) : 0;
+        const sessionId = tcpZk.sessionId || (reply && reply.length >= 6 ? reply.readUInt16LE(4) : 0);
+
+        if (responseCode === COMMANDS.CMD_ACK_UNAUTH || numericCommKey > 0) {
+          const authPacket = makeCommkey(numericCommKey, sessionId);
+          const authReply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_AUTH, authPacket), timeout, 'Timeout CMD_AUTH');
+          const authCode = authReply && authReply.length >= 2 ? authReply.readUInt16LE(0) : 0;
+
+          if (authCode !== COMMANDS.CMD_ACK_OK) {
+            throw new Error(`Autenticación rechazada por el biométrico (CommKey=${numericCommKey}).`);
+          }
+        }
+
+        zkInstance = tcpZk;
+        activePortUsed = testPort;
+        break;
+      } catch (errPort) {
+        lastError = errPort;
+      }
     }
 
     // 2. Si se estableció sesión binaria directa con el reloj físico por socket:
@@ -1469,6 +1527,14 @@ async function readZkDevicePunches(
         if (typeof zkInstance.getSerialNumber === 'function') {
           const s = await withTimeout(zkInstance.getSerialNumber(), 2000, 'Timeout serial');
           if (s) serial = String(s).trim();
+        }
+      } catch (_) {}
+
+      try {
+        if (typeof zkInstance.getUsers === 'function') {
+          const usersRes = await withTimeout(zkInstance.getUsers(), 3000, 'Timeout getUsers');
+          if (usersRes && Array.isArray(usersRes.data)) detectedUsersCount = usersRes.data.length;
+          else if (Array.isArray(usersRes)) detectedUsersCount = usersRes.length;
         }
       } catch (_) {}
 
@@ -1483,39 +1549,44 @@ async function readZkDevicePunches(
           }
         }
       } catch (attErr) {
-        // Registro defensivo; no interrumpir el flujo de descarga
+        lastError = attErr;
       }
 
-      let formattedPunches = rawList.map((item, index) => {
-        const dni = String(item.deviceUserId || item.userSn || item.pin || 'UNKNOWN').trim();
-        let recordTimeStr = '';
-        if (item.recordTime) {
-          if (item.recordTime instanceof Date) {
-            recordTimeStr = item.recordTime.toISOString().replace('T', ' ').substring(0, 19);
-          } else {
-            recordTimeStr = String(item.recordTime).replace('T', ' ').substring(0, 19);
+      let formattedPunches = rawList
+        .map((item, index) => {
+          const dni = String(item.deviceUserId || item.userSn || item.pin || '').trim();
+          let recordTimeStr = '';
+          if (item.recordTime) {
+            if (item.recordTime instanceof Date) {
+              recordTimeStr = item.recordTime.toISOString().replace('T', ' ').substring(0, 19);
+            } else {
+              recordTimeStr = String(item.recordTime).replace('T', ' ').substring(0, 19);
+            }
           }
-        } else {
-          recordTimeStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-        }
+          if (!dni || !recordTimeStr || recordTimeStr.length < 16) return null;
 
-        const [fechaPart, horaPart] = recordTimeStr.split(' ');
-        return {
-          id: `zk_${serial}_${dni}_${recordTimeStr.replace(/[- :]/g, '')}_${index}`,
-          punch_id: `zk_${serial}_${dni}_${recordTimeStr.replace(/[- :]/g, '')}_${index}`,
-          device_sn: serial,
-          device_ip: cleanIp,
-          employee_dni: dni,
-          employee_code: dni,
-          fecha: fechaPart,
-          hora: horaPart,
-          timestamp: recordTimeStr,
-          verify_mode: item.verifyType === 15 ? 'FACE' : (item.verifyType === 2 ? 'PASSWORD' : 'FINGERPRINT'),
-          punch_type: 'AUTO',
-          punch_state: item.punchState || 0,
-          raw_record: JSON.stringify(item),
-        };
-      });
+          const [fechaPart, horaPart] = recordTimeStr.split(' ');
+          const originalId = `zk_${serial}_${dni}_${recordTimeStr.replace(/[- :]/g, '')}`;
+          return {
+            id: originalId,
+            punch_id: originalId,
+            original_punch_id: `${originalId}_${index}`,
+            device_sn: serial,
+            device_ip: cleanIp,
+            employee_dni: dni,
+            employee_code: dni,
+            fecha: fechaPart,
+            hora: horaPart,
+            timestamp: recordTimeStr,
+            verify_mode: item.verifyType === 15 ? 'FACE' : item.verifyType === 2 ? 'PASSWORD' : item.verifyType === 3 ? 'CARD' : 'FINGERPRINT',
+            punch_type: 'AUTO',
+            punch_state: Number(item.punchState || 0),
+            source: 'DIRECT_READ',
+            synced_at: new Date().toISOString(),
+            raw_record: JSON.stringify(item),
+          };
+        })
+        .filter(Boolean);
 
       if (formattedPunches.length > 0) {
         try {
@@ -1524,10 +1595,10 @@ async function readZkDevicePunches(
           if (fs.existsSync(rawPath)) {
             try { currentList = JSON.parse(fs.readFileSync(rawPath, 'utf8')); } catch (_) {}
           }
-          const existingKeys = new Set(currentList.map((p) => `${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`));
+          const existingKeys = new Set(currentList.map((p) => `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`));
           const newlyAdded = [];
           for (const p of formattedPunches) {
-            const key = `${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`;
+            const key = `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`;
             if (!existingKeys.has(key)) {
               existingKeys.add(key);
               newlyAdded.push(p);
@@ -1541,31 +1612,33 @@ async function readZkDevicePunches(
 
         return {
           success: true,
-          message: `Descarga completada: ${formattedPunches.length} marcaciones reales recuperadas exitosamente vía Socket TCP (${cleanIp}:${activePortUsed}).`,
+          status: 'PUNCHES_RECEIVED',
+          message: `Descarga completada: ${formattedPunches.length} marcaciones reales recuperadas vía lectura directa TCP (${cleanIp}:${activePortUsed}).`,
           serial_number: serial,
           serial: serial,
           ip: cleanIp,
           port: activePortUsed,
           model: cleanModel,
           latency_ms: latency,
-          users_in_clock: 14,
+          users_in_clock: detectedUsersCount,
           total_clock_punches: formattedPunches.length,
           punches: formattedPunches,
           timestamp: new Date().toISOString(),
         };
       }
 
-      // Conexión real exitosa pero sin registros nuevos en el buffer del reloj
+      // Conexión real exitosa pero sin registros en el buffer del reloj
       return {
         success: true,
-        message: `Conexión verificada con el marcador ZKTeco G3 (${cleanIp}:${activePortUsed}, ${latency}ms). No se encontraron nuevas marcaciones en el dispositivo.`,
+        status: 'ONLINE_NO_NEW_PUNCHES',
+        message: `Lectura exitosa sin marcaciones nuevas en el reloj (${cleanIp}:${activePortUsed}, ${latency}ms).`,
         serial_number: serial,
         serial: serial,
         ip: cleanIp,
         port: activePortUsed,
         model: cleanModel,
         latency_ms: latency,
-        users_in_clock: 14,
+        users_in_clock: detectedUsersCount,
         total_clock_punches: 0,
         punches: [],
         timestamp: new Date().toISOString(),
@@ -1574,16 +1647,20 @@ async function readZkDevicePunches(
 
     // 3. Si no se pudo establecer comunicación binaria con el marcador físico:
     // NUNCA generar marcaciones simuladas ni aparentar éxito si no se obtuvieron registros reales.
+    const errStatus = tcpProbe.ok ? 'PROTOCOL_NO_RESPONSE' : 'OFFLINE';
     return {
       success: false,
-      message: `No se pudo descargar marcaciones: El marcador ZKTeco G3 en ${cleanIp}:${targetPort} no respondió a comandos binarios TCP (${lastError?.message || 'Timeout o conexión rechazada'}). Verifique la conectividad de red LAN.`,
+      status: errStatus,
+      message: tcpProbe.ok
+        ? `Puerto TCP ${targetPort} abierto en ${cleanIp}, pero el protocolo ZKTeco no respondió (${lastError?.message || 'Timeout CMD_CONNECT'}).`
+        : `Sin conexión con el dispositivo en ${cleanIp}:${targetPort} (${lastError?.message || tcpProbe.error || 'Timeout o conexión rechazada'}).`,
       serial_number: cleanSerial,
       serial: cleanSerial,
       ip: cleanIp,
       port: targetPort,
       model: cleanModel,
       latency_ms: latency,
-      users_in_clock: 14,
+      users_in_clock: 0,
       total_clock_punches: 0,
       punches: [],
       timestamp: new Date().toISOString(),
@@ -2017,178 +2094,285 @@ async function checkBioTimeService(host = '192.168.1.29', webPort = 89, dbPort =
 }
 
 /**
- * Sincronización real de marcaciones desde múltiples fuentes BioTime:
- * 1. Base de datos PostgreSQL de BioTime (Puerto 7496 o 5432)
- * 2. API Web de BioTime Console (Puerto 89)
- * 3. Socket TCP directo con el reloj biométrico ZKTeco G3 (192.168.1.198)
+ * Inspección estrictamente de SOLO LECTURA sobre BioTime (HTTP puerto 89 + PostgreSQL puerto 7496):
+ * Verifica esquema real vía information_schema antes de consultar marcaciones, sin escribir en BioTime.
+ */
+async function inspectBioTimeDatabase(options = {}) {
+  const {
+    host = '192.168.1.29',
+    webPort = 89,
+    dbPort = 7496,
+    dbName = 'biotime',
+    dbUser = 'postgres',
+    serial = '',
+  } = options;
+
+  const cleanHost = String(host || '192.168.1.29').trim();
+  const targetWebPort = Number(webPort) || 89;
+  const targetDbPort = Number(dbPort) || 7496;
+  const cleanSerial = String(serial || '').trim().toUpperCase();
+
+  const webProbe = await probeTcpPort(cleanHost, targetWebPort, 2000);
+  const dbProbe = await probeTcpPort(cleanHost, targetDbPort, 2000);
+
+  const report = {
+    success: false,
+    host: cleanHost,
+    webPort: targetWebPort,
+    dbPort: targetDbPort,
+    dbName,
+    webReachable: webProbe.ok,
+    dbReachable: dbProbe.ok,
+    tablesFound: [],
+    attendanceTable: null,
+    attendanceColumns: [],
+    totalTransactions: 0,
+    deviceTransactions: 0,
+    receivesClockPunches: false,
+    validSource: false,
+    message: '',
+    error: null,
+  };
+
+  if (!dbProbe.ok) {
+    report.error = dbProbe.code || 'DB_UNREACHABLE';
+    report.message = `PostgreSQL de BioTime en ${cleanHost}:${targetDbPort} no está alcanzable (${dbProbe.error || dbProbe.code || 'Sin conexión'}).`;
+    return report;
+  }
+
+  let pg = null;
+  try { pg = require('pg'); } catch (_) {}
+  if (!pg || !pg.Client) {
+    report.error = 'PG_DRIVER_MISSING';
+    report.message = 'Controlador PostgreSQL (pg) no disponible en Electron.';
+    return report;
+  }
+
+  const passwords = ['', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'];
+  for (const pwd of passwords) {
+    const client = new pg.Client({
+      host: cleanHost,
+      port: targetDbPort,
+      database: dbName,
+      user: dbUser,
+      password: pwd,
+      connectionTimeoutMillis: 2500,
+      statement_timeout: 3000,
+    });
+    try {
+      await client.connect();
+      const tablesRes = await client.query(`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+      `);
+      report.tablesFound = tablesRes.rows.map((r) => r.table_name);
+
+      const candidateTables = ['iclock_transaction', 'checkinout', 'att_punches', 'zk_transactions'];
+      const detectedTable = candidateTables.find((t) => report.tablesFound.includes(t))
+        || report.tablesFound.find((t) => t.includes('transaction') || t.includes('checkin') || t.includes('punch'));
+
+      if (detectedTable) {
+        report.attendanceTable = detectedTable;
+        const colsRes = await client.query(
+          `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
+          [detectedTable]
+        );
+        report.attendanceColumns = colsRes.rows.map((c) => `${c.column_name} (${c.data_type})`);
+        const colNames = colsRes.rows.map((c) => c.column_name);
+
+        const countRes = await client.query(`SELECT COUNT(*)::int AS total FROM "${detectedTable}"`);
+        report.totalTransactions = Number(countRes.rows[0]?.total || 0);
+
+        const snCol = ['terminal_sn', 'sn', 'device_sn'].find((c) => colNames.includes(c));
+        if (snCol && cleanSerial) {
+          const devCountRes = await client.query(
+            `SELECT COUNT(*)::int AS total FROM "${detectedTable}" WHERE UPPER(COALESCE("${snCol}"::text, '')) = $1`,
+            [cleanSerial]
+          );
+          report.deviceTransactions = Number(devCountRes.rows[0]?.total || 0);
+        } else {
+          report.deviceTransactions = report.totalTransactions;
+        }
+
+        report.receivesClockPunches = report.deviceTransactions > 0;
+        report.validSource = report.receivesClockPunches;
+        report.success = true;
+        report.message = report.receivesClockPunches
+          ? `BioTime inspeccionado (${detectedTable}): ${report.deviceTransactions} marcaciones reales detectadas para ${cleanSerial || 'el reloj'}.`
+          : `BioTime conectado (${detectedTable}), pero tiene 0 marcaciones para ${cleanSerial || 'el reloj'}. No es fuente válida hasta que BioTime reciba registros.`;
+      } else {
+        report.success = true;
+        report.message = `BioTime conectado (${dbName}), pero no se encontró tabla de marcaciones en public (${report.tablesFound.slice(0, 8).join(', ')}).`;
+      }
+
+      await client.end();
+      return report;
+    } catch (err) {
+      report.error = err?.message || String(err);
+      try { await client.end(); } catch (_) {}
+    }
+  }
+
+  report.message = `No se pudo autenticar contra PostgreSQL BioTime en ${cleanHost}:${targetDbPort}/${dbName}: ${report.error || 'Credenciales rechazadas'}.`;
+  return report;
+}
+
+/**
+ * Sincronización de marcaciones desde BioTime únicamente después de inspeccionar
+ * el esquema real (solo lectura) y comprobar que BioTime recibe marcaciones del reloj.
  */
 async function syncBioTimeRecords(options = {}) {
   const {
     host = '192.168.1.29',
     webPort = 89,
     dbPort = 7496,
-    serial = 'AEH2223460040',
-    deviceIp = '192.168.1.198',
+    serial = '',
+    deviceIp = '',
     devicePort = 7496,
     commKey = 0,
     dbName = 'biotime',
     dbUser = 'postgres',
-    existingPunches = [],
   } = options;
 
   const cleanHost = String(host || '192.168.1.29').trim();
-  const cleanSerial = String(serial || 'AEH2223460040').trim().toUpperCase();
-  const cleanDeviceIp = String(deviceIp || '192.168.1.198').trim();
+  const cleanSerial = String(serial || '').trim().toUpperCase();
+  const cleanDeviceIp = String(deviceIp || '').trim();
   const targetDbPort = Number(dbPort) || 7496;
-  const targetWebPort = Number(webPort) || 89;
   const targetDevicePort = Number(devicePort) || 7496;
+
+  // 1. Inspección previa obligatoria (solo lectura) en information_schema
+  const inspection = await inspectBioTimeDatabase({
+    host: cleanHost,
+    webPort,
+    dbPort: targetDbPort,
+    dbName,
+    dbUser,
+    serial: cleanSerial,
+  });
+
+  if (!inspection.success || !inspection.attendanceTable) {
+    return {
+      success: false,
+      source: 'NONE',
+      details: inspection.message,
+      inspection,
+      punches: [],
+      count: 0,
+    };
+  }
+
+  if (!inspection.receivesClockPunches) {
+    return {
+      success: false,
+      source: 'NONE',
+      details: `BioTime no registra marcaciones del reloj (${cleanSerial || 'G3'}). No debe utilizarse como fuente válida hasta corregir la recepción ADMS.`,
+      inspection,
+      punches: [],
+      count: 0,
+    };
+  }
 
   let pulledPunches = [];
   let source = 'NONE';
   let details = '';
 
-  // FUENTE 1: PostgreSQL Nativo en BioTime
+  // 2. Consulta de solo lectura sobre la tabla inspeccionada dinámicamente
   try {
-    let pg = null;
-    try {
-      pg = require('pg');
-    } catch (_) {}
+    const pg = require('pg');
+    const passwords = ['', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'];
+    const table = inspection.attendanceTable;
+    const colNames = inspection.attendanceColumns.map((c) => c.split(' ')[0]);
+    const hasPersonnel = inspection.tablesFound.includes('personnel_employee');
 
-    if (pg && pg.Client) {
-      const passwords = ['', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'];
-      for (const pwd of passwords) {
-        const client = new pg.Client({
-          host: cleanHost,
-          port: targetDbPort,
-          database: dbName,
-          user: dbUser,
-          password: pwd,
-          connectionTimeoutMillis: 2500,
-          statement_timeout: 3000,
-        });
+    for (const pwd of passwords) {
+      const client = new pg.Client({
+        host: cleanHost,
+        port: targetDbPort,
+        database: dbName,
+        user: dbUser,
+        password: pwd,
+        connectionTimeoutMillis: 2500,
+        statement_timeout: 3000,
+      });
 
-        try {
-          await client.connect();
-          // Intento tabla iclock_transaction
-          let rows = [];
-          try {
-            const q = await client.query(`
-              SELECT t.id, t.emp_code, t.punch_time, t.punch_state, t.verify_type, t.terminal_sn,
-                     e.first_name, e.last_name
-              FROM iclock_transaction t
-              LEFT JOIN personnel_employee e ON (t.emp_id = e.id OR t.emp_code = e.emp_code)
-              ORDER BY t.punch_time DESC
-              LIMIT 1000
-            `);
-            rows = q.rows;
-          } catch (_) {
-            try {
-              const q2 = await client.query(`
-                SELECT id, userid as emp_code, checktime as punch_time, checktype as punch_state, verifycode as verify_type, sn as terminal_sn
-                FROM checkinout
-                ORDER BY checktime DESC
-                LIMIT 1000
-              `);
-              rows = q2.rows;
-            } catch (_) {}
-          }
+      try {
+        await client.connect();
+        let rows = [];
+        if (table === 'iclock_transaction' && colNames.includes('emp_code') && colNames.includes('punch_time')) {
+          const snFilter = cleanSerial && colNames.includes('terminal_sn') ? `WHERE UPPER(COALESCE(t.terminal_sn::text, '')) = $1` : '';
+          const joinSql = hasPersonnel ? 'LEFT JOIN personnel_employee e ON (t.emp_id = e.id OR t.emp_code = e.emp_code)' : '';
+          const selectCols = hasPersonnel
+            ? 't.id, t.emp_code, t.punch_time, t.punch_state, t.verify_type, t.terminal_sn, e.first_name, e.last_name'
+            : 't.id, t.emp_code, t.punch_time, t.punch_state, t.verify_type, t.terminal_sn';
+          const q = await client.query(
+            `SELECT ${selectCols} FROM iclock_transaction t ${joinSql} ${snFilter} ORDER BY t.punch_time DESC LIMIT 1000`,
+            snFilter ? [cleanSerial] : []
+          );
+          rows = q.rows;
+        } else if (table === 'checkinout' && colNames.includes('userid') && colNames.includes('checktime')) {
+          const snCol = ['sn', 'terminal_sn'].find((c) => colNames.includes(c));
+          const snFilter = cleanSerial && snCol ? `WHERE UPPER(COALESCE("${snCol}"::text, '')) = $1` : '';
+          const q2 = await client.query(
+            `SELECT id, userid AS emp_code, checktime AS punch_time, checktype AS punch_state, verifycode AS verify_type, ${snCol ? `"${snCol}"` : "''"} AS terminal_sn FROM checkinout ${snFilter} ORDER BY checktime DESC LIMIT 1000`,
+            snFilter ? [cleanSerial] : []
+          );
+          rows = q2.rows;
+        }
+        await client.end();
 
-          await client.end();
-
-          if (rows && rows.length > 0) {
-            pulledPunches = rows.map((r, idx) => {
-              const dni = String(r.emp_code || r.userid || '10000001').trim();
+        if (rows.length > 0) {
+          const syncedAt = new Date().toISOString();
+          pulledPunches = rows
+            .map((r, idx) => {
+              const code = String(r.emp_code || r.userid || '').trim();
               const punchTimeStr = r.punch_time instanceof Date
                 ? r.punch_time.toISOString().replace('T', ' ').substring(0, 19)
-                : String(r.punch_time || '').substring(0, 19);
-              const punchState = Number(r.punch_state) || 0;
-              const verify = Number(r.verify_type) || 1;
+                : String(r.punch_time || '').replace('T', ' ').substring(0, 19);
+              if (!code || !punchTimeStr || punchTimeStr.length < 16) return null;
+              const punchState = Number(r.punch_state ?? 0);
+              const verify = Number(r.verify_type ?? 1);
               const verifyMode = verify === 15 ? 'FACE' : verify === 2 ? 'PASSWORD' : verify === 3 ? 'CARD' : 'FINGERPRINT';
-              const empName = (r.first_name ? `${r.first_name} ${r.last_name || ''}`.trim() : null) || `Trabajador DNI ${dni}`;
+              const snVal = r.terminal_sn || cleanSerial;
 
               return {
-                id: `biotime-db-${dni}-${punchTimeStr.replace(/[^0-9]/g, '')}-${idx}`,
-                device_id: 'dev-01',
-                device_sn: r.terminal_sn || cleanSerial,
-                device_name: 'ZKTeco Sede Central - G3-id',
-                device_dependencia_tipo: 'SEDE_CENTRAL',
-                device_dependencia_name: 'SEDE CENTRAL',
-                employee_dni: dni,
-                employee_code: dni,
-                employee_name: empName,
+                id: `biotime_${snVal}_${code}_${punchTimeStr.replace(/[^0-9]/g, '')}`,
+                original_punch_id: String(r.id || `bt_${idx}`),
+                device_sn: snVal,
+                device_name: 'ZKTeco G3 (vía BioTime)',
+                employee_dni: code,
+                employee_code: code,
                 timestamp: punchTimeStr,
-                punch_type: punchState === 1 ? 'CHECK_OUT' : 'CHECK_IN',
+                punch_type: punchState === 1 ? 'CHECK_OUT' : punchState === 0 ? 'CHECK_IN' : 'AUTO',
                 punch_state: punchState,
                 verify_mode: verifyMode,
                 processed: false,
-                raw_payload: `PIN=${dni}\tTIME=${punchTimeStr}\tVERIFY=${verify}\tSN=${cleanSerial}`,
-                validation_status: 'VALIDA',
-                source: 'BIOTIME_POSTGRES',
-                serialNumber: r.terminal_sn || cleanSerial,
+                source: 'BIOTIME_DB',
+                synced_at: syncedAt,
+                serialNumber: snVal,
               };
-            });
-            source = `PostgreSQL BioTime (${cleanHost}:${targetDbPort})`;
-            details = `${pulledPunches.length} marcaciones extraídas desde la base de datos PostgreSQL biotime.`;
-            break;
-          }
-        } catch (_) {
-          try { await client.end(); } catch (_) {}
+            })
+            .filter(Boolean);
+
+          source = 'BIOTIME_DB';
+          details = `${pulledPunches.length} marcaciones reales extraídas desde PostgreSQL BioTime (${cleanHost}:${targetDbPort}/${table}).`;
+          break;
         }
+      } catch (_) {
+        try { await client.end(); } catch (_) {}
       }
     }
   } catch (err) {
-    console.warn('[syncBioTimeRecords] Fallback PostgreSQL error:', err.message);
-  }
-
-  // FUENTE 2: Socket TCP Directo al Biométrico G3-id (si PostgreSQL no devolvió registros)
-  if (pulledPunches.length === 0 && cleanDeviceIp) {
-    try {
-      // Probar puerto configurado (7496) y puerto estándar (4370)
-      const portsToTry = [targetDevicePort, 4370];
-      for (const p of portsToTry) {
-        try {
-          const clockRes = await readZkDevicePunches(cleanDeviceIp, p, 3500, commKey);
-          const clockList = Array.isArray(clockRes)
-            ? clockRes
-            : clockRes && Array.isArray(clockRes.punches)
-            ? clockRes.punches
-            : [];
-          if (clockList.length > 0) {
-            pulledPunches = clockList.map((item, idx) => ({
-              id: item.id || `zk-direct-${cleanDeviceIp}-${Date.now()}-${idx}`,
-              device_id: 'dev-01',
-              device_sn: item.device_sn || cleanSerial,
-              device_name: 'ZKTeco Sede Central - G3-id',
-              device_dependencia_tipo: 'SEDE_CENTRAL',
-              device_dependencia_name: 'SEDE CENTRAL',
-              employee_dni: item.employee_dni,
-              employee_code: item.employee_code || item.employee_dni,
-              employee_name: item.employee_name || `Trabajador DNI ${item.employee_dni}`,
-              timestamp: item.timestamp,
-              punch_type: item.punch_type || 'CHECK_IN',
-              punch_state: item.punch_state || 0,
-              verify_mode: item.verify_mode || 'FINGERPRINT',
-              processed: false,
-              raw_payload: item.raw_payload || `PIN=${item.employee_dni}\tTIME=${item.timestamp}\tSN=${cleanSerial}`,
-              validation_status: 'VALIDA',
-              source: 'TCP_DIRECT',
-              serialNumber: cleanSerial,
-            }));
-            source = `Reloj Biométrico Directo (${cleanDeviceIp}:${p})`;
-            details = `${pulledPunches.length} marcaciones leídas directamente de la memoria física del reloj G3-id.`;
-            break;
-          }
-        } catch (_) {}
-      }
-    } catch (err) {
-      console.warn('[syncBioTimeRecords] Direct clock socket error:', err.message);
-    }
+    console.warn('[syncBioTimeRecords] Error leyendo PostgreSQL:', err.message);
   }
 
   return {
-    success: true,
+    success: pulledPunches.length > 0,
     source,
-    details,
+    details: details || 'No se recuperaron registros nuevos desde BioTime.',
+    inspection,
     punches: pulledPunches,
     count: pulledPunches.length,
   };
@@ -2201,6 +2385,7 @@ module.exports = {
   makeCommkey,
   runIndependentDiagnostics,
   checkBioTimeService,
+  inspectBioTimeDatabase,
   syncBioTimeRecords,
 };
 

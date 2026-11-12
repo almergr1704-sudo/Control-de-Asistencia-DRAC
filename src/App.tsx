@@ -916,6 +916,7 @@ export const App: React.FC = () => {
                 attendance={attendance}
                 rawPunches={rawPunches}
                 employees={employees}
+                devices={devices}
                 activeRole={activeRole}
                 onRefresh={loadServerData}
               />

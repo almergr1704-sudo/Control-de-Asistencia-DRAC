@@ -28,6 +28,9 @@ import {
   WifiOff,
   Settings,
   Info,
+  Upload,
+  FileText,
+  X,
 } from 'lucide-react';
 import { DispositivoZkTeco, Employee, DracZkAgent, AgentCommand } from '../../types';
 import { normalizePersonName } from '../../utils/nameUtils';
@@ -74,6 +77,66 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [downloadPackageData, setDownloadPackageData] = useState<any | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  // USB Import Modal states
+  const [showUsbModal, setShowUsbModal] = useState(false);
+  const [usbFileName, setUsbFileName] = useState('');
+  const [usbContent, setUsbContent] = useState('');
+  const [isUploadingUsb, setIsUploadingUsb] = useState(false);
+  const usbInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleUsbFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUsbFileName(f.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => setUsbContent(String(ev.target?.result || ''));
+    reader.readAsText(f);
+  };
+
+  const handleSubmitUsbImport = async () => {
+    if (!usbContent.trim()) return;
+    setIsUploadingUsb(true);
+    try {
+      const targetDev = devices.find((d) => d.id === selectedDeviceForUserSync) || devices[0];
+      const res = await fetch(getApiUrl('/api/zkteco/upload-attlog'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: usbFileName || '1_attlog.dat',
+          content: usbContent,
+          serial: targetDev?.serial_number || 'AEH2223460040',
+        }),
+      });
+      const data = await res.json();
+      setCommandResult({
+        success: !!data.success,
+        message: data.message || 'Importación USB procesada.',
+        details: {
+          ip: targetDev?.ip_address || '192.168.1.198',
+          port: targetDev?.port || 7496,
+          model: targetDev?.model || 'ZKTeco G3',
+          serial: targetDev?.serial_number || 'AEH2223460040',
+          latency_ms: 1,
+          users_in_clock: targetDev?.enrolled_user_count ?? 0,
+          total_clock_punches: data.total_stored || data.total_parsed || 0,
+        },
+      });
+      if (data.success) {
+        setShowUsbModal(false);
+        setUsbContent('');
+        setUsbFileName('');
+        if (onRefreshPunches) onRefreshPunches();
+      }
+    } catch (err: any) {
+      setCommandResult({
+        success: false,
+        message: `Error importando archivo USB: ${err?.message || 'Error de red'}`,
+      });
+    } finally {
+      setIsUploadingUsb(false);
+    }
+  };
 
   // Load agents from backend
   const fetchAgents = async () => {
@@ -179,8 +242,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               port: diag.port || devPort,
               model: diag.model || targetDev?.model || 'ZKTeco G3',
               serial: diag.serial || diag.serial_number || targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: diag.latency_ms !== undefined ? diag.latency_ms : 2,
-              users_in_clock: diag.users_in_clock || diag.user_count || 14,
+              latency_ms: diag.latency_ms ?? 0,
+              users_in_clock: diag.users_in_clock ?? diag.user_count ?? 0,
             },
           });
           if (onRefreshDevices) onRefreshDevices();
@@ -204,8 +267,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               port: resPunches.port || devPort,
               model: resPunches.model || targetDev?.model || 'ZKTeco G3',
               serial: resPunches.serial || resPunches.serial_number || targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: resPunches.latency_ms !== undefined ? resPunches.latency_ms : 2,
-              users_in_clock: resPunches.users_in_clock || 14,
+              latency_ms: resPunches.latency_ms ?? 0,
+              users_in_clock: resPunches.users_in_clock ?? 0,
             },
           });
           if (onRefreshPunches) onRefreshPunches();
@@ -213,24 +276,24 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
           return;
         } else if (command === 'SYNC_BIOTIME' && typeof electronAPI.syncBioTimePunches === 'function') {
           const bioRes = await electronAPI.syncBioTimePunches({
-            host: '192.168.1.29',
-            webPort: 89,
-            dbPort: 7496,
+            host: targetDev?.biotime_config?.db_host || '192.168.1.29',
+            webPort: targetDev?.biotime_config?.web_port || 89,
+            dbPort: targetDev?.biotime_config?.db_port || 7496,
             serial: targetDev?.serial_number || 'AEH2223460040',
             deviceIp: activeIp,
             devicePort: devPort,
           });
           setCommandResult({
             success: bioRes.success,
-            message: bioRes.message || `Sincronización BioTime finalizada (${bioRes.count || 0} marcaciones).`,
+            message: bioRes.message || `Sincronización BioTime finalizada (${bioRes.new_count || 0} nuevas).`,
             details: {
               ...bioRes,
               ip: activeIp,
               port: devPort,
               model: targetDev?.model || 'ZKTeco G3',
               serial: targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: 2,
-              users_in_clock: 14,
+              latency_ms: 0,
+              users_in_clock: targetDev?.enrolled_user_count ?? 0,
             },
           });
           if (onRefreshPunches) onRefreshPunches();
@@ -266,33 +329,31 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         const data = await res.json().catch(() => null);
         if (command === 'TEST_CONNECTION') {
           setCommandResult({
-            success: true,
-            message: data?.message || `Conexión TCP Socket ${devPort} verificada exitosamente hacia el terminal biométrico (${activeIp}).`,
+            success: Boolean(data?.success),
+            message: data?.message || `Diagnóstico finalizado para ${activeIp}:${devPort}.`,
             details: data?.details || {
               ip: activeIp,
               port: devPort,
               model: targetDev?.model || 'ZKTeco G3',
               serial: targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: 2,
-              users_in_clock: 14,
-              tcp_status: 'ONLINE',
+              latency_ms: 0,
+              users_in_clock: 0,
+              tcp_status: data?.status_code || 'UNKNOWN',
             },
           });
           if (onRefreshDevices) onRefreshDevices();
         } else {
-          const punchCount = data?.details?.total_clock_punches ?? data?.details?.received_punches ?? (data?.details?.punches ? data.details.punches.length : 0);
+          const punchCount = data?.details?.new_punches_downloaded ?? data?.details?.total_clock_punches ?? (data?.details?.punches ? data.details.punches.length : 0);
           setCommandResult({
-            success: true,
-            message: data?.message || (punchCount > 0
-              ? `Descarga completada: ${punchCount} marcaciones recuperadas exitosamente vía Socket TCP (${activeIp}:${devPort}).`
-              : `Descarga completada: 0 marcaciones nuevas en el dispositivo (${activeIp}:${devPort}).`),
+            success: Boolean(data?.success),
+            message: data?.message || `Operación finalizada (${activeIp}:${devPort}).`,
             details: data?.details || {
               ip: activeIp,
               port: devPort,
               model: targetDev?.model || 'ZKTeco G3',
               serial: targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: 2,
-              users_in_clock: 14,
+              latency_ms: 0,
+              users_in_clock: 0,
               total_clock_punches: punchCount,
               received_punches: punchCount,
             },
@@ -304,46 +365,31 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         setCommandResult({
           success: false,
           message: errData.message || (agents.length === 0
-            ? 'No hay agentes locales Windows conectados (0 registrados). Inicie el script del agente en la PC de red o use la pestaña "Pruebas & Diagnóstico Socket" para conexión directa.'
-            : 'El agente local rechazó la ejecución del comando.'),
-          details: {
+            ? 'No hay agentes locales Windows conectados (0 registrados) o el reloj no respondió desde este servidor.'
+            : 'El agente local no pudo completar la operación.'),
+          details: errData.details || {
             ip: activeIp,
             port: devPort,
             model: targetDev?.model || 'ZKTeco G3',
             serial: targetDev?.serial_number || 'AEH2223460040',
-            latency_ms: 2,
-            users_in_clock: 14,
+            latency_ms: 0,
+            users_in_clock: 0,
           },
         });
       }
     } catch (err: any) {
-      if (agents.length === 0) {
-        setCommandResult({
-          success: false,
-          message: 'No hay agentes locales Windows activos en la red LAN (0 registrados). Descargue e inicie el Agente DRAC ZK siguiendo los pasos a continuación, o use la pestaña "Pruebas & Diagnóstico Socket" para conexión directa desde este equipo.',
-          details: {
-            ip: activeIp,
-            port: devPort,
-            model: targetDev?.model || 'ZKTeco G3',
-            serial: targetDev?.serial_number || 'AEH2223460040',
-            latency_ms: 2,
-            users_in_clock: 14,
-          },
-        });
-      } else {
-        setCommandResult({
-          success: false,
-          message: `El agente local no respondió: ${err.message || 'Verifique que el script del agente esté en ejecución en la PC de la red local.'}`,
-          details: {
-            ip: activeIp,
-            port: devPort,
-            model: targetDev?.model || 'ZKTeco G3',
-            serial: targetDev?.serial_number || 'AEH2223460040',
-            latency_ms: 2,
-            users_in_clock: 14,
-          },
-        });
-      }
+      setCommandResult({
+        success: false,
+        message: `El agente local no respondió: ${err.message || 'Verifique que el script del agente esté en ejecución en la PC de la red local.'}`,
+        details: {
+          ip: activeIp,
+          port: devPort,
+          model: targetDev?.model || 'ZKTeco G3',
+          serial: targetDev?.serial_number || 'AEH2223460040',
+          latency_ms: 0,
+          users_in_clock: 0,
+        },
+      });
     } finally {
       setExecutingCommand(null);
       if (onRefreshDevices) onRefreshDevices();
@@ -636,20 +682,20 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                       <div>
                         <span className="text-slate-500 block">Usuarios Reloj:</span>
                         <span className="text-indigo-300 font-bold">
-                          {commandResult.details.users_in_clock || commandResult.details.user_count || 14}
+                          {commandResult.details.users_in_clock ?? commandResult.details.user_count ?? 0}
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {/* Soluciones rápidas y diagnóstico cuando ocurre Timeout CMD_CONNECT */}
-                  {!commandResult.success && commandResult.message?.includes('CMD_CONNECT') && (
+                  {/* Soluciones rápidas cuando falla CMD_CONNECT o cuando el reloj devuelve 0 marcaciones */}
+                  {(!commandResult.success || commandResult.details?.new_punches_downloaded === 0 || commandResult.details?.total_clock_punches === 0) && (
                     <div className="mt-3 p-3 bg-amber-950/40 border border-amber-500/40 rounded-lg text-amber-200 text-xs space-y-2">
                       <div className="font-bold flex items-center gap-1.5 text-amber-300">
-                        <Info className="w-4 h-4 text-amber-400 shrink-0" /> Diagnóstico y Solución Inmediata:
+                        <Info className="w-4 h-4 text-amber-400 shrink-0" /> Otras Formas de Recuperar Marcaciones Reales:
                       </div>
                       <p className="text-[11px] leading-relaxed text-slate-300">
-                        El socket TCP abrió exitosamente (2ms), pero el marcador no responde a comandos binarios de lectura física debido a que el terminal <strong>ZKTeco G3 opera en modo ADMS PUSH</strong> (cliente HTTP enviando transacciones a la consola BioTime en <span className="font-mono text-amber-300">192.168.1.29:89</span>).
+                        Si el terminal <strong>ZKTeco G3</strong> opera en modo ADMS PUSH enviando transacciones a la consola BioTime (<span className="font-mono text-amber-300">192.168.1.29:89</span> / PostgreSQL <span className="font-mono text-amber-300">:7496</span>) o bloquea la lectura por socket, utilice el puerto nativo <strong>4370</strong>, extraiga desde la BD de BioTime o cargue el archivo <strong>1_attlog.dat</strong> por USB:
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
@@ -664,9 +710,16 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                           type="button"
                           onClick={() => handleExecuteCommand('SYNC_BIOTIME')}
                           disabled={executingCommand !== null}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded text-[11px] flex items-center gap-1.5 transition-colors"
+                        >
+                          <Database className="w-3.5 h-3.5" /> Sincronizar BioTime PostgreSQL (:7496)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowUsbModal(true)}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded text-[11px] flex items-center gap-1.5 transition-colors"
                         >
-                          <Download className="w-3.5 h-3.5" /> Extraer Vía Servidor BioTime (192.168.1.29)
+                          <Upload className="w-3.5 h-3.5" /> Importar USB (1_attlog.dat)
                         </button>
                       </div>
                     </div>
@@ -742,9 +795,37 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <Download className={`w-3.5 h-3.5 ${executingCommand === 'DOWNLOAD_PUNCHES' ? 'animate-bounce' : ''}`} />
-                  <span>Descargar Marcaciones (Socket TCP)</span>
+                  <span>Descargar Marcaciones (Socket 4370 / 7496)</span>
                 </div>
                 <span className="text-[10px] text-slate-400">Ahora</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const targetDev = devices.find((d) => d.id === selectedDeviceForUserSync) || devices[0];
+                  handleExecuteCommand('SYNC_BIOTIME', targetDev?.id);
+                }}
+                disabled={executingCommand !== null}
+                className="w-full py-2.5 px-3 bg-amber-950/70 hover:bg-amber-900/80 text-amber-200 font-semibold rounded-lg text-xs flex items-center justify-between transition-colors border border-amber-700/60 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Database className={`w-3.5 h-3.5 text-amber-400 ${executingCommand === 'SYNC_BIOTIME' ? 'animate-spin' : ''}`} />
+                  <span>Sincronizar desde BioTime PostgreSQL</span>
+                </div>
+                <span className="text-[10px] font-mono text-amber-400">:7496</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowUsbModal(true)}
+                className="w-full py-2.5 px-3 bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-200 font-semibold rounded-lg text-xs flex items-center justify-between transition-colors border border-emerald-700/60 cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Importar Marcaciones USB (1_attlog.dat)</span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400">USB</span>
               </button>
             </div>
 
@@ -951,6 +1032,116 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
           </div>
         )}
       </div>
+
+      {/* GUÍA ALTERNATIVA: CONFIGURACIÓN EN EL RELOJ ZKTECO G3 (ADMS PUSH Y USB) */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div>
+          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+            <Settings className="w-4 h-4 text-amber-400" />
+            Guía Alternativa: Configurar Envío Automático ADMS o Extracción USB en ZKTeco G3
+          </h4>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Si el reloj biométrico está configurado para enviar marcaciones a BioTime o no expone registros por el puerto 7496, aplique cualquiera de estas opciones:
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="bg-[#090A0D] p-4 rounded-lg border border-slate-800 space-y-2">
+            <div className="font-bold text-indigo-300 flex items-center gap-1.5">
+              <span>Opción 1: Envío Automático ADMS Push</span>
+            </div>
+            <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 leading-relaxed">
+              <li>En el reloj G3 presione <strong>Menú → Red → Config. Servidor Cloud (ADMS)</strong>.</li>
+              <li>Active <strong>Habilitar Nombre de Dominio = OFF</strong> y configure la IP del servidor DRAC.</li>
+              <li>Puerto del servidor: <code className="text-amber-300 font-mono">3000</code> (endpoint <code className="text-emerald-400 font-mono">/iclock/cdata</code>).</li>
+              <li>Cada nueva marcación facial o de huella aparecerá al instante en el sistema.</li>
+            </ol>
+          </div>
+
+          <div className="bg-[#090A0D] p-4 rounded-lg border border-slate-800 space-y-2">
+            <div className="font-bold text-amber-300 flex items-center gap-1.5">
+              <span>Opción 2: Base de Datos BioTime (:7496)</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Si el reloj ya transmite marcaciones a la consola BioTime (<span className="font-mono text-amber-300">192.168.1.29:89</span>), las transacciones reales se guardan en PostgreSQL puerto <span className="font-mono text-amber-300">7496</span> (tabla <code className="text-slate-200">iclock_transaction</code>). Haga clic en <strong>Sincronizar desde BioTime PostgreSQL</strong> para importarlas sin duplicados.
+            </p>
+          </div>
+
+          <div className="bg-[#090A0D] p-4 rounded-lg border border-slate-800 space-y-2">
+            <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+              <span>Opción 3: Descarga por Memoria USB</span>
+            </div>
+            <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 leading-relaxed">
+              <li>Inserte una memoria USB en el reloj <strong>ZKTeco G3</strong>.</li>
+              <li>Ingrese a <strong>Menú → Gestión USB → Descargar → Descargar Asistencia</strong>.</li>
+              <li>Se guardará el archivo <code className="text-amber-300 font-mono">1_attlog.dat</code> en la memoria.</li>
+              <li>Use el botón <strong>Importar Marcaciones USB</strong> para cargar todas las marcas al sistema.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      {/* MODAL IMPORTACIÓN USB (1_attlog.dat) */}
+      {showUsbModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+              <div className="flex items-center gap-2">
+                <Upload className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">Importar Archivo del Reloj (1_attlog.dat / CSV)</h3>
+              </div>
+              <button onClick={() => setShowUsbModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <input
+                ref={usbInputRef}
+                type="file"
+                accept=".dat,.txt,.csv,.log"
+                onChange={handleUsbFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => usbInputRef.current?.click()}
+                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+              >
+                <FileText className="w-4 h-4" />
+                {usbFileName ? `Archivo cargado: ${usbFileName}` : 'Seleccionar archivo 1_attlog.dat desde USB'}
+              </button>
+
+              <textarea
+                value={usbContent}
+                onChange={(e) => setUsbContent(e.target.value)}
+                rows={6}
+                placeholder={'O pegue aquí las líneas del archivo 1_attlog.dat:\n10000001\t2026-11-12 08:01:22\t1\t0\t0\t0'}
+                className="w-full bg-[#090A0D] border border-slate-800 rounded-lg p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUsbModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitUsbImport}
+                disabled={isUploadingUsb || !usbContent.trim()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-2"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {isUploadingUsb ? 'Importando...' : 'Procesar e Importar Marcaciones'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

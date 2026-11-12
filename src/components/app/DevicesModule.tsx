@@ -866,7 +866,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   const [isBioTimeBusy, setIsBioTimeBusy] = useState(false);
 
-  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:89)
+  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:89 / PostgreSQL :7496)
   const handleBioTimeSync = async () => {
     setIsBioTimeBusy(true);
     setSyncStatusMsg(null);
@@ -874,11 +874,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     if (electronAPI?.isDesktop && typeof electronAPI.syncBioTimePunches === 'function') {
       try {
         const res = await electronAPI.syncBioTimePunches({
-          host: '192.168.1.29',
-          webPort: 89,
-          dbPort: 7496,
+          host: selectedDevice?.biotime_config?.db_host || '192.168.1.29',
+          webPort: selectedDevice?.biotime_config?.web_port || 89,
+          dbPort: selectedDevice?.biotime_config?.db_port || 7496,
           serial: selectedDevice?.serial_number || 'AEH2223460040',
-          deviceIp: selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198',
+          deviceIp: selectedDevice?.ip_address || devices[0]?.ip_address || '',
           devicePort: selectedDevice?.port || 7496,
         });
         if (res.success) {
@@ -893,10 +893,25 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         setIsBioTimeBusy(false);
       }
     } else {
-      setTimeout(() => {
+      try {
+        const res = await fetch(getApiUrl('/api/zkteco/biotime/sync'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: selectedDevice?.biotime_config?.db_host || '192.168.1.29',
+            port: selectedDevice?.biotime_config?.db_port || 7496,
+            dbName: selectedDevice?.biotime_config?.db_name || 'biotime',
+            serial: selectedDevice?.serial_number || devices[0]?.serial_number || 'AEH2223460040',
+          }),
+        });
+        const data = await res.json();
+        setSyncStatusMsg(data.success ? `✓ ${data.message}` : `Aviso BioTime: ${data.message}`);
+        if (data.success && onRefreshPunches) onRefreshPunches();
+      } catch (err: any) {
+        setSyncStatusMsg(`Error consultando BioTime: ${err?.message || 'Error de red'}`);
+      } finally {
         setIsBioTimeBusy(false);
-        setSyncStatusMsg('Ingesta ADMS: Los marcadores en modo ADMS envían marcaciones HTTP directamente al endpoint /iclock/cdata.');
-      }, 500);
+      }
     }
   };
 
@@ -958,25 +973,36 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       const res = await fetch(getApiUrl('/api/zkteco/diagnose-pipeline'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: selectedDevice?.id || 'dev-01', ip: currentIp, port: currentPort }),
+        body: JSON.stringify({
+          deviceId: selectedDevice?.id || devices[0]?.id || 'dev-01',
+          ip: currentIp,
+          port: currentPort,
+          comm_key: selectedDevice?.comm_key || 0,
+        }),
       });
       const data = await res.json();
       const elapsed = Date.now() - start;
 
       setSocketTestLog({
-        success: data.success ?? true,
-        ip: currentIp,
-        port: currentPort,
-        latency: data.latency_ms || elapsed || 18,
+        success: Boolean(data.success),
+        ip: data.ip_address || currentIp,
+        port: data.port || currentPort,
+        latency: data.latency_ms ?? elapsed,
         timestamp: new Date().toLocaleTimeString('es-PE'),
-        message: `Diagnóstico de pipeline completado para ${currentIp}:${currentPort}.`,
-        steps: [
-          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 válida en segmento institucional (${currentIp})` },
-          { name: 'Disponibilidad de Puerto TCP', ok: true, info: `Puerto ${currentPort} configurado y probado` },
-          { name: 'Handshake Protocolo ZK', ok: true, info: `Sesión de protocolo ZKTeco verificada` },
-          { name: 'Buffer de Marcaciones', ok: true, info: `0 marcaciones nuevas en memoria del reloj` },
-          { name: 'Recepción PUSH ADMS', ok: true, info: `Endpoint /api/zkteco/push en puerto 3000 habilitado para ingesta automática` },
-        ],
+        message: data.message || `Diagnóstico finalizado (${data.status_code || data.overall_status || 'COMPLETADO'}).`,
+        steps: Array.isArray(data.steps)
+          ? data.steps.map((s: any) => ({
+              name: s.name,
+              ok: Boolean(s.ok),
+              info: s.info || s.message || s.status,
+            }))
+          : [
+              {
+                name: 'Diagnóstico de Comunicación',
+                ok: Boolean(data.success),
+                info: data.message || 'Sin detalles por etapa',
+              },
+            ],
       });
     } catch (err: any) {
       setSocketTestLog({
@@ -985,11 +1011,10 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         port: currentPort,
         latency: Date.now() - start,
         timestamp: new Date().toLocaleTimeString('es-PE'),
-        message: `No se pudo conectar al marcador en ${currentIp}:${currentPort}: ${err.message}`,
+        message: `No se pudo contactar al servicio de diagnóstico para ${currentIp}:${currentPort}: ${err.message}`,
         steps: [
-          { name: 'Resolución de Ruta IP LAN', ok: true, info: `Dirección IPv4 ${currentIp}` },
-          { name: 'Disponibilidad de Puerto TCP', ok: false, info: `Puerto ${currentPort} no responde o firewall bloquea el socket` },
-          { name: 'Handshake Protocolo ZK', ok: false, info: `Sin respuesta del dispositivo` },
+          { name: 'Resolución de Ruta IP LAN', ok: false, info: `Dirección IPv4 ${currentIp}:${currentPort}` },
+          { name: 'Comunicación con Backend', ok: false, info: err.message },
         ],
       });
     } finally {
