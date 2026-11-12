@@ -82,6 +82,7 @@ jobs:
         run: npx electron-builder --win --config electron-builder.json --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: "--max-old-space-size=6144"
 
       - name: 8. Verificar y preparar artefactos de distribución
         shell: pwsh
@@ -163,7 +164,7 @@ jobs:
             ### 📦 Archivos Disponibles para Descarga:
             1. **`DRAC-Control-de-Asistencia-Setup.exe`** (Recomendado):
                - Instalador estándar asistido con accesos directos en Escritorio y Menú Inicio.
-               - Soporte nativo para conexión con BioTime Console (`192.168.1.29:89` / PostgreSQL `7496`) y reloj biométrico G3-id (`192.168.1.180`).
+               - Soporte nativo para conexión con BioTime Console (`192.168.1.29:89` / PostgreSQL `7496`) y reloj biométrico ZKTeco G3 (`192.168.1.198:7496`).
             2. **`DRAC-Control-de-Asistencia-Portable.exe`**:
                - Ejecutable directo sin instalación previa (ideal para pruebas en servidor).
             3. **`DRAC_ASISTENCIA_DESKTOP_WINDOWS.zip`**:
