@@ -135,8 +135,15 @@ async function createWindow() {
     // 1. Iniciamos el backend local si existe
     try {
       const serverPath = path.join(__dirname, '..', 'dist', 'server.cjs');
-      log(`Iniciando backend integrado en ${serverPath}...`);
-      require(serverPath);
+      if (fs.existsSync(serverPath)) {
+        process.env.NODE_ENV = 'production';
+        process.env.PORT = String(DESKTOP_PORT);
+        process.env.DRAC_DATA_DIR = app.getPath('userData');
+        log(`Iniciando backend integrado en ${serverPath} (DataDir: ${process.env.DRAC_DATA_DIR})...`);
+        require(serverPath);
+      } else {
+        log(`Aviso: dist/server.cjs no encontrado en ${serverPath}. Operando con IPC nativo y Supabase directo.`);
+      }
     } catch (err) {
       log(`Aviso al iniciar backend integrado: ${err.message}`);
     }
@@ -467,6 +474,11 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     host = '192.168.1.29',
     webPort = 89,
     dbPort = 7496,
+    dbName = 'biotime',
+    dbUser = 'postgres',
+    password,
+    webUser,
+    webPassword,
     serial = 'AEH2223460040',
     deviceId = 'dev-01',
     deviceIp = fallbackIp,
@@ -493,6 +505,11 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
         host,
         webPort,
         dbPort,
+        dbName,
+        dbUser,
+        password,
+        webUser,
+        webPassword,
         serial,
         deviceIp,
         devicePort,

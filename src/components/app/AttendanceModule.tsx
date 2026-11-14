@@ -19,10 +19,13 @@ import {
   ServerCrash,
   Link2,
   Cpu,
+  Activity,
+  KeyRound,
 } from 'lucide-react';
 import { DataTablePagination } from '../common/DataTablePagination';
 import { getApiUrl } from '../../utils/apiConfig';
 import { normalizePersonName } from '../../utils/nameUtils';
+import { supabase } from '../../lib/supabaseClient';
 
 type SyncBannerStatus =
   | 'OFFLINE'
@@ -118,6 +121,22 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const [manualLastSync, setManualLastSync] = useState<string | null>(null);
   const [actionBanner, setActionBanner] = useState<SyncBannerState | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 7-Stage Diagnostics & BioTime Credentials modal state
+  const [showDiagModal, setShowDiagModal] = useState(false);
+  const [diagRunning, setDiagRunning] = useState(false);
+  const [diagReport, setDiagReport] = useState<any | null>(null);
+  const [showBioTimeModal, setShowBioTimeModal] = useState(false);
+  const [btHost, setBtHost] = useState('192.168.1.29');
+  const [btWebPort, setBtWebPort] = useState(89);
+  const [btDbPort, setBtDbPort] = useState(7496);
+  const [btDbName, setBtDbName] = useState('biotime');
+  const [btDbUser, setBtDbUser] = useState('postgres');
+  const [btDbPassword, setBtDbPassword] = useState('');
+  const [btWebUser, setBtWebUser] = useState('');
+  const [btWebPassword, setBtWebPassword] = useState('');
+  const [btInspecting, setBtInspecting] = useState(false);
+  const [btInspectReport, setBtInspectReport] = useState<any | null>(null);
 
   // Worker linking modal state
   const [linkingPunch, setLinkingPunch] = useState<MarcacionRaw | null>(null);
@@ -282,6 +301,90 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     }
   };
 
+  // Persistencia directa idempotente en Supabase cuando el backend Express no esté accesible
+  const persistPunchesDirectlyToSupabase = async (
+    punches: any[],
+    source: string,
+    deviceMeta?: { id?: string; serial?: string; name?: string }
+  ): Promise<{ ok: boolean; count: number; unidentified: number; error?: string }> => {
+    if (!Array.isArray(punches) || punches.length === 0) {
+      return { ok: true, count: 0, unidentified: 0 };
+    }
+    const syncedAt = new Date().toISOString();
+    let unidentified = 0;
+
+    const fullRows = punches.map((p: any, idx: number) => {
+      const code = String(p.employee_code || p.employee_dni || p.dni || p.pin || p.deviceUserId || '').trim();
+      const ts = String(p.timestamp || p.recordTime || '').replace('T', ' ').substring(0, 19);
+      const sn = String(p.device_sn || p.serialNumber || deviceMeta?.serial || 'AEH2223460040').trim().toUpperCase();
+      const matchedEmp = employees.find(
+        (e) =>
+          (e.zkteco_pin && e.zkteco_pin === code) ||
+          (e.biometric_user_id && e.biometric_user_id === code) ||
+          (e.codigo_trabajador && e.codigo_trabajador === code) ||
+          (e.dni && e.dni === code)
+      );
+      if (!matchedEmp) unidentified++;
+      const fullName = matchedEmp
+        ? normalizePersonName(`${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim())
+        : 'Pendiente de Identificación';
+      const empDni = matchedEmp?.dni || code;
+      const cleanTs = ts.replace(/[^0-9]/g, '');
+      return {
+        id: p.id || `zk_${sn}_${code}_${cleanTs || idx}`,
+        device_id: deviceMeta?.id || p.device_id || 'dev-01',
+        device_sn: sn,
+        device_name: deviceMeta?.name || p.device_name || 'ZKTeco G3',
+        employee_id: matchedEmp?.id || null,
+        employee_dni: empDni,
+        employee_code: code,
+        employee_name: fullName,
+        timestamp: ts,
+        fecha: ts.split(' ')[0] || '',
+        hora: ts.split(' ')[1] || '',
+        punch_type: p.punch_type || (p.punch_state === 1 ? 'CHECK_OUT' : 'CHECK_IN'),
+        punch_state: p.punch_state ?? 0,
+        verify_mode: p.verify_mode || 'FINGERPRINT',
+        source,
+        synced_at: syncedAt,
+        processed: false,
+      };
+    });
+
+    try {
+      const { error } = await supabase.from('marcaciones_raw').upsert(fullRows, { onConflict: 'id' });
+      if (!error) {
+        return { ok: true, count: fullRows.length, unidentified };
+      }
+      // Fallback a columnas núcleo si PostgREST rechaza columnas extendidas
+      const msg = error.message || '';
+      if (msg.includes('column') || error.code === '42703' || error.code === 'PGRST204') {
+        const coreRows = fullRows.map((r) => ({
+          id: r.id,
+          device_id: r.device_id,
+          device_sn: r.device_sn,
+          device_name: r.device_name,
+          employee_dni: r.employee_dni,
+          employee_name: r.employee_name,
+          timestamp: r.timestamp,
+          fecha: r.fecha,
+          hora: r.hora,
+          punch_type: r.punch_type,
+          verify_mode: r.verify_mode,
+          processed: r.processed,
+        }));
+        const retry = await supabase.from('marcaciones_raw').upsert(coreRows, { onConflict: 'id' });
+        if (!retry.error) {
+          return { ok: true, count: coreRows.length, unidentified };
+        }
+        return { ok: false, count: 0, unidentified, error: retry.error.message };
+      }
+      return { ok: false, count: 0, unidentified, error: error.message };
+    } catch (err: any) {
+      return { ok: false, count: 0, unidentified, error: err?.message || 'Error guardando en Supabase' };
+    }
+  };
+
   // Manual synchronization from configured ZKTeco clock (Electron physical LAN read or backend fallback)
   const handleManualDeviceSync = async () => {
     if (!activeDevice) {
@@ -334,28 +437,50 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           return;
         }
 
-        const ingestRes = await fetch(getApiUrl('/api/zkteco/ingest-punches'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            punches,
-            source: res.source || 'DIRECT_READ',
-            device: {
-              id: activeDevice.id,
-              serial: res.serial_number || activeDevice.serial_number,
-              name: activeDevice.name,
-              ip: activeDevice.ip_address,
-            },
-          }),
+        try {
+          const ingestRes = await fetch(getApiUrl('/api/zkteco/ingest-punches'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              punches,
+              source: res.source || 'DIRECT_READ',
+              device: {
+                id: activeDevice.id,
+                serial: res.serial_number || activeDevice.serial_number,
+                name: activeDevice.name,
+                ip: activeDevice.ip_address,
+              },
+            }),
+          });
+          if (ingestRes.ok || ingestRes.status === 207) {
+            const ingestData = await ingestRes.json();
+            const meta = getStatusBannerMeta(ingestData.status_code, !!ingestData.success);
+            setManualLastSync(ingestData.last_sync || new Date().toISOString());
+            setActionBanner({
+              success: !!ingestData.success,
+              statusCode: meta.code,
+              title: meta.title,
+              message: ingestData.message || `Se sincronizaron ${punches.length} marcaciones.`,
+            });
+            if (onRefresh) onRefresh();
+            return;
+          }
+        } catch (_) {}
+
+        // Fallback directo a Supabase si el backend local no respondió
+        const directSave = await persistPunchesDirectlyToSupabase(punches, res.source || 'DIRECT_READ', {
+          id: activeDevice.id,
+          serial: res.serial_number || activeDevice.serial_number,
+          name: activeDevice.name,
         });
-        const ingestData = await ingestRes.json();
-        const meta = getStatusBannerMeta(ingestData.status_code, !!ingestData.success);
-        setManualLastSync(ingestData.last_sync || new Date().toISOString());
+        setManualLastSync(new Date().toISOString());
         setActionBanner({
-          success: !!ingestData.success,
-          statusCode: meta.code,
-          title: meta.title,
-          message: ingestData.message || `Se sincronizaron ${punches.length} marcaciones.`,
+          success: directSave.ok,
+          statusCode: directSave.ok ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
+          title: directSave.ok ? 'Marcaciones recibidas correctamente' : 'Error de almacenamiento en la base de datos',
+          message: directSave.ok
+            ? `Se leyeron ${punches.length} marcaciones reales desde ${activeDevice.ip_address}:${activeDevice.port} y se almacenaron en Supabase (${directSave.unidentified} pendientes de identificación).`
+            : `Marcaciones leídas (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
         });
         if (onRefresh) onRefresh();
         return;
@@ -393,25 +518,237 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     }
   };
 
-  const handleSyncBioTimeDb = async () => {
+  // Diagnóstico real independiente de 7 etapas
+  const handleRunSevenStageDiag = async () => {
+    if (!activeDevice) return;
+    setShowDiagModal(true);
+    setDiagRunning(true);
+    setDiagReport(null);
+    try {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI && typeof electronAPI.diagnoseZkDevice === 'function') {
+        const res = await electronAPI.diagnoseZkDevice(
+          activeDevice.ip_address,
+          activeDevice.port || 7496,
+          4000,
+          activeDevice.model || 'ZKTeco G3',
+          activeDevice.serial_number,
+          activeDevice.comm_key ?? 0
+        );
+        const mappedSteps = Array.isArray(res.step_details)
+          ? res.step_details.slice(0, 7).map((s: any) => ({
+              stage: s.stage,
+              name: s.name,
+              status: s.status === 'PASSED' ? 'PASSED' : s.status === 'FAILED' ? 'FAILED' : 'SKIPPED',
+              ok: s.status === 'PASSED',
+              info: s.message,
+              latencyMs: s.latencyMs,
+            }))
+          : [];
+        setDiagReport({
+          success: !!res.success,
+          status_code: res.status === 'OFFLINE' ? 'OFFLINE' : res.success ? 'PUNCHES_RECEIVED' : 'PROTOCOL_NO_RESPONSE',
+          message: res.message,
+          ip_address: res.ip || activeDevice.ip_address,
+          port: res.port || activeDevice.port,
+          serial_number: res.serial_number || activeDevice.serial_number,
+          users_in_clock: res.user_count || 0,
+          punches_count: res.clock_punches_count || 0,
+          steps: mappedSteps,
+        });
+      } else {
+        const res = await fetch(getApiUrl('/api/zkteco/diagnose-pipeline'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceId: activeDevice.id,
+            ip: activeDevice.ip_address,
+            port: activeDevice.port || 7496,
+            comm_key: activeDevice.comm_key ?? 0,
+          }),
+        });
+        const data = await res.json();
+        setDiagReport(data);
+      }
+    } catch (err: any) {
+      setDiagReport({
+        success: false,
+        status_code: 'OFFLINE',
+        message: err?.message || 'Error ejecutando diagnóstico de etapas.',
+        steps: [],
+      });
+    } finally {
+      setDiagRunning(false);
+    }
+  };
+
+  // Inspeccionar BioTime (Solo Lectura: PostgreSQL information_schema + HTTP 89)
+  const handleInspectBioTime = async () => {
+    setBtInspecting(true);
+    setBtInspectReport(null);
+    try {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI && typeof electronAPI.inspectBioTimeDatabase === 'function') {
+        const rep = await electronAPI.inspectBioTimeDatabase({
+          host: btHost,
+          webPort: btWebPort,
+          dbPort: btDbPort,
+          dbName: btDbName,
+          dbUser: btDbUser,
+          password: btDbPassword || undefined,
+          serial: activeDevice?.serial_number || '',
+        });
+        setBtInspectReport(rep);
+      } else {
+        const res = await fetch(getApiUrl('/api/zkteco/biotime/inspect'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            host: btHost,
+            webPort: btWebPort,
+            port: btDbPort,
+            dbName: btDbName,
+            user: btDbUser,
+            password: btDbPassword || undefined,
+            serial: activeDevice?.serial_number || '',
+          }),
+        });
+        const rep = await res.json();
+        setBtInspectReport(rep);
+      }
+    } catch (err: any) {
+      setBtInspectReport({
+        success: false,
+        message: `Error al inspeccionar BioTime: ${err?.message || 'Error de red'}`,
+      });
+    } finally {
+      setBtInspecting(false);
+    }
+  };
+
+  const handleSyncBioTimeDb = async (customCreds?: {
+    host?: string;
+    webPort?: number;
+    dbPort?: number;
+    dbName?: string;
+    dbUser?: string;
+    password?: string;
+    webUser?: string;
+    webPassword?: string;
+  }) => {
     setBioTimeSyncing(true);
     setActionBanner(null);
     const bioCfg = activeDevice?.biotime_config;
+    const params = {
+      host: customCreds?.host || bioCfg?.db_host || btHost || '192.168.1.29',
+      webPort: customCreds?.webPort || bioCfg?.web_port || btWebPort || 89,
+      dbPort: customCreds?.dbPort || bioCfg?.db_port || btDbPort || 7496,
+      dbName: customCreds?.dbName || bioCfg?.db_name || btDbName || 'biotime',
+      dbUser: customCreds?.dbUser || bioCfg?.db_user || btDbUser || 'postgres',
+      password: customCreds?.password ?? (btDbPassword || undefined),
+      webUser: customCreds?.webUser ?? (btWebUser || undefined),
+      webPassword: customCreds?.webPassword ?? (btWebPassword || undefined),
+      serial: activeDevice?.serial_number || 'AEH2223460040',
+      deviceId: activeDevice?.id || 'dev-01',
+      deviceIp: activeDevice?.ip_address || '',
+      devicePort: activeDevice?.port || 7496,
+    };
+
     try {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
+        const btRes = await electronAPI.syncBioTimePunches(params);
+        if (!btRes.success) {
+          setActionBanner({
+            success: false,
+            statusCode: 'OFFLINE',
+            title: 'BioTime no disponible o sin marcaciones',
+            message: btRes.message || 'No se pudieron obtener marcaciones desde BioTime. Configure credenciales en "Configurar BioTime" si PostgreSQL o HTTP 89 requieren clave.',
+          });
+          return;
+        }
+
+        const punches = Array.isArray(btRes.punches) ? btRes.punches : [];
+        if (punches.length === 0) {
+          setManualLastSync(new Date().toISOString());
+          setActionBanner({
+            success: true,
+            statusCode: 'ONLINE_NO_NEW_PUNCHES',
+            title: 'Lectura exitosa sin marcaciones nuevas',
+            message: btRes.message || 'BioTime consultado correctamente sin registros nuevos.',
+          });
+          if (onRefresh) onRefresh();
+          return;
+        }
+
+        try {
+          const ingestRes = await fetch(getApiUrl('/api/zkteco/ingest-punches'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              punches,
+              source: btRes.source || 'BIOTIME_DB',
+              device: {
+                id: activeDevice?.id || 'dev-01',
+                serial: params.serial,
+                name: activeDevice?.name || 'ZKTeco G3 (vía BioTime)',
+                ip: params.host,
+              },
+            }),
+          });
+          if (ingestRes.ok || ingestRes.status === 207) {
+            const ingestData = await ingestRes.json();
+            const meta = getStatusBannerMeta(ingestData.status_code, !!ingestData.success);
+            setManualLastSync(ingestData.last_sync || new Date().toISOString());
+            setActionBanner({
+              success: !!ingestData.success,
+              statusCode: meta.code,
+              title: meta.title,
+              message: ingestData.message || btRes.message,
+            });
+            setShowBioTimeModal(false);
+            if (onRefresh) onRefresh();
+            return;
+          }
+        } catch (_) {}
+
+        const directSave = await persistPunchesDirectlyToSupabase(punches, btRes.source || 'BIOTIME_DB', {
+          id: activeDevice?.id || 'dev-01',
+          serial: params.serial,
+          name: activeDevice?.name || 'ZKTeco G3 (vía BioTime)',
+        });
+        setManualLastSync(new Date().toISOString());
+        setActionBanner({
+          success: directSave.ok,
+          statusCode: directSave.ok ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
+          title: directSave.ok ? 'Marcaciones recibidas desde BioTime' : 'Error de almacenamiento en Supabase',
+          message: directSave.ok
+            ? `Se extrajeron ${punches.length} marcaciones reales desde ${btRes.source} y se sincronizaron en Supabase (${directSave.unidentified} pendientes).`
+            : `Leídas desde BioTime (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
+        });
+        setShowBioTimeModal(false);
+        if (onRefresh) onRefresh();
+        return;
+      }
+
       const res = await fetch(getApiUrl('/api/zkteco/biotime/sync'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          host: bioCfg?.db_host || '192.168.1.29',
-          port: bioCfg?.db_port || 7496,
-          dbName: bioCfg?.db_name || 'biotime',
-          user: bioCfg?.db_user || 'postgres',
-          serial: activeDevice?.serial_number,
+          host: params.host,
+          port: params.dbPort,
+          dbName: params.dbName,
+          user: params.dbUser,
+          password: params.password,
+          serial: params.serial,
         }),
       });
       const data = await res.json();
       const meta = getStatusBannerMeta(data.status_code || (data.success ? 'PUNCHES_RECEIVED' : 'OFFLINE'), !!data.success);
-      if (data.success) setManualLastSync(new Date().toISOString());
+      if (data.success) {
+        setManualLastSync(new Date().toISOString());
+        setShowBioTimeModal(false);
+      }
       setActionBanner({
         success: !!data.success,
         statusCode: meta.code,
@@ -424,7 +761,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         success: false,
         statusCode: 'OFFLINE',
         title: 'Sin conexión con BioTime',
-        message: `Error al consultar PostgreSQL BioTime: ${err?.message || 'Error de red'}`,
+        message: `Error al consultar BioTime (${params.host}): ${err?.message || 'Error de red'}`,
       });
     } finally {
       setBioTimeSyncing(false);
@@ -469,6 +806,36 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         if (onRefresh) onRefresh();
       }
     } catch (err: any) {
+      // Fallback directo a Supabase si el backend local no está arriba
+      try {
+        const emp = employees.find((e) => e.id === selectedLinkEmployeeId);
+        if (emp) {
+          const empName = normalizePersonName(`${emp.first_name || ''} ${emp.last_name || ''}`.trim());
+          const code = linkingPunch.employee_code || linkingPunch.employee_dni;
+          const targetIds = applyToSameCode && code
+            ? rawPunches.filter((p) => (p.employee_code || p.employee_dni) === code).map((p) => p.id)
+            : [linkingPunch.id];
+          const { error: upErr } = await supabase
+            .from('marcaciones_raw')
+            .update({ employee_id: emp.id, employee_dni: emp.dni, employee_name: empName })
+            .in('id', targetIds);
+          if (!upErr) {
+            if (savePinToEmployee && code) {
+              await supabase.from('trabajadores').update({ zkteco_pin: code }).eq('id', emp.id);
+            }
+            setActionBanner({
+              success: true,
+              statusCode: 'PUNCHES_RECEIVED',
+              title: 'Trabajador vinculado en Supabase',
+              message: `Se vinculó ${empName} (${emp.dni}) a ${targetIds.length} marcación(es).`,
+            });
+            setLinkingPunch(null);
+            if (onRefresh) onRefresh();
+            return;
+          }
+        }
+      } catch (_) {}
+
       setActionBanner({
         success: false,
         statusCode: 'DB_ERROR',
@@ -622,20 +989,39 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setShowUsbModal(true)}
-            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+            onClick={handleRunSevenStageDiag}
+            disabled={diagRunning}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-800/60 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            title="Probar IP, puerto TCP, protocolo ZKTeco, CommKey, usuarios, marcaciones y Supabase"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>Importar USB (1_attlog.dat)</span>
+            <Activity className={`w-3.5 h-3.5 ${diagRunning ? 'animate-pulse' : ''}`} />
+            <span>Diagnóstico 7 Etapas</span>
           </button>
 
           <button
-            onClick={handleSyncBioTimeDb}
+            onClick={() => handleSyncBioTimeDb()}
             disabled={bioTimeSyncing}
             className="px-3 py-1.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-60 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
           >
             <Database className={`w-3.5 h-3.5 ${bioTimeSyncing ? 'animate-spin' : ''}`} />
             <span>{bioTimeSyncing ? 'Consultando BioTime...' : 'Extraer de BioTime'}</span>
+          </button>
+
+          <button
+            onClick={() => setShowBioTimeModal(true)}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/50 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+            title="Configurar credenciales BioTime PostgreSQL / API HTTP :89"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>BioTime</span>
+          </button>
+
+          <button
+            onClick={() => setShowUsbModal(true)}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar USB</span>
           </button>
 
           {rawPunches.length > 0 && (
@@ -860,7 +1246,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                   Importar desde Memoria USB (1_attlog.dat)
                 </button>
                 <button
-                  onClick={handleSyncBioTimeDb}
+                  onClick={() => handleSyncBioTimeDb()}
                   disabled={bioTimeSyncing}
                   className="px-3.5 py-2 bg-amber-700 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors"
                 >
@@ -1290,6 +1676,193 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 <Upload className="w-3.5 h-3.5" />
                 {usbImporting ? 'Importando...' : `Importar ${usbPreviewRows.length} Marcaciones Reales`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Diagnóstico Real 7 Etapas */}
+      {showDiagModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-sky-950 text-sky-400 rounded-lg border border-sky-800/50">
+                  <Activity className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Diagnóstico Independiente de 7 Etapas — ZKTeco G3</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {activeDevice ? `${activeDevice.ip_address}:${activeDevice.port} · S/N ${activeDevice.serial_number}` : 'Sin equipo'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowDiagModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 overflow-y-auto text-xs">
+              {diagRunning ? (
+                <div className="py-10 text-center space-y-2 text-slate-300">
+                  <RefreshCw className="w-7 h-7 animate-spin text-sky-400 mx-auto" />
+                  <p className="font-semibold">Ejecutando pruebas TCP, Protocolo ZKTeco, CommKey, Usuarios y Marcaciones...</p>
+                </div>
+              ) : diagReport ? (
+                <>
+                  <div className={`p-3 rounded-lg border ${diagReport.success ? 'bg-emerald-950/50 border-emerald-700 text-emerald-200' : 'bg-rose-950/50 border-rose-700 text-rose-200'}`}>
+                    <div className="font-bold flex items-center justify-between">
+                      <span>{diagReport.message || 'Diagnóstico completado'}</span>
+                      <span className="font-mono text-[10px] px-2 py-0.5 bg-black/30 rounded">{diagReport.status_code}</span>
+                    </div>
+                    <div className="mt-1 font-mono text-[11px] opacity-85">
+                      Usuarios en reloj: {diagReport.users_in_clock ?? 0} · Marcaciones detectadas: {diagReport.punches_count ?? 0}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(diagReport.steps || []).map((st: any) => (
+                      <div key={st.stage} className="p-2.5 rounded-lg border border-slate-800 bg-[#090A0D] flex items-start justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <div className="font-semibold text-slate-200">{st.name}</div>
+                          <div className="text-[11px] text-slate-400">{st.info}</div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded font-mono text-[10px] shrink-0 ${
+                            st.status === 'PASSED'
+                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                              : st.status === 'FAILED'
+                              ? 'bg-rose-950 text-rose-300 border border-rose-700'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {st.status}{st.latencyMs ? ` (${st.latencyMs}ms)` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleRunSevenStageDiag}
+                disabled={diagRunning}
+                className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${diagRunning ? 'animate-spin' : ''}`} />
+                Reintentar Diagnóstico
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDiagModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Configuración e Inspección BioTime (192.168.1.29) */}
+      {showBioTimeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-amber-950 text-amber-400 rounded-lg border border-amber-800/50">
+                  <Database className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Fuente Intermediaria BioTime (Solo Lectura)</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Inspección de esquema PostgreSQL (puerto 7496) o API oficial HTTP BioTime (puerto 89).
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowBioTimeModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Servidor BioTime</label>
+                  <input value={btHost} onChange={(e) => setBtHost(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Base de Datos PostgreSQL</label>
+                  <input value={btDbName} onChange={(e) => setBtDbName(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Puerto PostgreSQL BioTime</label>
+                  <input type="number" value={btDbPort} onChange={(e) => setBtDbPort(Number(e.target.value) || 7496)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Usuario PostgreSQL</label>
+                  <input value={btDbUser} onChange={(e) => setBtDbUser(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-400 block mb-1">Contraseña PostgreSQL BioTime (si requiere)</label>
+                  <input type="password" value={btDbPassword} onChange={(e) => setBtDbPassword(e.target.value)} placeholder="Opcional si usa clave institucional distinta" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Puerto HTTP BioTime (ADMS/API)</label>
+                  <input type="number" value={btWebPort} onChange={(e) => setBtWebPort(Number(e.target.value) || 89)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Usuario Web BioTime (API opcional)</label>
+                  <input value={btWebUser} onChange={(e) => setBtWebUser(e.target.value)} placeholder="admin" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-400 block mb-1">Contraseña Web BioTime (API opcional)</label>
+                  <input type="password" value={btWebPassword} onChange={(e) => setBtWebPassword(e.target.value)} placeholder="Sólo si PostgreSQL no permite acceso remoto y usa API :89" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                </div>
+              </div>
+
+              {btInspectReport && (
+                <div className={`p-3 rounded-lg border space-y-1 ${btInspectReport.validSource ? 'bg-emerald-950/40 border-emerald-700 text-emerald-200' : 'bg-amber-950/40 border-amber-700 text-amber-200'}`}>
+                  <div className="font-bold">{btInspectReport.message}</div>
+                  {btInspectReport.attendanceTable && (
+                    <div className="font-mono text-[11px] opacity-90">
+                      Tabla: {btInspectReport.attendanceTable} · Total: {btInspectReport.totalTransactions ?? 0} · Reloj: {btInspectReport.deviceTransactions ?? 0}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleInspectBioTime}
+                disabled={btInspecting}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-800/50 rounded-lg text-xs font-semibold"
+              >
+                {btInspecting ? 'Inspeccionando...' : 'Inspeccionar Esquema'}
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBioTimeModal(false)}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSyncBioTimeDb({ host: btHost, webPort: btWebPort, dbPort: btDbPort, dbName: btDbName, dbUser: btDbUser, password: btDbPassword || undefined, webUser: btWebUser || undefined, webPassword: btWebPassword || undefined })}
+                  disabled={bioTimeSyncing}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  {bioTimeSyncing ? 'Extrayendo...' : 'Extraer Marcaciones BioTime'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

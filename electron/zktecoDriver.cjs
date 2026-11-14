@@ -147,6 +147,17 @@ function decodeZkTime(t) {
   return '';
 }
 
+function formatLocalTimestamp(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    if (Number.isNaN(val.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${val.getFullYear()}-${pad(val.getMonth() + 1)}-${pad(val.getDate())} ${pad(val.getHours())}:${pad(val.getMinutes())}:${pad(val.getSeconds())}`;
+  }
+  const s = String(val).replace('T', ' ').trim();
+  return s.length >= 16 ? s.substring(0, 19) : '';
+}
+
 // Resolución segura de rutas de archivos de datos (compatible con desarrollo y producción Electron userData)
 function resolveDataFilePath(filename) {
   const localDataPath = path.join(__dirname, '..', 'data', filename);
@@ -367,21 +378,9 @@ class ZKLibTCP {
         }, ms);
       };
 
-      const onDataStream = (chunk) => {
-        resetIdleTimer(900);
+      let tcpAcc = Buffer.alloc(0);
 
-        // Remover envoltorio TCP 0x5050827D si está presente
-        let payload = chunk;
-        if (
-          chunk.length >= 8 &&
-          (chunk.readUInt32LE(0) === 0x5050827d ||
-            chunk.readUInt32BE(0) === 0x5050827d ||
-            (chunk[0] === 0x7d && chunk[1] === 0x82) ||
-            (chunk[0] === 0x50 && chunk[1] === 0x50))
-        ) {
-          payload = chunk.slice(8);
-        }
-
+      const processFrame = (payload) => {
         if (payload.length >= 8) {
           const respCmd = payload.readUInt16LE(0);
           const sessId = payload.readUInt16LE(4);
@@ -430,6 +429,36 @@ class ZKLibTCP {
         totalReceived += payload.length;
         if (totalExpectedBytes > 0 && totalReceived >= totalExpectedBytes) {
           finish();
+        }
+      };
+
+      const onDataStream = (chunk) => {
+        resetIdleTimer(900);
+        tcpAcc = Buffer.concat([tcpAcc, chunk]);
+
+        // Desempaquetar tramas TCP ZKTeco 0x50 0x50 0x82 0x7D si vienen múltiples o fragmentadas
+        while (
+          tcpAcc.length >= 8 &&
+          tcpAcc[0] === 0x50 &&
+          tcpAcc[1] === 0x50 &&
+          tcpAcc[2] === 0x82 &&
+          tcpAcc[3] === 0x7d
+        ) {
+          const frameLen = tcpAcc.readUInt32LE(4);
+          if (tcpAcc.length < 8 + frameLen) {
+            // Trama incompleta: esperar siguiente chunk
+            return;
+          }
+          const framePayload = tcpAcc.slice(8, 8 + frameLen);
+          tcpAcc = tcpAcc.slice(8 + frameLen);
+          processFrame(framePayload);
+          if (settled) return;
+        }
+
+        if (tcpAcc.length > 0 && !(tcpAcc[0] === 0x50 && tcpAcc[1] === 0x50)) {
+          const raw = tcpAcc;
+          tcpAcc = Buffer.alloc(0);
+          processFrame(raw);
         }
       };
 
@@ -1429,7 +1458,8 @@ async function readZkDevicePunches(
       const NodeZkLib = require('node-zklib');
       for (const testPort of candidatePorts) {
         try {
-          const zk = new NodeZkLib(cleanIp, testPort, Math.min(timeout, 3500), 5200);
+          const inport = 5200 + Math.floor(Math.random() * 1000);
+          const zk = new NodeZkLib(cleanIp, testPort, Math.min(timeout, 3500), inport);
           await zk.createSocket();
           try {
             const usersRes = await zk.getUsers();
@@ -1443,9 +1473,7 @@ async function readZkDevicePunches(
             const formatted = attResult.data
               .map((item, idx) => {
                 const dni = String(item.deviceUserId || item.userSn || item.pin || '').trim();
-                const recTimeStr = item.recordTime instanceof Date
-                  ? item.recordTime.toISOString().replace('T', ' ').substring(0, 19)
-                  : String(item.recordTime || '').replace('T', ' ').substring(0, 19);
+                const recTimeStr = formatLocalTimestamp(item.recordTime);
                 if (!dni || !recTimeStr || recTimeStr.length < 16) return null;
                 const [fechaPart, horaPart] = recTimeStr.split(' ');
                 const originalId = `zk_${cleanSerial}_${dni}_${recTimeStr.replace(/[- :]/g, '')}`;
@@ -1555,14 +1583,7 @@ async function readZkDevicePunches(
       let formattedPunches = rawList
         .map((item, index) => {
           const dni = String(item.deviceUserId || item.userSn || item.pin || '').trim();
-          let recordTimeStr = '';
-          if (item.recordTime) {
-            if (item.recordTime instanceof Date) {
-              recordTimeStr = item.recordTime.toISOString().replace('T', ' ').substring(0, 19);
-            } else {
-              recordTimeStr = String(item.recordTime).replace('T', ' ').substring(0, 19);
-            }
-          }
+          const recordTimeStr = formatLocalTimestamp(item.recordTime);
           if (!dni || !recordTimeStr || recordTimeStr.length < 16) return null;
 
           const [fechaPart, horaPart] = recordTimeStr.split(' ');
@@ -2104,6 +2125,7 @@ async function inspectBioTimeDatabase(options = {}) {
     dbPort = 7496,
     dbName = 'biotime',
     dbUser = 'postgres',
+    password,
     serial = '',
   } = options;
 
@@ -2148,7 +2170,7 @@ async function inspectBioTimeDatabase(options = {}) {
     return report;
   }
 
-  const passwords = ['', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'];
+  const passwords = [...new Set([password, '', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'].filter((x) => x !== undefined))];
   for (const pwd of passwords) {
     const client = new pg.Client({
       host: cleanHost,
@@ -2235,6 +2257,9 @@ async function syncBioTimeRecords(options = {}) {
     commKey = 0,
     dbName = 'biotime',
     dbUser = 'postgres',
+    password,
+    webUser,
+    webPassword,
   } = options;
 
   const cleanHost = String(host || '192.168.1.29').trim();
@@ -2250,8 +2275,85 @@ async function syncBioTimeRecords(options = {}) {
     dbPort: targetDbPort,
     dbName,
     dbUser,
+    password,
     serial: cleanSerial,
   });
+
+  if ((!inspection.success || !inspection.attendanceTable) && webUser && webPassword) {
+    // Alternativa API oficial HTTP BioTime (JWT read-only) cuando PG no responde pero HTTP :89 sí
+    try {
+      const http = require('http');
+      const postJson = (urlPath, payload, token) => new Promise((resolve, reject) => {
+        const body = payload ? JSON.stringify(payload) : '';
+        const req = http.request({
+          hostname: cleanHost,
+          port: Number(webPort) || 89,
+          path: urlPath,
+          method: payload ? 'POST' : 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `JWT ${token}` } : {}),
+            ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
+          },
+          timeout: 4000,
+        }, (res) => {
+          let data = '';
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => {
+            try { resolve({ status: res.statusCode, json: JSON.parse(data) }); }
+            catch (e) { resolve({ status: res.statusCode, raw: data }); }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout BioTime HTTP API')); });
+        if (body) req.write(body);
+        req.end();
+      });
+
+      const authRes = await postJson('/jwt-api-token-auth/', { username: webUser, password: webPassword });
+      const token = authRes?.json?.token;
+      if (token) {
+        const snQuery = cleanSerial ? `&terminal_sn=${encodeURIComponent(cleanSerial)}` : '';
+        const txRes = await postJson(`/iclock/api/transactions/?page_size=500${snQuery}`, null, token);
+        const rows = Array.isArray(txRes?.json?.data) ? txRes.json.data : [];
+        const syncedAt = new Date().toISOString();
+        const apiPunches = rows
+          .map((r, idx) => {
+            const code = String(r.emp_code || '').trim();
+            const ts = formatLocalTimestamp(r.punch_time);
+            if (!code || !ts) return null;
+            const snVal = r.terminal_sn || cleanSerial;
+            const pState = Number(r.punch_state ?? 0);
+            return {
+              id: `biotime_${snVal}_${code}_${ts.replace(/[^0-9]/g, '')}`,
+              original_punch_id: String(r.id || `bt_api_${idx}`),
+              device_sn: snVal,
+              device_name: 'ZKTeco G3 (vía BioTime API)',
+              employee_dni: code,
+              employee_code: code,
+              timestamp: ts,
+              punch_type: pState === 1 ? 'CHECK_OUT' : pState === 0 ? 'CHECK_IN' : 'AUTO',
+              punch_state: pState,
+              verify_mode: r.verify_type_display?.toUpperCase().includes('FACE') ? 'FACE' : 'FINGERPRINT',
+              processed: false,
+              source: 'BIOTIME_API',
+              synced_at: syncedAt,
+            };
+          })
+          .filter(Boolean);
+        if (apiPunches.length > 0) {
+          return {
+            success: true,
+            source: 'BIOTIME_API',
+            details: `${apiPunches.length} marcaciones recuperadas vía API oficial BioTime (${cleanHost}:${webPort}).`,
+            inspection,
+            punches: apiPunches,
+            count: apiPunches.length,
+          };
+        }
+      }
+    } catch (_) {}
+  }
 
   if (!inspection.success || !inspection.attendanceTable) {
     return {
@@ -2282,7 +2384,7 @@ async function syncBioTimeRecords(options = {}) {
   // 2. Consulta de solo lectura sobre la tabla inspeccionada dinámicamente
   try {
     const pg = require('pg');
-    const passwords = ['', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'];
+    const passwords = [...new Set([password, '', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'].filter((x) => x !== undefined))];
     const table = inspection.attendanceTable;
     const colNames = inspection.attendanceColumns.map((c) => c.split(' ')[0]);
     const hasPersonnel = inspection.tablesFound.includes('personnel_employee');
@@ -2328,9 +2430,7 @@ async function syncBioTimeRecords(options = {}) {
           pulledPunches = rows
             .map((r, idx) => {
               const code = String(r.emp_code || r.userid || '').trim();
-              const punchTimeStr = r.punch_time instanceof Date
-                ? r.punch_time.toISOString().replace('T', ' ').substring(0, 19)
-                : String(r.punch_time || '').replace('T', ' ').substring(0, 19);
+              const punchTimeStr = formatLocalTimestamp(r.punch_time);
               if (!code || !punchTimeStr || punchTimeStr.length < 16) return null;
               const punchState = Number(r.punch_state ?? 0);
               const verify = Number(r.verify_type ?? 1);

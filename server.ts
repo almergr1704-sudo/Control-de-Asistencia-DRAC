@@ -8,8 +8,14 @@ import { createClient } from '@supabase/supabase-js';
 import ZKLib from 'node-zklib';
 import pg from 'pg';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const SERVER_DIR =
+  typeof __dirname !== 'undefined'
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+const BASE_PROJECT_DIR = fs.existsSync(path.join(SERVER_DIR, 'data'))
+  ? SERVER_DIR
+  : path.resolve(SERVER_DIR, '..');
+const BUNDLED_DATA_DIR = path.join(BASE_PROJECT_DIR, 'data');
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://rfqgmoremevypexrrsyf.supabase.co';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I';
@@ -26,10 +32,23 @@ app.use(express.text({ type: ['text/*', 'application/octet-stream'], limit: '10m
 
 import { normalizeText, normalizeInstitutionalName, normalizePersonName } from './src/utils/nameUtils';
 
-// Data Directory and Files
-const DATA_DIR = path.join(__dirname, 'data');
+// Data Directory and Files (supports writable DRAC_DATA_DIR when running inside Electron app.asar)
+const DATA_DIR = process.env.DRAC_DATA_DIR
+  ? path.join(process.env.DRAC_DATA_DIR, 'data')
+  : BUNDLED_DATA_DIR;
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (DATA_DIR !== BUNDLED_DATA_DIR && fs.existsSync(BUNDLED_DATA_DIR)) {
+  try {
+    for (const file of fs.readdirSync(BUNDLED_DATA_DIR)) {
+      if (!file.endsWith('.json')) continue;
+      const dest = path.join(DATA_DIR, file);
+      if (!fs.existsSync(dest)) {
+        fs.copyFileSync(path.join(BUNDLED_DATA_DIR, file), dest);
+      }
+    }
+  } catch (_) {}
 }
 
 const RAW_PUNCHES_FILE = path.join(DATA_DIR, 'raw-punches.json');
@@ -2146,7 +2165,7 @@ function upsertAttendanceFromIdentifiedPunch(
 async function persistRawPunchesToSupabase(records: any[]): Promise<{ dbSaved: boolean; dbError: string | null }> {
   if (!records || records.length === 0) return { dbSaved: true, dbError: null };
   try {
-    const rows = records.map((r) => ({
+    const fullRows = records.map((r) => ({
       id: r.id,
       device_id: r.device_id || 'dev-01',
       device_sn: r.device_sn,
@@ -2166,16 +2185,46 @@ async function persistRawPunchesToSupabase(records: any[]): Promise<{ dbSaved: b
 
     const sbRes: any = await withServerTimeout(
       Promise.resolve(
-        supabaseServer.from('marcaciones_raw').upsert(rows, { onConflict: 'id' })
+        supabaseServer.from('marcaciones_raw').upsert(fullRows, { onConflict: 'id' })
       ),
-      2500,
+      3500,
       'Timeout guardando marcaciones en Supabase PostgreSQL'
     );
 
-    if (sbRes?.error) {
-      return { dbSaved: false, dbError: sbRes.error.message || 'Error SQL Supabase en marcaciones_raw' };
+    if (!sbRes?.error) {
+      return { dbSaved: true, dbError: null };
     }
-    return { dbSaved: true, dbError: null };
+
+    const errMsg = String(sbRes.error.message || '');
+    // Fallback si la tabla marcaciones_raw tiene solo columnas base (sin employee_code/source/punch_state)
+    if (errMsg.includes('column') || sbRes.error.code === '42703' || sbRes.error.code === 'PGRST204') {
+      const coreRows = records.map((r) => ({
+        id: r.id,
+        device_id: r.device_id || 'dev-01',
+        device_sn: r.device_sn,
+        device_name: r.device_name,
+        employee_dni: r.employee_dni || r.employee_code,
+        timestamp: r.timestamp,
+        punch_type: r.punch_type || 'AUTO',
+        verify_mode: r.verify_mode || 'FINGERPRINT',
+        processed: Boolean(r.processed),
+        validation_status: r.validation_status || 'VALIDA',
+        raw_payload: r.raw_payload || null,
+      }));
+      const retryRes: any = await withServerTimeout(
+        Promise.resolve(
+          supabaseServer.from('marcaciones_raw').upsert(coreRows, { onConflict: 'id' })
+        ),
+        3500,
+        'Timeout guardando marcaciones base en Supabase PostgreSQL'
+      );
+      if (!retryRes?.error) {
+        return { dbSaved: true, dbError: null };
+      }
+      return { dbSaved: false, dbError: retryRes.error.message || errMsg };
+    }
+
+    return { dbSaved: false, dbError: errMsg || 'Error SQL Supabase en marcaciones_raw' };
   } catch (err: any) {
     return { dbSaved: false, dbError: err?.message || 'Sin conexión hacia Supabase PostgreSQL' };
   }
@@ -2560,9 +2609,14 @@ async function syncPunchesFromBioTimeDb(options?: {
         const syncedAt = new Date().toISOString();
         const recovered: any[] = [];
         for (const row of res.rows) {
-          const pTime = row.punch_time instanceof Date
-            ? row.punch_time.toISOString().replace('T', ' ').substring(0, 19)
-            : String(row.punch_time || '').replace('T', ' ').substring(0, 19);
+          let pTime = '';
+          if (row.punch_time instanceof Date) {
+            const d = row.punch_time;
+            const pad = (n: number) => String(n).padStart(2, '0');
+            pTime = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+          } else {
+            pTime = String(row.punch_time || '').replace('T', ' ').substring(0, 19);
+          }
           const pin = String(row.emp_code || '').trim();
           if (!pin || !pTime || pTime.length < 16) continue;
 
@@ -3762,7 +3816,56 @@ async function processAdmsPayload(payload: any, query: any, headers: any, source
   };
 }
 
-// ADMS Ingestion Endpoints (standard ZKTeco physical communication)
+// ADMS Handshake & Ingestion Endpoints (standard ZKTeco physical communication)
+app.get('/iclock/cdata', (req, res) => {
+  const sn = String(req.query.SN || req.query.sn || 'AEH2223460040');
+  const pushLogs = readJsonFile<any[]>(PUSH_LOGS_FILE, []);
+  pushLogs.unshift({
+    id: `plog-hs-${Date.now()}`,
+    dispositivo: 'ZKTeco G3 Sede Central',
+    serial: sn,
+    ip_origen: String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || ''),
+    employeeCode: '-',
+    employee_name: 'Handshake ADMS GET /iclock/cdata',
+    employee_dni: '-',
+    punch_time: '-',
+    reception_time: new Date().toISOString(),
+    event_type: 'HEARTBEAT',
+    payload_original: JSON.stringify(req.query),
+    estado: 'VALIDA',
+    error: null,
+  });
+  writeJsonFile(PUSH_LOGS_FILE, pushLogs.slice(0, 300));
+  res.setHeader('Content-Type', 'text/plain');
+  return res.send(
+    [
+      `GET OPTION FROM: ${sn}`,
+      'Stamp=0',
+      'OpStamp=0',
+      'PhotoStamp=0',
+      'ErrorDelay=30',
+      'Delay=10',
+      'TransTimes=00:00;14:05',
+      'TransInterval=1',
+      'TransFlag=1111000000',
+      'Realtime=1',
+      'Encrypt=0',
+      '',
+    ].join('\n')
+  );
+});
+
+app.get('/iclock/cdata.php', (req, res) => {
+  const sn = String(req.query.SN || req.query.sn || 'AEH2223460040');
+  res.setHeader('Content-Type', 'text/plain');
+  return res.send(`GET OPTION FROM: ${sn}\nStamp=0\nOpStamp=0\nErrorDelay=30\nDelay=10\nTransInterval=1\nRealtime=1\nEncrypt=0\n`);
+});
+
+app.get('/iclock/getrequest', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  return res.send('OK');
+});
+
 app.post('/iclock/cdata', async (req, res) => {
   try {
     const result = await processAdmsPayload(req.body, req.query, req.headers, 'ICLOCK_CDATA');
@@ -3934,7 +4037,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, 'dist');
+    const distPath = fs.existsSync(path.join(SERVER_DIR, 'index.html'))
+      ? SERVER_DIR
+      : path.join(BASE_PROJECT_DIR, 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
       app.get('*', (req, res) => {

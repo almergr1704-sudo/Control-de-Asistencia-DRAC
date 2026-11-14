@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "id": "plog-hs-1794679923475",
+    "dispositivo": "ZKTeco G3 Sede Central",
+    "serial": "AEH2223460040",
+    "ip_origen": "127.0.0.1",
+    "employeeCode": "-",
+    "employee_name": "Handshake ADMS GET /iclock/cdata",
+    "employee_dni": "-",
+    "punch_time": "-",
+    "reception_time": "2026-11-14T18:12:03.475Z",
+    "event_type": "HEARTBEAT",
+    "payload_original": "{\"SN\":\"AEH2223460040\",\"options\":\"all\"}",
+    "estado": "VALIDA",
+    "error": null
+  }
+]

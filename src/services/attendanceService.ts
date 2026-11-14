@@ -8,20 +8,74 @@ export const attendanceService = {
    * NUNCA retorna marcaciones simuladas ni datos sintéticos.
    */
   async getRawPunches(): Promise<MarcacionRaw[]> {
+    const mergedMap = new Map<string, MarcacionRaw>();
+
+    const normalizeKey = (p: any) => {
+      const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+      const ts = String(p.timestamp || '').trim().substring(0, 19);
+      const sn = String(p.device_sn || '').trim().toUpperCase();
+      return `${sn}_${code}_${ts}`;
+    };
+
+    const addRecords = (list: any[]) => {
+      for (const r of list) {
+        if (!r || !r.timestamp) continue;
+        const ts = String(r.timestamp).replace('T', ' ').substring(0, 19);
+        const code = String(r.employee_code || r.employee_dni || r.dni_trabajador || r.pin || '').trim();
+        if (!code || !ts) continue;
+        const normalized: MarcacionRaw = {
+          id: r.id || `zk_${r.device_sn || 'G3'}_${code}_${ts.replace(/[^0-9]/g, '')}`,
+          original_punch_id: r.original_punch_id,
+          device_id: r.device_id || 'dev-01',
+          device_sn: r.device_sn || 'AEH2223460040',
+          device_name: r.device_name || 'ZKTeco G3 Sede Central',
+          employee_id: r.employee_id,
+          employee_dni: r.employee_dni || r.dni_trabajador || code,
+          employee_name: r.employee_name || 'Pendiente de Identificación',
+          employee_code: code,
+          timestamp: ts,
+          punch_type: (r.punch_type || 'AUTO') as any,
+          punch_state: r.punch_state ?? 0,
+          verify_mode: (r.verify_mode === 'FACE' ? 'FACE' : r.verify_mode === 'PASSWORD' ? 'PASSWORD' : r.verify_mode === 'CARD' ? 'CARD' : 'FINGERPRINT') as any,
+          processed: r.processed !== undefined ? Boolean(r.processed) : false,
+          fecha: r.fecha || ts.split(' ')[0] || '',
+          hora: r.hora || ts.split(' ')[1] || '',
+          source: r.source || 'DIRECT_READ',
+          synced_at: r.synced_at || r.created_at,
+          validation_status: r.validation_status,
+          raw_payload: r.raw_payload || undefined,
+        };
+        const key = normalizeKey(normalized);
+        const existing = mergedMap.get(key);
+        if (!existing || (!existing.employee_id && normalized.employee_id)) {
+          mergedMap.set(key, normalized);
+        }
+      }
+    };
+
+    // 1. Marcaciones locales en Electron (si está en Desktop)
     try {
       if (typeof window !== 'undefined' && (window as any).electronAPI?.getRawPunches) {
         const desktopPunches = await (window as any).electronAPI.getRawPunches();
-        if (Array.isArray(desktopPunches) && desktopPunches.length > 0) return desktopPunches;
+        if (Array.isArray(desktopPunches) && desktopPunches.length > 0) {
+          addRecords(desktopPunches);
+        }
       }
+    } catch (_) {}
+
+    // 2. Backend local/institucional (/api/attendance/punches)
+    try {
       const res = await fetch(getApiUrl('/api/attendance/punches'));
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data) ? data : (data?.data || []);
-        if (list.length > 0) return list;
+        if (Array.isArray(list) && list.length > 0) {
+          addRecords(list);
+        }
       }
     } catch (_) {}
 
-    // Fallback Supabase: Recuperar marcaciones reales almacenadas en la base institucional
+    // 3. Central Supabase PostgreSQL (marcaciones_raw)
     try {
       const { supabase } = await import('../lib/supabaseClient');
       const { data: supaRows } = await supabase
@@ -31,28 +85,13 @@ export const attendanceService = {
         .limit(500);
 
       if (supaRows && supaRows.length > 0) {
-        return supaRows.map((r: any) => ({
-          id: r.id || `zk_${r.device_sn}_${r.employee_dni}_${r.timestamp}`,
-          device_id: r.device_id || 'dev-01',
-          device_sn: r.device_sn || 'AEH2223460040',
-          device_name: r.device_name || 'ZKTeco G3 Sede Central',
-          employee_dni: r.employee_dni || r.dni_trabajador,
-          employee_name: r.employee_name || 'Servidor DRAC',
-          employee_code: r.employee_code || r.employee_dni,
-          timestamp: r.timestamp,
-          punch_type: (r.punch_type || 'AUTO') as any,
-          punch_state: r.punch_state || 0,
-          verify_mode: (r.verify_mode === 'FACE' ? 'FACE' : (r.verify_mode === 'PASSWORD' ? 'PASSWORD' : 'FINGERPRINT')) as any,
-          processed: r.processed !== undefined ? Boolean(r.processed) : false,
-          fecha: r.fecha || (r.timestamp ? r.timestamp.split(' ')[0] : ''),
-          hora: r.hora || (r.timestamp ? r.timestamp.split(' ')[1] : ''),
-          raw_payload: r.raw_payload || undefined,
-        }));
+        addRecords(supaRows);
       }
     } catch (err) {
       console.warn('[attendanceService] Fallback Supabase marcaciones:', err);
     }
-    return [];
+
+    return Array.from(mergedMap.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   },
 
   /**
