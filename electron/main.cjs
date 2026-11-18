@@ -428,7 +428,7 @@ ipcMain.handle('zk:ping-device', async (_event, { ip, port = 7496, timeoutMs = 3
 // =========================================================================
 
 ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
-  const { host = '192.168.1.29', webPort = 89, dbPort = 7496, serial = 'AEH2223460040' } = params;
+  const { host = '192.168.1.29', webPort = 8088, dbPort = 7496, serial = 'AEH2223460040' } = params;
   log(`IPC biotime:check-status -> ${host} (Web: ${webPort}, DB: ${dbPort}, SN: ${serial})`);
   try {
     if (typeof zktecoDriver.checkBioTimeService === 'function') {
@@ -472,7 +472,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
 
   const {
     host = '192.168.1.29',
-    webPort = 89,
+    webPort: rawWebPort = 8088,
     dbPort = 7496,
     dbName = 'biotime',
     dbUser = 'postgres',
@@ -484,6 +484,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     deviceIp = fallbackIp,
     devicePort = 7496,
   } = params;
+  const webPort = Number(rawWebPort) === 89 ? 8088 : (Number(rawWebPort) || 8088);
   log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);
   try {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
@@ -519,6 +520,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     if (!syncResult.success) {
       return {
         success: false,
+        needsWebCredentials: !!syncResult.needsWebCredentials,
         message: syncResult.details || 'No se pudieron obtener marcaciones desde BioTime.',
         serial,
         deviceId,
@@ -910,7 +912,7 @@ ipcMain.handle('device:create', async (_event, payload = {}) => {
       operator_pc: '192.168.1.33',
       push_enabled: true,
       push_server_address: '192.168.1.29',
-      push_server_port: 89,
+      push_server_port: 8088,
       push_endpoint: '/iclock/cdata',
       push_protocol: 'HTTP',
       push_interval: 5,

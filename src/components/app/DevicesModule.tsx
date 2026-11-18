@@ -584,7 +584,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       operator_pc: '192.168.1.33',
       push_enabled: true,
       push_server_address: '192.168.1.29',
-      push_server_port: 89,
+      push_server_port: 8088,
       push_endpoint: '/iclock/cdata',
       push_protocol: 'HTTP',
       push_interval: 5,
@@ -866,17 +866,31 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   const [isBioTimeBusy, setIsBioTimeBusy] = useState(false);
 
-  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:89 / PostgreSQL :7496)
+  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:8088 / PostgreSQL :7496)
   const handleBioTimeSync = async () => {
     setIsBioTimeBusy(true);
     setSyncStatusMsg(null);
+    let savedBt: any = {};
+    try {
+      savedBt = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}') || {};
+    } catch (_) {}
+    const resolvedHost = savedBt.host || selectedDevice?.biotime_config?.db_host || '192.168.1.29';
+    const rawWebPort = savedBt.webPort || selectedDevice?.biotime_config?.web_port;
+    const resolvedWebPort = !rawWebPort || Number(rawWebPort) === 89 ? 8088 : Number(rawWebPort);
+    const resolvedDbPort = Number(savedBt.dbPort || selectedDevice?.biotime_config?.db_port || 7496);
+
     const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
     if (electronAPI?.isDesktop && typeof electronAPI.syncBioTimePunches === 'function') {
       try {
         const res = await electronAPI.syncBioTimePunches({
-          host: selectedDevice?.biotime_config?.db_host || '192.168.1.29',
-          webPort: selectedDevice?.biotime_config?.web_port || 89,
-          dbPort: selectedDevice?.biotime_config?.db_port || 7496,
+          host: resolvedHost,
+          webPort: resolvedWebPort,
+          dbPort: resolvedDbPort,
+          dbName: savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
+          dbUser: savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
+          password: savedBt.password || undefined,
+          webUser: savedBt.webUser || undefined,
+          webPassword: savedBt.webPassword || undefined,
           serial: selectedDevice?.serial_number || 'AEH2223460040',
           deviceIp: selectedDevice?.ip_address || devices[0]?.ip_address || '',
           devicePort: selectedDevice?.port || 7496,
@@ -898,9 +912,14 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            host: selectedDevice?.biotime_config?.db_host || '192.168.1.29',
-            port: selectedDevice?.biotime_config?.db_port || 7496,
-            dbName: selectedDevice?.biotime_config?.db_name || 'biotime',
+            host: resolvedHost,
+            webPort: resolvedWebPort,
+            port: resolvedDbPort,
+            dbName: savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
+            user: savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
+            password: savedBt.password || undefined,
+            webUser: savedBt.webUser || undefined,
+            webPassword: savedBt.webPassword || undefined,
             serial: selectedDevice?.serial_number || devices[0]?.serial_number || 'AEH2223460040',
           }),
         });
@@ -1206,7 +1225,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
                   <div>IP Servidor: <strong className="text-slate-200">192.168.1.29</strong></div>
-                  <div>Servicio Web HTTP: <strong className="text-slate-200">Puerto 89</strong></div>
+                  <div>Servicio Web HTTP (BioTime PRO): <strong className="text-slate-200">Puerto 8088</strong></div>
                   <div>Endpoint ADMS: <strong className="text-indigo-300">/iclock/cdata</strong></div>
                   <div>PostgreSQL BioTime: <strong className="text-emerald-300">Puerto 7496</strong></div>
                   <div className="text-[10px] text-amber-400/90 pt-1 border-t border-slate-800">
@@ -1977,8 +1996,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">Servidor BioTime</span>
                         <div className="font-mono text-slate-300 text-[11px]">
-                          <div>IP: 192.168.1.29:89</div>
-                          <div>DB: Puerto 7496</div>
+                          <div>Web: {selectedDevice.biotime_config?.db_host || '192.168.1.29'}:{selectedDevice.biotime_config?.web_port === 89 ? 8088 : (selectedDevice.biotime_config?.web_port || 8088)}</div>
+                          <div>DB: Puerto {selectedDevice.biotime_config?.db_port || 7496}</div>
                         </div>
                       </div>
 
@@ -2372,7 +2391,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                         <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
                           <span className="font-bold text-slate-200 block text-[11px]">3. Sincronizar Vía BioTime</span>
                           <p className="text-[10px] text-slate-400">
-                            Si el G3 tiene activo el Servidor Cloud (ADMS), no responde al socket SDK pero envía marcaciones al servidor BioTime (192.168.1.29:89).
+                            Si el G3 tiene activo el Servidor Cloud (ADMS), envía marcaciones a BioTime PRO (192.168.1.29:8088).
                           </p>
                           <button
                             type="button"

@@ -3,6 +3,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import net from 'net';
+import http from 'http';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import ZKLib from 'node-zklib';
@@ -597,7 +598,7 @@ app.post('/api/zkteco/devices', (req, res) => {
     operator_pc: '192.168.1.33',
     push_enabled: true,
     push_server_address: '192.168.1.29',
-    push_server_port: 89,
+    push_server_port: 8088,
     push_endpoint: '/iclock/cdata',
     push_protocol: 'HTTP',
     push_interval: 5,
@@ -2350,7 +2351,287 @@ async function integrateRealPunchesIntoSystem(
   };
 }
 
-// Inspección read-only de esquema BioTime vía information_schema + verificación HTTP 89
+// Cliente HTTP de SOLO LECTURA para BioTime PRO (puerto 8088)
+// Soporta JWT (/jwt-api-token-auth/), DRF Token (/api-token-auth/) y Sesión Web Django (/login/).
+async function fetchBioTimeHttpApiServer(options: {
+  host?: string;
+  webPort?: number;
+  serial?: string;
+  webUser?: string;
+  webPassword?: string;
+  inspectOnly?: boolean;
+}): Promise<{
+  success: boolean;
+  needsWebCredentials?: boolean;
+  error?: string;
+  endpoint?: string;
+  totalCount?: number;
+  deviceCount?: number;
+  punches: any[];
+  message: string;
+}> {
+  const cleanHost = String(options?.host || '192.168.1.29').trim();
+  const port = Number(options?.webPort) === 89 ? 8088 : (Number(options?.webPort) || 8088);
+  const cleanSerial = String(options?.serial || '').trim().toUpperCase();
+  const webUser = String(options?.webUser || '').trim();
+  const webPassword = String(options?.webPassword || '').trim();
+  const inspectOnly = !!options?.inspectOnly;
+
+  const requestHttp = (
+    urlPath: string,
+    method: string = 'GET',
+    bodyStr: string = '',
+    extraHeaders: Record<string, string> = {}
+  ) =>
+    new Promise<{ status: number; headers: http.IncomingHttpHeaders; json: any; raw: string }>((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: cleanHost,
+          port,
+          path: urlPath,
+          method,
+          headers: {
+            Accept: 'application/json, text/html;q=0.9',
+            ...(bodyStr ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) } : {}),
+            ...extraHeaders,
+          },
+          timeout: 6000,
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (c) => {
+            data += c;
+          });
+          res.on('end', () => {
+            let json: any = null;
+            try {
+              json = JSON.parse(data);
+            } catch (_) {}
+            resolve({
+              status: res.statusCode || 0,
+              headers: res.headers || {},
+              json,
+              raw: data,
+            });
+          });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Timeout conectando a BioTime PRO HTTP ${cleanHost}:${port}`));
+      });
+      if (bodyStr) req.write(bodyStr);
+      req.end();
+    });
+
+  if (!webUser || !webPassword) {
+    return {
+      success: false,
+      needsWebCredentials: true,
+      error: 'MISSING_WEB_CREDENTIALS',
+      message: `BioTime PRO está activo en http://${cleanHost}:${port}. Ingrese su usuario y contraseña de BioTime PRO para leer las marcaciones.`,
+      punches: [],
+    };
+  }
+
+  let authHeaders: Record<string, string> | null = null;
+
+  // 1. JWT oficial BioTime PRO
+  try {
+    const jwtRes = await requestHttp(
+      '/jwt-api-token-auth/',
+      'POST',
+      JSON.stringify({ username: webUser, password: webPassword }),
+      { 'Content-Type': 'application/json' }
+    );
+    if (jwtRes?.json?.token) {
+      authHeaders = { Authorization: `JWT ${jwtRes.json.token}` };
+    }
+  } catch (_) {}
+
+  // 2. DRF Token Auth
+  if (!authHeaders) {
+    try {
+      const tokRes = await requestHttp(
+        '/api-token-auth/',
+        'POST',
+        JSON.stringify({ username: webUser, password: webPassword }),
+        { 'Content-Type': 'application/json' }
+      );
+      if (tokRes?.json?.token) {
+        authHeaders = { Authorization: `Token ${tokRes.json.token}` };
+      }
+    } catch (_) {}
+  }
+
+  // 3. Sesión Web Django (/login/) por cookie + CSRF
+  if (!authHeaders) {
+    try {
+      const loginPage = await requestHttp('/login/', 'GET');
+      const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
+      const cookieMap = new Map<string, string>();
+      const absorbCookies = (arr: string[]) => {
+        for (const c of arr || []) {
+          const kv = String(c).split(';')[0];
+          const eq = kv.indexOf('=');
+          if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
+        }
+      };
+      absorbCookies(setCookies);
+
+      let csrfToken = cookieMap.get('csrftoken') || '';
+      const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
+      if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
+
+      const formParams = new URLSearchParams({
+        username: webUser,
+        password: webPassword,
+      });
+      if (csrfToken) formParams.set('csrfmiddlewaretoken', csrfToken);
+
+      const cookieHeader = Array.from(cookieMap.entries())
+        .map(([k, v]) => `${k}=${v}`)
+        .join('; ');
+
+      const postHeaders: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: `http://${cleanHost}:${port}/login/`,
+        Origin: `http://${cleanHost}:${port}`,
+      };
+      if (cookieHeader) postHeaders.Cookie = cookieHeader;
+      if (csrfToken) postHeaders['X-CSRFToken'] = csrfToken;
+
+      const postLogin = await requestHttp('/login/?next=/', 'POST', formParams.toString(), postHeaders);
+      absorbCookies(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
+
+      if (cookieMap.has('sessionid') || postLogin.status === 302) {
+        const finalCookie = Array.from(cookieMap.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join('; ');
+        authHeaders = { Cookie: finalCookie };
+        const finalCsrf = cookieMap.get('csrftoken');
+        if (finalCsrf) authHeaders['X-CSRFToken'] = finalCsrf;
+      }
+    } catch (_) {}
+  }
+
+  if (!authHeaders) {
+    return {
+      success: false,
+      needsWebCredentials: true,
+      error: 'BIOTIME_AUTH_FAILED',
+      message: `No se pudo iniciar sesión en BioTime PRO (http://${cleanHost}:${port}) con el usuario "${webUser}". Verifique el usuario y contraseña.`,
+      punches: [],
+    };
+  }
+
+  const pageSize = inspectOnly ? 20 : 200;
+  const maxPages = inspectOnly ? 1 : 10;
+  const collectedRows: any[] = [];
+  let totalCount = 0;
+
+  const endpoints = ['/iclock/api/transactions/', '/att/api/transactionReport/'];
+  let activeEndpoint = endpoints[0];
+
+  for (const ep of endpoints) {
+    const snParam = cleanSerial && ep.includes('iclock') ? `&terminal_sn=${encodeURIComponent(cleanSerial)}` : '';
+    const testRes = await requestHttp(`${ep}?page=1&page_size=${pageSize}${snParam}`, 'GET', '', authHeaders);
+    if (testRes.status === 200 && testRes.json && Array.isArray(testRes.json.data)) {
+      activeEndpoint = ep;
+      totalCount = Number(testRes.json.count || testRes.json.data.length || 0);
+      collectedRows.push(...testRes.json.data);
+
+      if (collectedRows.length === 0 && snParam) {
+        const broadRes = await requestHttp(`${ep}?page=1&page_size=${pageSize}`, 'GET', '', authHeaders);
+        if (broadRes.status === 200 && broadRes.json && Array.isArray(broadRes.json.data)) {
+          totalCount = Number(broadRes.json.count || broadRes.json.data.length || 0);
+          collectedRows.push(...broadRes.json.data);
+        }
+      }
+
+      if (!inspectOnly) {
+        let nextPage = 2;
+        while (nextPage <= maxPages && testRes.json.next && collectedRows.length < totalCount) {
+          const pRes = await requestHttp(`${ep}?page=${nextPage}&page_size=${pageSize}${snParam}`, 'GET', '', authHeaders);
+          const rows = Array.isArray(pRes?.json?.data) ? pRes.json.data : [];
+          if (rows.length === 0) break;
+          collectedRows.push(...rows);
+          if (!pRes.json.next) break;
+          nextPage++;
+        }
+      }
+      break;
+    }
+  }
+
+  const filteredRows = cleanSerial
+    ? collectedRows.filter((r) => !r.terminal_sn || String(r.terminal_sn).trim().toUpperCase() === cleanSerial)
+    : collectedRows;
+  const effectiveRows = filteredRows.length > 0 ? filteredRows : collectedRows;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatTs = (val: any): string => {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+      return s.replace('T', ' ').substring(0, 19);
+    }
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    return s.replace('T', ' ').substring(0, 19);
+  };
+
+  const syncedAt = new Date().toISOString();
+  const punches = effectiveRows
+    .map((r, idx) => {
+      const code = String(r.emp_code || r.emp || r.pin || '').trim();
+      const ts = formatTs(r.punch_time || r.check_time || r.att_time);
+      if (!code || !ts || ts.length < 16) return null;
+      const snVal = String(r.terminal_sn || cleanSerial || 'AEH2223460040').trim().toUpperCase();
+      const pState = Number(r.punch_state ?? 0);
+      const verifyDisp = String(r.verify_type_display || r.verify_type || '').toUpperCase();
+      const verifyMode = verifyDisp.includes('FACE') || verifyDisp === '15'
+        ? 'FACE'
+        : verifyDisp.includes('PASS') || verifyDisp === '2'
+        ? 'PASSWORD'
+        : verifyDisp.includes('CARD') || verifyDisp === '3'
+        ? 'CARD'
+        : 'FINGERPRINT';
+      return {
+        id: `biotime_${snVal}_${code}_${ts.replace(/[^0-9]/g, '')}`,
+        original_punch_id: String(r.id || `bt_api_${idx}`),
+        device_sn: snVal,
+        device_ip: cleanHost,
+        employee_dni: code,
+        employee_code: code,
+        fecha: ts.split(' ')[0] || '',
+        hora: ts.split(' ')[1] || '',
+        timestamp: ts,
+        verify_mode: verifyMode,
+        punch_state: pState,
+        source: 'BIOTIME_API',
+        synced_at: syncedAt,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    success: true,
+    endpoint: activeEndpoint,
+    totalCount: totalCount || effectiveRows.length,
+    deviceCount: punches.length,
+    punches,
+    message:
+      punches.length > 0
+        ? `${punches.length} marcaciones reales recuperadas vía BioTime PRO HTTP (${cleanHost}:${port}).`
+        : `Conectado a BioTime PRO (${cleanHost}:${port}), sin marcaciones encontradas para ${cleanSerial || 'el reloj'}.`,
+  };
+}
+
+// Inspección read-only de esquema BioTime vía information_schema + verificación HTTP 8088
 async function inspectBioTimeDb(options?: {
   host?: string;
   webPort?: number;
@@ -2358,6 +2639,8 @@ async function inspectBioTimeDb(options?: {
   dbName?: string;
   user?: string;
   password?: string;
+  webUser?: string;
+  webPassword?: string;
   serial?: string;
 }): Promise<{
   success: boolean;
@@ -2367,6 +2650,7 @@ async function inspectBioTimeDb(options?: {
   dbName: string;
   webReachable: boolean;
   dbReachable: boolean;
+  needsWebCredentials?: boolean;
   tablesFound: string[];
   attendanceTable: string | null;
   attendanceColumns: string[];
@@ -2380,7 +2664,8 @@ async function inspectBioTimeDb(options?: {
 }> {
   const start = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
-  const webPort = Number(options?.webPort) || 89;
+  const rawWebPort = Number(options?.webPort);
+  const webPort = rawWebPort === 89 ? 8088 : (rawWebPort || 8088);
   const dbPort = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
@@ -2412,7 +2697,7 @@ async function inspectBioTimeDb(options?: {
       s.connect(p, h);
     });
 
-  const webProbe = await probePort(host, webPort, 1500);
+  const webProbe = await probePort(host, webPort, 1800);
   const dbProbe = await probePort(host, dbPort, 1800);
 
   const report = {
@@ -2423,6 +2708,7 @@ async function inspectBioTimeDb(options?: {
     dbName,
     webReachable: webProbe.ok,
     dbReachable: dbProbe.ok,
+    needsWebCredentials: false,
     tablesFound: [] as string[],
     attendanceTable: null as string | null,
     attendanceColumns: [] as string[],
@@ -2435,9 +2721,47 @@ async function inspectBioTimeDb(options?: {
     latency: Date.now() - start,
   };
 
+  // Si PostgreSQL :7496 no responde en red pero BioTime PRO HTTP :8088 sí responde, inspeccionar por HTTP API
+  if (!dbProbe.ok && webProbe.ok) {
+    if (!options?.webUser || !options?.webPassword) {
+      report.needsWebCredentials = true;
+      report.error = 'NEEDS_WEB_CREDENTIALS';
+      report.message = `BioTime PRO HTTP en ${host}:${webPort} está ACTIVO (PostgreSQL :${dbPort} es solo local). Ingrese Usuario Web y Contraseña de BioTime PRO para inspeccionar y extraer marcaciones.`;
+      report.latency = Date.now() - start;
+      return report;
+    }
+
+    const apiCheck = await fetchBioTimeHttpApiServer({
+      host,
+      webPort,
+      serial,
+      webUser: options.webUser,
+      webPassword: options.webPassword,
+      inspectOnly: true,
+    });
+
+    if (apiCheck.success) {
+      report.success = true;
+      report.attendanceTable = `API HTTP BioTime PRO (${apiCheck.endpoint})`;
+      report.totalTransactions = apiCheck.totalCount || 0;
+      report.deviceTransactions = apiCheck.deviceCount || 0;
+      report.receivesClockPunches = report.deviceTransactions > 0 || report.totalTransactions > 0;
+      report.validSource = report.receivesClockPunches;
+      report.message = apiCheck.message;
+      report.latency = Date.now() - start;
+      return report;
+    }
+
+    report.needsWebCredentials = !!apiCheck.needsWebCredentials;
+    report.error = apiCheck.error || 'BIOTIME_API_ERROR';
+    report.message = apiCheck.message;
+    report.latency = Date.now() - start;
+    return report;
+  }
+
   if (!dbProbe.ok) {
     report.error = dbProbe.code || 'DB_UNREACHABLE';
-    report.message = `PostgreSQL BioTime en ${host}:${dbPort} inaccesible desde este servidor (${dbProbe.code || dbProbe.message || 'Sin conexión'}).`;
+    report.message = `BioTime en ${host} (HTTP :${webPort} / PostgreSQL :${dbPort}) inaccesible desde este servidor (${dbProbe.code || dbProbe.message || 'Sin conexión'}).`;
     report.latency = Date.now() - start;
     return report;
   }
@@ -2519,32 +2843,81 @@ async function inspectBioTimeDb(options?: {
 
 async function syncPunchesFromBioTimeDb(options?: {
   host?: string;
+  webPort?: number;
   port?: number;
   dbName?: string;
   user?: string;
   password?: string;
+  webUser?: string;
+  webPassword?: string;
   serial?: string;
-}): Promise<{ success: boolean; message: string; punches: any[]; latency: number; inspection?: any }> {
+}): Promise<{
+  success: boolean;
+  needsWebCredentials?: boolean;
+  source?: string;
+  message: string;
+  punches: any[];
+  latency: number;
+  inspection?: any;
+}> {
   const startTime = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
+  const rawWebPort = Number(options?.webPort);
+  const webPort = rawWebPort === 89 ? 8088 : (rawWebPort || 8088);
   const port = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
   const serial = String(options?.serial || '').trim().toUpperCase();
 
-  // 1. Inspección obligatoria de solo lectura antes de consultar marcaciones
+  // 1. Inspección obligatoria de solo lectura (HTTP 8088 y PostgreSQL 7496)
   const inspection = await inspectBioTimeDb({
     host,
+    webPort,
     port,
     dbName,
     user,
     password: options?.password,
+    webUser: options?.webUser,
+    webPassword: options?.webPassword,
     serial,
   });
+
+  // 2. Si HTTP BioTime PRO (:8088) está disponible y PG no está accesible o se enviaron credenciales web
+  if (inspection.webReachable && (!inspection.dbReachable || (options?.webUser && options?.webPassword))) {
+    const apiRes = await fetchBioTimeHttpApiServer({
+      host,
+      webPort,
+      serial,
+      webUser: options?.webUser,
+      webPassword: options?.webPassword,
+      inspectOnly: false,
+    });
+    if (apiRes.success) {
+      return {
+        success: true,
+        source: 'BIOTIME_API',
+        message: apiRes.message,
+        punches: apiRes.punches || [],
+        latency: Date.now() - startTime,
+        inspection,
+      };
+    }
+    return {
+      success: false,
+      needsWebCredentials: !!apiRes.needsWebCredentials,
+      source: 'BIOTIME_API',
+      message: apiRes.message,
+      punches: [],
+      latency: Date.now() - startTime,
+      inspection,
+    };
+  }
 
   if (!inspection.success || !inspection.attendanceTable) {
     return {
       success: false,
+      needsWebCredentials: !!inspection.needsWebCredentials,
+      source: 'BIOTIME_DB',
       message: inspection.message,
       punches: [],
       latency: Date.now() - startTime,
@@ -2555,6 +2928,7 @@ async function syncPunchesFromBioTimeDb(options?: {
   if (!inspection.receivesClockPunches) {
     return {
       success: false,
+      source: 'BIOTIME_DB',
       message: `BioTime no contiene marcaciones del reloj (${serial || 'G3'}). No es una fuente válida hasta que ADMS reciba registros reales.`,
       punches: [],
       latency: Date.now() - startTime,
@@ -2644,6 +3018,7 @@ async function syncPunchesFromBioTimeDb(options?: {
 
         return {
           success: true,
+          source: 'BIOTIME_DB',
           message: `Conexión exitosa a BioTime (${host}:${port}/${dbName}/${table}). Se recuperaron ${recovered.length} marcaciones reales.`,
           punches: recovered,
           latency: Date.now() - startTime,
@@ -2658,6 +3033,7 @@ async function syncPunchesFromBioTimeDb(options?: {
 
   return {
     success: false,
+    source: 'BIOTIME_DB',
     message: `No se pudo leer marcaciones de BioTime (${lastError || 'Error SQL'}).`,
     punches: [],
     latency: Date.now() - startTime,
@@ -3029,60 +3405,72 @@ app.post('/api/zkteco/upload-attlog', async (req, res) => {
   });
 });
 
-// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (information_schema) + HTTP 89
+// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (:7496) + HTTP PRO (:8088)
 app.post('/api/zkteco/biotime/inspect', async (req, res) => {
-  const { host, webPort, port, dbName, user, password, serial } = req.body || {};
+  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
   const devices = await getLatestDeviceConfig();
   const dev = devices[0] || {};
+  const rawWp = Number(webPort || dev?.biotime_config?.web_port);
 
   const report = await inspectBioTimeDb({
     host: String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim(),
-    webPort: Number(webPort || dev?.biotime_config?.web_port || 89),
+    webPort: rawWp === 89 ? 8088 : (rawWp || 8088),
     port: Number(port || dev?.biotime_config?.db_port || 7496),
     dbName: String(dbName || dev?.biotime_config?.db_name || 'biotime').trim(),
     user: String(user || dev?.biotime_config?.db_user || 'postgres').trim(),
     password: password ? String(password) : undefined,
+    webUser: webUser ? String(webUser) : undefined,
+    webPassword: webPassword ? String(webPassword) : undefined,
     serial: String(serial || dev?.serial_number || '').trim(),
   });
 
   return res.status(report.success ? 200 : 503).json(report);
 });
 
-// POST /api/zkteco/biotime/sync - Sincronización desde BioTime solo si recibe marcaciones reales
+// POST /api/zkteco/biotime/sync - Sincronización desde BioTime PRO (:8088 HTTP API o :7496 PostgreSQL)
 app.post('/api/zkteco/biotime/sync', async (req, res) => {
-  const { host, port, dbName, user, password, serial } = req.body || {};
+  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
   const devices = await getLatestDeviceConfig();
   const dev = devices[0] || {};
 
   const targetHost = String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim();
+  const rawWp = Number(webPort || dev?.biotime_config?.web_port);
+  const targetWebPort = rawWp === 89 ? 8088 : (rawWp || 8088);
   const targetPort = Number(port || dev?.biotime_config?.db_port || 7496);
   const targetDb = String(dbName || dev?.biotime_config?.db_name || 'biotime').trim();
   const targetUser = String(user || dev?.biotime_config?.db_user || 'postgres').trim();
   const targetPass = password !== undefined ? String(password).trim() : undefined;
+  const targetWebUser = webUser !== undefined ? String(webUser).trim() : undefined;
+  const targetWebPass = webPassword !== undefined ? String(webPassword).trim() : undefined;
   const targetSerial = String(serial || dev?.serial_number || 'AEH2223460040').trim();
 
   const result = await syncPunchesFromBioTimeDb({
     host: targetHost,
+    webPort: targetWebPort,
     port: targetPort,
     dbName: targetDb,
     user: targetUser,
     password: targetPass,
+    webUser: targetWebUser,
+    webPassword: targetWebPass,
     serial: targetSerial,
   });
 
   if (!result.success) {
     return res.status(503).json({
       success: false,
+      needsWebCredentials: !!result.needsWebCredentials,
       status_code: 'OFFLINE',
       message: result.message,
       inspection: result.inspection,
       host: targetHost,
+      webPort: targetWebPort,
       port: targetPort,
       dbName: targetDb,
     });
   }
 
-  const integration = await integrateRealPunchesIntoSystem(result.punches, 'BIOTIME_DB', {
+  const integration = await integrateRealPunchesIntoSystem(result.punches, result.source || 'BIOTIME_API', {
     id: dev?.id,
     serial: targetSerial,
     name: dev?.name || 'ZKTeco G3 (vía BioTime)',
@@ -3091,6 +3479,7 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
 
   return res.json({
     success: integration.dbSaved || integration.newlyAdded === 0,
+    source: result.source || 'BIOTIME_API',
     status_code: !integration.dbSaved && integration.newlyAdded > 0
       ? 'DB_ERROR'
       : integration.newlyAdded > 0
@@ -3115,14 +3504,17 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
 
 // POST /api/zkteco/biotime/test - Probar enlace e inspección a BioTime
 app.post('/api/zkteco/biotime/test', async (req, res) => {
-  const { host, webPort, port, dbName, user, password, serial } = req.body || {};
+  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
+  const rawWp = Number(webPort);
   const report = await inspectBioTimeDb({
     host: String(host || '192.168.1.29').trim(),
-    webPort: Number(webPort || 89),
+    webPort: rawWp === 89 ? 8088 : (rawWp || 8088),
     port: Number(port || 7496),
     dbName: String(dbName || 'biotime').trim(),
     user: String(user || 'postgres').trim(),
     password: password ? String(password) : undefined,
+    webUser: webUser ? String(webUser) : undefined,
+    webPassword: webPassword ? String(webPassword) : undefined,
     serial: serial ? String(serial) : undefined,
   });
 

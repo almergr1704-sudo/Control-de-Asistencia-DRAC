@@ -127,14 +127,56 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const [diagRunning, setDiagRunning] = useState(false);
   const [diagReport, setDiagReport] = useState<any | null>(null);
   const [showBioTimeModal, setShowBioTimeModal] = useState(false);
-  const [btHost, setBtHost] = useState('192.168.1.29');
-  const [btWebPort, setBtWebPort] = useState(89);
-  const [btDbPort, setBtDbPort] = useState(7496);
-  const [btDbName, setBtDbName] = useState('biotime');
-  const [btDbUser, setBtDbUser] = useState('postgres');
-  const [btDbPassword, setBtDbPassword] = useState('');
-  const [btWebUser, setBtWebUser] = useState('');
-  const [btWebPassword, setBtWebPassword] = useState('');
+  const [btHost, setBtHost] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.host || '192.168.1.29';
+    } catch { return '192.168.1.29'; }
+  });
+  const [btWebPort, setBtWebPort] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      const wp = Number(s.webPort);
+      return wp === 89 ? 8088 : (wp || 8088);
+    } catch { return 8088; }
+  });
+  const [btDbPort, setBtDbPort] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return Number(s.dbPort) || 7496;
+    } catch { return 7496; }
+  });
+  const [btDbName, setBtDbName] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.dbName || 'biotime';
+    } catch { return 'biotime'; }
+  });
+  const [btDbUser, setBtDbUser] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.dbUser || 'postgres';
+    } catch { return 'postgres'; }
+  });
+  const [btDbPassword, setBtDbPassword] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.password || '';
+    } catch { return ''; }
+  });
+  const [btWebUser, setBtWebUser] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.webUser || '';
+    } catch { return ''; }
+  });
+  const [btWebPassword, setBtWebPassword] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.webPassword || '';
+    } catch { return ''; }
+  });
+  const [rememberBtCreds, setRememberBtCreds] = useState(true);
   const [btInspecting, setBtInspecting] = useState(false);
   const [btInspectReport, setBtInspectReport] = useState<any | null>(null);
 
@@ -582,20 +624,53 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     }
   };
 
-  // Inspeccionar BioTime (Solo Lectura: PostgreSQL information_schema + HTTP 89)
+  // Inspeccionar BioTime (Solo Lectura: HTTP BioTime PRO :8088 + PostgreSQL information_schema :7496)
+  const saveBioTimeSettingsLocal = (cfg: {
+    host: string;
+    webPort: number;
+    dbPort: number;
+    dbName: string;
+    dbUser: string;
+    password?: string;
+    webUser?: string;
+    webPassword?: string;
+  }) => {
+    try {
+      if (rememberBtCreds) {
+        localStorage.setItem('drac_biotime_settings', JSON.stringify(cfg));
+      } else {
+        localStorage.removeItem('drac_biotime_settings');
+      }
+    } catch (_) {}
+  };
+
   const handleInspectBioTime = async () => {
     setBtInspecting(true);
     setBtInspectReport(null);
+    const resolvedWp = Number(btWebPort) === 89 ? 8088 : (Number(btWebPort) || 8088);
     try {
+      saveBioTimeSettingsLocal({
+        host: btHost,
+        webPort: resolvedWp,
+        dbPort: btDbPort,
+        dbName: btDbName,
+        dbUser: btDbUser,
+        password: btDbPassword || undefined,
+        webUser: btWebUser || undefined,
+        webPassword: btWebPassword || undefined,
+      });
+
       const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       if (electronAPI && typeof electronAPI.inspectBioTimeDatabase === 'function') {
         const rep = await electronAPI.inspectBioTimeDatabase({
           host: btHost,
-          webPort: btWebPort,
+          webPort: resolvedWp,
           dbPort: btDbPort,
           dbName: btDbName,
           dbUser: btDbUser,
           password: btDbPassword || undefined,
+          webUser: btWebUser || undefined,
+          webPassword: btWebPassword || undefined,
           serial: activeDevice?.serial_number || '',
         });
         setBtInspectReport(rep);
@@ -605,11 +680,13 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             host: btHost,
-            webPort: btWebPort,
+            webPort: resolvedWp,
             port: btDbPort,
             dbName: btDbName,
             user: btDbUser,
             password: btDbPassword || undefined,
+            webUser: btWebUser || undefined,
+            webPassword: btWebPassword || undefined,
             serial: activeDevice?.serial_number || '',
           }),
         });
@@ -639,12 +716,15 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     setBioTimeSyncing(true);
     setActionBanner(null);
     const bioCfg = activeDevice?.biotime_config;
+    const rawWp = Number(customCreds?.webPort || btWebPort || bioCfg?.web_port);
+    const normalizedWebPort = !rawWp || rawWp === 89 ? 8088 : rawWp;
+
     const params = {
-      host: customCreds?.host || bioCfg?.db_host || btHost || '192.168.1.29',
-      webPort: customCreds?.webPort || bioCfg?.web_port || btWebPort || 89,
-      dbPort: customCreds?.dbPort || bioCfg?.db_port || btDbPort || 7496,
-      dbName: customCreds?.dbName || bioCfg?.db_name || btDbName || 'biotime',
-      dbUser: customCreds?.dbUser || bioCfg?.db_user || btDbUser || 'postgres',
+      host: customCreds?.host || btHost || bioCfg?.db_host || '192.168.1.29',
+      webPort: normalizedWebPort,
+      dbPort: customCreds?.dbPort || btDbPort || bioCfg?.db_port || 7496,
+      dbName: customCreds?.dbName || btDbName || bioCfg?.db_name || 'biotime',
+      dbUser: customCreds?.dbUser || btDbUser || bioCfg?.db_user || 'postgres',
       password: customCreds?.password ?? (btDbPassword || undefined),
       webUser: customCreds?.webUser ?? (btWebUser || undefined),
       webPassword: customCreds?.webPassword ?? (btWebPassword || undefined),
@@ -654,16 +734,35 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       devicePort: activeDevice?.port || 7496,
     };
 
+    saveBioTimeSettingsLocal({
+      host: params.host,
+      webPort: params.webPort,
+      dbPort: params.dbPort,
+      dbName: params.dbName,
+      dbUser: params.dbUser,
+      password: params.password,
+      webUser: params.webUser,
+      webPassword: params.webPassword,
+    });
+
     try {
       const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
       if (electronAPI && typeof electronAPI.syncBioTimePunches === 'function') {
         const btRes = await electronAPI.syncBioTimePunches(params);
         if (!btRes.success) {
+          if (btRes.needsWebCredentials) {
+            setBtInspectReport({
+              success: false,
+              needsWebCredentials: true,
+              message: btRes.message || `BioTime PRO en ${params.host}:${params.webPort} requiere Usuario Web y Contraseña para extraer marcaciones.`,
+            });
+            setShowBioTimeModal(true);
+          }
           setActionBanner({
             success: false,
             statusCode: 'OFFLINE',
-            title: 'BioTime no disponible o sin marcaciones',
-            message: btRes.message || 'No se pudieron obtener marcaciones desde BioTime. Configure credenciales en "Configurar BioTime" si PostgreSQL o HTTP 89 requieren clave.',
+            title: btRes.needsWebCredentials ? 'Ingrese credenciales de BioTime PRO' : 'BioTime no disponible o sin marcaciones',
+            message: btRes.message || 'No se pudieron obtener marcaciones desde BioTime. Configure Usuario Web y Contraseña en "BioTime" (:8088).',
           });
           return;
         }
@@ -687,7 +786,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               punches,
-              source: btRes.source || 'BIOTIME_DB',
+              source: btRes.source || 'BIOTIME_API',
               device: {
                 id: activeDevice?.id || 'dev-01',
                 serial: params.serial,
@@ -712,7 +811,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           }
         } catch (_) {}
 
-        const directSave = await persistPunchesDirectlyToSupabase(punches, btRes.source || 'BIOTIME_DB', {
+        const directSave = await persistPunchesDirectlyToSupabase(punches, btRes.source || 'BIOTIME_API', {
           id: activeDevice?.id || 'dev-01',
           serial: params.serial,
           name: activeDevice?.name || 'ZKTeco G3 (vía BioTime)',
@@ -721,7 +820,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         setActionBanner({
           success: directSave.ok,
           statusCode: directSave.ok ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
-          title: directSave.ok ? 'Marcaciones recibidas desde BioTime' : 'Error de almacenamiento en Supabase',
+          title: directSave.ok ? 'Marcaciones recibidas desde BioTime PRO' : 'Error de almacenamiento en Supabase',
           message: directSave.ok
             ? `Se extrajeron ${punches.length} marcaciones reales desde ${btRes.source} y se sincronizaron en Supabase (${directSave.unidentified} pendientes).`
             : `Leídas desde BioTime (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
@@ -736,10 +835,13 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           host: params.host,
+          webPort: params.webPort,
           port: params.dbPort,
           dbName: params.dbName,
           user: params.dbUser,
           password: params.password,
+          webUser: params.webUser,
+          webPassword: params.webPassword,
           serial: params.serial,
         }),
       });
@@ -748,11 +850,18 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       if (data.success) {
         setManualLastSync(new Date().toISOString());
         setShowBioTimeModal(false);
+      } else if (data.needsWebCredentials) {
+        setBtInspectReport({
+          success: false,
+          needsWebCredentials: true,
+          message: data.message,
+        });
+        setShowBioTimeModal(true);
       }
       setActionBanner({
         success: !!data.success,
         statusCode: meta.code,
-        title: meta.title,
+        title: data.needsWebCredentials ? 'Ingrese credenciales de BioTime PRO' : meta.title,
         message: data.message || 'Consulta BioTime finalizada.',
       });
       if (data.success && onRefresh) onRefresh();
@@ -1010,7 +1119,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           <button
             onClick={() => setShowBioTimeModal(true)}
             className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/50 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-            title="Configurar credenciales BioTime PostgreSQL / API HTTP :89"
+            title="Configurar credenciales BioTime PRO HTTP (:8088) o PostgreSQL (:7496)"
           >
             <KeyRound className="w-3.5 h-3.5" />
             <span>BioTime</span>
@@ -1777,9 +1886,9 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                   <Database className="w-4 h-4" />
                 </span>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Fuente Intermediaria BioTime (Solo Lectura)</h3>
+                  <h3 className="text-sm font-bold text-white">Fuente Intermediaria BioTime PRO (Solo Lectura)</h3>
                   <p className="text-[11px] text-slate-400">
-                    Inspección de esquema PostgreSQL (puerto 7496) o API oficial HTTP BioTime (puerto 89).
+                    Canal principal HTTP BioTime PRO (puerto 8088) y respaldo PostgreSQL local (puerto 7496).
                   </p>
                 </div>
               </div>
@@ -1789,47 +1898,70 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-slate-400 block mb-1">Servidor BioTime</label>
-                  <input value={btHost} onChange={(e) => setBtHost(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+              <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-lg space-y-3">
+                <div className="font-bold text-amber-300 text-[11px] uppercase tracking-wider">
+                  1. BioTime PRO HTTP (Puerto 8088) — Canal Principal Recomendado
                 </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Base de Datos PostgreSQL</label>
-                  <input value={btDbName} onChange={(e) => setBtDbName(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Puerto PostgreSQL BioTime</label>
-                  <input type="number" value={btDbPort} onChange={(e) => setBtDbPort(Number(e.target.value) || 7496)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Usuario PostgreSQL</label>
-                  <input value={btDbUser} onChange={(e) => setBtDbUser(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-slate-400 block mb-1">Contraseña PostgreSQL BioTime (si requiere)</label>
-                  <input type="password" value={btDbPassword} onChange={(e) => setBtDbPassword(e.target.value)} placeholder="Opcional si usa clave institucional distinta" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Puerto HTTP BioTime (ADMS/API)</label>
-                  <input type="number" value={btWebPort} onChange={(e) => setBtWebPort(Number(e.target.value) || 89)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div>
-                  <label className="text-slate-400 block mb-1">Usuario Web BioTime (API opcional)</label>
-                  <input value={btWebUser} onChange={(e) => setBtWebUser(e.target.value)} placeholder="admin" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-slate-400 block mb-1">Contraseña Web BioTime (API opcional)</label>
-                  <input type="password" value={btWebPassword} onChange={(e) => setBtWebPassword(e.target.value)} placeholder="Sólo si PostgreSQL no permite acceso remoto y usa API :89" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Servidor BioTime PRO</label>
+                    <input value={btHost} onChange={(e) => setBtHost(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Puerto HTTP BioTime PRO</label>
+                    <input type="number" value={btWebPort} onChange={(e) => setBtWebPort(Number(e.target.value) || 8088)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Usuario Web BioTime PRO</label>
+                    <input value={btWebUser} onChange={(e) => setBtWebUser(e.target.value)} placeholder="Ej. admin (con el que inicia en :8088)" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Contraseña Web BioTime PRO</label>
+                    <input type="password" value={btWebPassword} onChange={(e) => setBtWebPassword(e.target.value)} placeholder="Contraseña de BioTime PRO" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
                 </div>
               </div>
 
+              <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg space-y-3">
+                <div className="font-bold text-slate-400 text-[11px] uppercase tracking-wider">
+                  2. Respaldo PostgreSQL BioTime (Opcional — Puerto 7496)
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Base de Datos PostgreSQL</label>
+                    <input value={btDbName} onChange={(e) => setBtDbName(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Puerto PostgreSQL</label>
+                    <input type="number" value={btDbPort} onChange={(e) => setBtDbPort(Number(e.target.value) || 7496)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Usuario PostgreSQL</label>
+                    <input value={btDbUser} onChange={(e) => setBtDbUser(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Contraseña PostgreSQL</label>
+                    <input type="password" value={btDbPassword} onChange={(e) => setBtDbPassword(e.target.value)} placeholder="Opcional (si :7496 es remoto)" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                  </div>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-slate-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberBtCreds}
+                  onChange={(e) => setRememberBtCreds(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-900 text-amber-500"
+                />
+                <span>Recordar configuración y credenciales de BioTime PRO en este equipo</span>
+              </label>
+
               {btInspectReport && (
-                <div className={`p-3 rounded-lg border space-y-1 ${btInspectReport.validSource ? 'bg-emerald-950/40 border-emerald-700 text-emerald-200' : 'bg-amber-950/40 border-amber-700 text-amber-200'}`}>
+                <div className={`p-3 rounded-lg border space-y-1 ${btInspectReport.validSource || btInspectReport.success ? 'bg-emerald-950/40 border-emerald-700 text-emerald-200' : 'bg-amber-950/40 border-amber-700 text-amber-200'}`}>
                   <div className="font-bold">{btInspectReport.message}</div>
                   {btInspectReport.attendanceTable && (
                     <div className="font-mono text-[11px] opacity-90">
-                      Tabla: {btInspectReport.attendanceTable} · Total: {btInspectReport.totalTransactions ?? 0} · Reloj: {btInspectReport.deviceTransactions ?? 0}
+                      Origen: {btInspectReport.attendanceTable} · Total: {btInspectReport.totalTransactions ?? 0} · Reloj: {btInspectReport.deviceTransactions ?? 0}
                     </div>
                   )}
                 </div>
@@ -1843,7 +1975,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 disabled={btInspecting}
                 className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-sky-800/50 rounded-lg text-xs font-semibold"
               >
-                {btInspecting ? 'Inspeccionando...' : 'Inspeccionar Esquema'}
+                {btInspecting ? 'Inspeccionando...' : 'Probar Conexión BioTime'}
               </button>
               <div className="flex items-center gap-2">
                 <button

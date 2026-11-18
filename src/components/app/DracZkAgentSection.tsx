@@ -277,7 +277,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         } else if (command === 'SYNC_BIOTIME' && typeof electronAPI.syncBioTimePunches === 'function') {
           const bioRes = await electronAPI.syncBioTimePunches({
             host: targetDev?.biotime_config?.db_host || '192.168.1.29',
-            webPort: targetDev?.biotime_config?.web_port || 89,
+            webPort: targetDev?.biotime_config?.web_port === 89 ? 8088 : (targetDev?.biotime_config?.web_port || 8088),
             dbPort: targetDev?.biotime_config?.db_port || 7496,
             serial: targetDev?.serial_number || 'AEH2223460040',
             deviceIp: activeIp,
@@ -695,7 +695,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                         <Info className="w-4 h-4 text-amber-400 shrink-0" /> Otras Formas de Recuperar Marcaciones Reales:
                       </div>
                       <p className="text-[11px] leading-relaxed text-slate-300">
-                        Si el terminal <strong>ZKTeco G3</strong> opera en modo ADMS PUSH enviando transacciones a la consola BioTime (<span className="font-mono text-amber-300">192.168.1.29:89</span> / PostgreSQL <span className="font-mono text-amber-300">:7496</span>) o bloquea la lectura por socket, utilice el puerto nativo <strong>4370</strong>, extraiga desde la BD de BioTime o cargue el archivo <strong>1_attlog.dat</strong> por USB:
+                        Si el terminal <strong>ZKTeco G3</strong> opera en modo ADMS PUSH enviando transacciones a BioTime PRO (<span className="font-mono text-amber-300">192.168.1.29:8088</span>) o bloquea la lectura por socket, extraiga desde BioTime PRO o cargue el archivo <strong>1_attlog.dat</strong> por USB:
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
@@ -1060,10 +1060,10 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
 
           <div className="bg-[#090A0D] p-4 rounded-lg border border-slate-800 space-y-2">
             <div className="font-bold text-amber-300 flex items-center gap-1.5">
-              <span>Opción 2: Base de Datos BioTime (:7496)</span>
+              <span>Opción 2: BioTime PRO HTTP (:8088) / PostgreSQL (:7496)</span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              Si el reloj ya transmite marcaciones a la consola BioTime (<span className="font-mono text-amber-300">192.168.1.29:89</span>), las transacciones reales se guardan en PostgreSQL puerto <span className="font-mono text-amber-300">7496</span> (tabla <code className="text-slate-200">iclock_transaction</code>). Haga clic en <strong>Sincronizar desde BioTime PostgreSQL</strong> para importarlas sin duplicados.
+              Si el reloj ya transmite marcaciones a BioTime PRO (<span className="font-mono text-amber-300">192.168.1.29:8088</span>), el aplicativo puede extraerlas vía API HTTP oficial (:8088) o PostgreSQL (:7496, tabla <code className="text-slate-200">iclock_transaction</code>) sin duplicados.
             </p>
           </div>
 
