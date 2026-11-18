@@ -1141,6 +1141,8 @@ declare global {
       }>;
       inspectBioTimeDatabase?: (config?: any) => Promise<any>;
       syncBioTimePunches?: (config?: any) => Promise<any>;
+      getRawPunches?: () => Promise<any[]>;
+      saveRawPunches?: (punches?: any[]) => Promise<{ success: boolean; count: number; error?: string }>;
       pingZkDevice: (ip: string, port?: number, timeoutMs?: number) => Promise<{
         success: boolean;
         reachable: boolean;

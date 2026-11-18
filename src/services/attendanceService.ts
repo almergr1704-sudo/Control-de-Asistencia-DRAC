@@ -82,7 +82,7 @@ export const attendanceService = {
         .from('marcaciones_raw')
         .select('*')
         .order('timestamp', { ascending: false })
-        .limit(500);
+        .limit(5000);
 
       if (supaRows && supaRows.length > 0) {
         addRecords(supaRows);

@@ -26,6 +26,8 @@ import {
   getOfflineQueue,
   flushOfflineQueue,
   getAppOrigin,
+  getSavedSupabaseConfig,
+  updateSupabaseConfig,
 } from '../../lib/supabaseClient';
 import { AppOrigin, SupabaseConfigStatus } from '../../types';
 import { getApiUrl } from '../../utils/apiConfig';
@@ -38,7 +40,14 @@ export const SupabaseSyncSection: React.FC = () => {
     url: string;
     appOrigin: AppOrigin;
     sourceOfTruth: string;
+    isPlaceholder?: boolean;
+    error?: string;
   } | null>(null);
+  const initialSbCfg = getSavedSupabaseConfig();
+  const [sbUrlInput, setSbUrlInput] = useState(initialSbCfg.url);
+  const [sbKeyInput, setSbKeyInput] = useState(initialSbCfg.anonKey);
+  const [savingSbCfg, setSavingSbCfg] = useState(false);
+  const [sbCfgNotice, setSbCfgNotice] = useState<string | null>(null);
 
   const [dbStats, setDbStats] = useState<SupabaseConfigStatus | null>(null);
   const [copiedDdl, setCopiedDdl] = useState(false);
@@ -94,6 +103,20 @@ export const SupabaseSyncSection: React.FC = () => {
         }
       }
     } catch {}
+  };
+
+  const handleSaveSupabaseConfig = async () => {
+    setSavingSbCfg(true);
+    setSbCfgNotice(null);
+    try {
+      await updateSupabaseConfig(sbUrlInput, sbKeyInput);
+      await fetchStatus();
+      setSbCfgNotice('Configuración de Supabase actualizada. Se verificó la conexión con la URL indicada.');
+    } catch (err: any) {
+      setSbCfgNotice(`Error guardando configuración: ${err?.message || 'Error desconocido'}`);
+    } finally {
+      setSavingSbCfg(false);
+    }
   };
 
   useEffect(() => {
@@ -250,10 +273,15 @@ export const SupabaseSyncSection: React.FC = () => {
               <Activity className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[10px] text-slate-500 uppercase font-bold">Latencia PostgreSQL</div>
+              <div className="text-[10px] text-slate-500 uppercase font-bold">Estado Supabase Nube</div>
               <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
-                <span className="text-purple-400">{connectionStatus?.latencyMs || 8} ms</span>
-                <span className="text-[10px] text-slate-500">| Supabase SSL</span>
+                {connectionStatus?.connected ? (
+                  <>
+                    <span className="text-emerald-400">Conectado ({connectionStatus.latencyMs} ms)</span>
+                  </>
+                ) : (
+                  <span className="text-amber-400">Modo Local (Sin nube Supabase)</span>
+                )}
               </div>
             </div>
           </div>
@@ -329,6 +357,65 @@ export const SupabaseSyncSection: React.FC = () => {
       {/* TAB 1: OVERVIEW & TABLES COUNT */}
       {activeSubTab === 'OVERVIEW' && (
         <div className="space-y-6">
+          <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-400" />
+                  <span>Credenciales de Instancia Supabase (Opcional para Nube)</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Las marcaciones locales funcionan sin Supabase. Si deseas respaldo en la nube, ingresa aquí tu Project URL y Anon Key de Supabase.
+                </p>
+              </div>
+              <span className={`px-2.5 py-1 rounded text-[11px] font-bold border ${connectionStatus?.connected ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700' : 'bg-amber-950/50 text-amber-300 border-amber-700'}`}>
+                {connectionStatus?.connected ? 'Nube Activa' : connectionStatus?.isPlaceholder ? 'URL de ejemplo (no configurada)' : 'Sin conexión a nube'}
+              </span>
+            </div>
+
+            {connectionStatus?.error && (
+              <div className="p-3 bg-amber-950/30 border border-amber-800/60 rounded-lg text-xs text-amber-200 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>{connectionStatus.error}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div>
+                <label className="text-slate-400 block mb-1">Supabase Project URL (VITE_SUPABASE_URL)</label>
+                <input
+                  value={sbUrlInput}
+                  onChange={(e) => setSbUrlInput(e.target.value)}
+                  placeholder="https://tu-proyecto.supabase.co"
+                  className="w-full px-3 py-2 bg-[#060709] border border-slate-800 rounded-lg text-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 block mb-1">Supabase Anon Key (VITE_SUPABASE_ANON_KEY)</label>
+                <input
+                  type="password"
+                  value={sbKeyInput}
+                  onChange={(e) => setSbKeyInput(e.target.value)}
+                  placeholder="eyJhbGciOi..."
+                  className="w-full px-3 py-2 bg-[#060709] border border-slate-800 rounded-lg text-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {sbCfgNotice && <span className="text-xs text-sky-300">{sbCfgNotice}</span>}
+              <button
+                type="button"
+                onClick={handleSaveSupabaseConfig}
+                disabled={savingSbCfg}
+                className="ml-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{savingSbCfg ? 'Guardando...' : 'Guardar y Probar Supabase'}</span>
+              </button>
+            </div>
+          </div>
+
           <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-6">
             <div className="border-b border-slate-800 pb-4 mb-5">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">

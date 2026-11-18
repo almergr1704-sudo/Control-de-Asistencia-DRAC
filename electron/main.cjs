@@ -534,17 +534,50 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       };
     }
 
+    const employeesPath = getStorageFilePath('employees.json');
+    let localEmployees = [];
+    try {
+      if (fs.existsSync(employeesPath)) {
+        localEmployees = JSON.parse(fs.readFileSync(employeesPath, 'utf8'));
+      }
+    } catch (_) {}
+
+    const findLocalEmployee = (code) => {
+      if (!code || !Array.isArray(localEmployees)) return null;
+      const clean = String(code).trim();
+      return localEmployees.find(
+        (e) =>
+          (e.zkteco_pin && String(e.zkteco_pin).trim() === clean) ||
+          (e.biometric_user_id && String(e.biometric_user_id).trim() === clean) ||
+          (e.codigo_trabajador && String(e.codigo_trabajador).trim() === clean) ||
+          (e.dni && String(e.dni).trim() === clean)
+      ) || null;
+    };
+
     const existingKeys = new Set(
-      loadedPunches.map((p) => `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`)
+      loadedPunches.map((p) => `${p.device_sn || ''}_${p.employee_code || p.employee_dni || p.pin}_${p.timestamp}`)
     );
 
     const newlyAdded = [];
     if (Array.isArray(syncResult.punches) && syncResult.punches.length > 0) {
       for (const p of syncResult.punches) {
-        const key = `${p.device_sn || ''}_${p.employee_dni || p.pin || p.employee_code}_${p.timestamp}`;
+        const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+        const key = `${p.device_sn || ''}_${code}_${p.timestamp}`;
         if (!existingKeys.has(key)) {
           existingKeys.add(key);
-          newlyAdded.push(p);
+          const emp = findLocalEmployee(code);
+          const empName = emp
+            ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
+            : (p.employee_name || 'Pendiente de Identificación');
+          newlyAdded.push({
+            ...p,
+            employee_id: emp ? emp.id : (p.employee_id || null),
+            employee_dni: emp ? emp.dni : (p.employee_dni || code),
+            employee_code: code,
+            employee_name: empName,
+            validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+            processed: !!emp,
+          });
         }
       }
     }
@@ -598,6 +631,36 @@ ipcMain.handle('punches:get-all', async () => {
     }
   } catch (_) {}
   return [];
+});
+
+ipcMain.handle('punches:save-all', async (_event, punches = []) => {
+  try {
+    if (!Array.isArray(punches)) return { success: false, count: 0 };
+    const punchesPath = getStorageFilePath('raw-punches.json');
+    let existing = [];
+    try {
+      if (fs.existsSync(punchesPath)) {
+        existing = JSON.parse(fs.readFileSync(punchesPath, 'utf8'));
+      }
+    } catch (_) {}
+    const map = new Map();
+    for (const r of (Array.isArray(existing) ? existing : [])) {
+      const key = `${r.device_sn || ''}_${r.employee_code || r.employee_dni}_${r.timestamp}`;
+      map.set(key, r);
+    }
+    for (const r of punches) {
+      const key = `${r.device_sn || ''}_${r.employee_code || r.employee_dni}_${r.timestamp}`;
+      const prev = map.get(key);
+      map.set(key, { ...(prev || {}), ...r });
+    }
+    const merged = Array.from(map.values()).sort((a, b) =>
+      String(b.timestamp || '').localeCompare(String(a.timestamp || ''))
+    );
+    fs.writeFileSync(punchesPath, JSON.stringify(merged, null, 2), 'utf8');
+    return { success: true, count: merged.length };
+  } catch (err) {
+    return { success: false, count: 0, error: err.message };
+  }
 });
 
 // =========================================================================

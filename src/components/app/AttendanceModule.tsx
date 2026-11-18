@@ -25,7 +25,7 @@ import {
 import { DataTablePagination } from '../common/DataTablePagination';
 import { getApiUrl } from '../../utils/apiConfig';
 import { normalizePersonName } from '../../utils/nameUtils';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, getSupabaseClient, isPlaceholderSupabaseUrl } from '../../lib/supabaseClient';
 
 type SyncBannerStatus =
   | 'OFFLINE'
@@ -343,14 +343,22 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     }
   };
 
-  // Persistencia directa idempotente en Supabase cuando el backend Express no esté accesible
+  // Persistencia directa idempotente en Supabase en lotes de 200 filas (+ enriquecimiento local)
   const persistPunchesDirectlyToSupabase = async (
     punches: any[],
     source: string,
     deviceMeta?: { id?: string; serial?: string; name?: string }
-  ): Promise<{ ok: boolean; count: number; unidentified: number; error?: string }> => {
+  ): Promise<{
+    ok: boolean;
+    count: number;
+    identified: number;
+    unidentified: number;
+    enrichedRows: any[];
+    cloudSkippedOrOffline?: boolean;
+    error?: string;
+  }> => {
     if (!Array.isArray(punches) || punches.length === 0) {
-      return { ok: true, count: 0, unidentified: 0 };
+      return { ok: true, count: 0, identified: 0, unidentified: 0, enrichedRows: [] };
     }
     const syncedAt = new Date().toISOString();
     let unidentified = 0;
@@ -387,43 +395,95 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         punch_type: p.punch_type || (p.punch_state === 1 ? 'CHECK_OUT' : 'CHECK_IN'),
         punch_state: p.punch_state ?? 0,
         verify_mode: p.verify_mode || 'FINGERPRINT',
+        validation_status: matchedEmp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
         source,
         synced_at: syncedAt,
-        processed: false,
+        processed: !!matchedEmp,
       };
     });
 
+    const identified = fullRows.length - unidentified;
+
+    // Persistir versión enriquecida en Electron local antes de intentar nube
     try {
-      const { error } = await supabase.from('marcaciones_raw').upsert(fullRows, { onConflict: 'id' });
-      if (!error) {
-        return { ok: true, count: fullRows.length, unidentified };
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI && typeof electronAPI.saveRawPunches === 'function') {
+        await electronAPI.saveRawPunches(fullRows);
       }
-      // Fallback a columnas núcleo si PostgREST rechaza columnas extendidas
-      const msg = error.message || '';
-      if (msg.includes('column') || error.code === '42703' || error.code === 'PGRST204') {
-        const coreRows = fullRows.map((r) => ({
-          id: r.id,
-          device_id: r.device_id,
-          device_sn: r.device_sn,
-          device_name: r.device_name,
-          employee_dni: r.employee_dni,
-          employee_name: r.employee_name,
-          timestamp: r.timestamp,
-          fecha: r.fecha,
-          hora: r.hora,
-          punch_type: r.punch_type,
-          verify_mode: r.verify_mode,
-          processed: r.processed,
-        }));
-        const retry = await supabase.from('marcaciones_raw').upsert(coreRows, { onConflict: 'id' });
-        if (!retry.error) {
-          return { ok: true, count: coreRows.length, unidentified };
+    } catch (_) {}
+
+    if (isPlaceholderSupabaseUrl()) {
+      return {
+        ok: false,
+        count: fullRows.length,
+        identified,
+        unidentified,
+        enrichedRows: fullRows,
+        cloudSkippedOrOffline: true,
+        error: 'Instancia Supabase no configurada (URL de ejemplo inexistente).',
+      };
+    }
+
+    try {
+      const sbClient = getSupabaseClient();
+      const CHUNK_SIZE = 200;
+      for (let i = 0; i < fullRows.length; i += CHUNK_SIZE) {
+        const chunk = fullRows.slice(i, i + CHUNK_SIZE);
+        const { error } = await sbClient.from('marcaciones_raw').upsert(chunk, { onConflict: 'id' });
+        if (!error) continue;
+
+        const msg = error.message || '';
+        if (msg.includes('column') || error.code === '42703' || error.code === 'PGRST204') {
+          const coreChunk = chunk.map((r) => ({
+            id: r.id,
+            device_id: r.device_id,
+            device_sn: r.device_sn,
+            device_name: r.device_name,
+            employee_dni: r.employee_dni,
+            employee_name: r.employee_name,
+            timestamp: r.timestamp,
+            fecha: r.fecha,
+            hora: r.hora,
+            punch_type: r.punch_type,
+            verify_mode: r.verify_mode,
+            processed: r.processed,
+          }));
+          const retry = await sbClient.from('marcaciones_raw').upsert(coreChunk, { onConflict: 'id' });
+          if (retry.error) {
+            return {
+              ok: false,
+              count: fullRows.length,
+              identified,
+              unidentified,
+              enrichedRows: fullRows,
+              error: retry.error.message,
+            };
+          }
+        } else {
+          const isNetErr = /failed to fetch|network|enotfound|err_name_not_resolved/i.test(msg);
+          return {
+            ok: false,
+            count: fullRows.length,
+            identified,
+            unidentified,
+            enrichedRows: fullRows,
+            cloudSkippedOrOffline: isNetErr,
+            error: msg,
+          };
         }
-        return { ok: false, count: 0, unidentified, error: retry.error.message };
       }
-      return { ok: false, count: 0, unidentified, error: error.message };
+      return { ok: true, count: fullRows.length, identified, unidentified, enrichedRows: fullRows };
     } catch (err: any) {
-      return { ok: false, count: 0, unidentified, error: err?.message || 'Error guardando en Supabase' };
+      const errMsg = err?.message || 'Error guardando en Supabase';
+      return {
+        ok: false,
+        count: fullRows.length,
+        identified,
+        unidentified,
+        enrichedRows: fullRows,
+        cloudSkippedOrOffline: /failed to fetch|network/i.test(errMsg),
+        error: errMsg,
+      };
     }
   };
 
@@ -516,14 +576,28 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           name: activeDevice.name,
         });
         setManualLastSync(new Date().toISOString());
-        setActionBanner({
-          success: directSave.ok,
-          statusCode: directSave.ok ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
-          title: directSave.ok ? 'Marcaciones recibidas correctamente' : 'Error de almacenamiento en la base de datos',
-          message: directSave.ok
-            ? `Se leyeron ${punches.length} marcaciones reales desde ${activeDevice.ip_address}:${activeDevice.port} y se almacenaron en Supabase (${directSave.unidentified} pendientes de identificación).`
-            : `Marcaciones leídas (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
-        });
+        if (directSave.ok) {
+          setActionBanner({
+            success: true,
+            statusCode: 'PUNCHES_RECEIVED',
+            title: 'Marcaciones recibidas correctamente',
+            message: `Se leyeron ${punches.length} marcaciones reales desde ${activeDevice.ip_address}:${activeDevice.port} y se almacenaron en Supabase (${directSave.identified} identificadas, ${directSave.unidentified} pendientes).`,
+          });
+        } else if (directSave.cloudSkippedOrOffline) {
+          setActionBanner({
+            success: true,
+            statusCode: 'PUNCHES_RECEIVED',
+            title: 'Marcaciones reales guardadas localmente',
+            message: `Se leyeron ${punches.length} marcaciones reales desde ${activeDevice.ip_address}:${activeDevice.port} y se guardaron en este equipo (${directSave.identified} identificadas, ${directSave.unidentified} pendientes). Sincronización en nube Supabase pendiente: ${directSave.error}`,
+          });
+        } else {
+          setActionBanner({
+            success: false,
+            statusCode: 'DB_ERROR',
+            title: 'Marcaciones guardadas localmente (error en Supabase)',
+            message: `Marcaciones leídas (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
+          });
+        }
         if (onRefresh) onRefresh();
         return;
       }
@@ -817,14 +891,28 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
           name: activeDevice?.name || 'ZKTeco G3 (vía BioTime)',
         });
         setManualLastSync(new Date().toISOString());
-        setActionBanner({
-          success: directSave.ok,
-          statusCode: directSave.ok ? 'PUNCHES_RECEIVED' : 'DB_ERROR',
-          title: directSave.ok ? 'Marcaciones recibidas desde BioTime PRO' : 'Error de almacenamiento en Supabase',
-          message: directSave.ok
-            ? `Se extrajeron ${punches.length} marcaciones reales desde ${btRes.source} y se sincronizaron en Supabase (${directSave.unidentified} pendientes).`
-            : `Leídas desde BioTime (${punches.length}), pero error al guardar en Supabase: ${directSave.error}`,
-        });
+        if (directSave.ok) {
+          setActionBanner({
+            success: true,
+            statusCode: 'PUNCHES_RECEIVED',
+            title: 'Marcaciones recibidas desde BioTime PRO',
+            message: `Se extrajeron ${punches.length} marcaciones reales desde ${btRes.source} y se sincronizaron en Supabase (${directSave.identified} identificadas, ${directSave.unidentified} pendientes).`,
+          });
+        } else if (directSave.cloudSkippedOrOffline) {
+          setActionBanner({
+            success: true,
+            statusCode: 'PUNCHES_RECEIVED',
+            title: 'Marcaciones reales extraídas y guardadas localmente',
+            message: `Se extrajeron ${punches.length} marcaciones reales desde BioTime PRO y ya están disponibles en este equipo (${directSave.identified} identificadas, ${directSave.unidentified} pendientes). La nube Supabase no respondió (${directSave.error}); puede configurar su proyecto Supabase real en Configuración → Base de Datos Supabase.`,
+          });
+        } else {
+          setActionBanner({
+            success: false,
+            statusCode: 'DB_ERROR',
+            title: 'Marcaciones guardadas localmente (error en Supabase)',
+            message: `Leídas y guardadas en este equipo (${punches.length}), pero Supabase devolvió: ${directSave.error}`,
+          });
+        }
         setShowBioTimeModal(false);
         if (onRefresh) onRefresh();
         return;

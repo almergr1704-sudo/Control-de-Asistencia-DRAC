@@ -59,6 +59,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRawPunches: () => {
     return ipcRenderer.invoke('punches:get-all');
   },
+  saveRawPunches: (punches = []) => {
+    return ipcRenderer.invoke('punches:save-all', punches);
+  },
 
   // Hardware y Sistema Operativo
   getSystemInfo: () => {

@@ -18,9 +18,9 @@ const BASE_PROJECT_DIR = fs.existsSync(path.join(SERVER_DIR, 'data'))
   : path.resolve(SERVER_DIR, '..');
 const BUNDLED_DATA_DIR = path.join(BASE_PROJECT_DIR, 'data');
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://rfqgmoremevypexrrsyf.supabase.co';
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I';
-const supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://rfqgmoremevypexrrsyf.supabase.co';
+let SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJmcWdtb3JlbWV2eXBleHJyc3lmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNjI3MTksImV4cCI6MjEwMzgzODcxOX0.L7VOne8N24590LxLZrYTmDPovu-Qs3Xibct6G0vhz5I';
+let supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -69,6 +69,18 @@ const RESPONSABLES_FILE = path.join(DATA_DIR, 'responsables.json');
 const PAPELETAS_FILE = path.join(DATA_DIR, 'papeletas.json');
 const VACACIONES_FILE = path.join(DATA_DIR, 'vacaciones.json');
 const ENCARGATURAS_FILE = path.join(DATA_DIR, 'encargaturas.json');
+const SUPABASE_CFG_FILE = path.join(DATA_DIR, 'supabase-config.json');
+
+try {
+  if (fs.existsSync(SUPABASE_CFG_FILE)) {
+    const savedSb = JSON.parse(fs.readFileSync(SUPABASE_CFG_FILE, 'utf-8'));
+    if (savedSb?.url && savedSb?.anonKey) {
+      SUPABASE_URL = String(savedSb.url).trim();
+      SUPABASE_ANON_KEY = String(savedSb.anonKey).trim();
+      supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+  }
+} catch (_) {}
 
 // Helper to read JSON files safely
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -2165,6 +2177,16 @@ function upsertAttendanceFromIdentifiedPunch(
 
 async function persistRawPunchesToSupabase(records: any[]): Promise<{ dbSaved: boolean; dbError: string | null }> {
   if (!records || records.length === 0) return { dbSaved: true, dbError: null };
+  if (
+    !SUPABASE_URL ||
+    SUPABASE_URL.includes('rfqgmoremevypexrrsyf.supabase.co') ||
+    SUPABASE_URL.includes('your-project-ref.supabase.co')
+  ) {
+    return {
+      dbSaved: false,
+      dbError: 'Instancia Supabase por defecto no configurada (URL de ejemplo inexistente). Guardado localmente.',
+    };
+  }
   try {
     const fullRows = records.map((r) => ({
       id: r.id,
@@ -2184,48 +2206,50 @@ async function persistRawPunchesToSupabase(records: any[]): Promise<{ dbSaved: b
       raw_payload: r.raw_payload || null,
     }));
 
-    const sbRes: any = await withServerTimeout(
-      Promise.resolve(
-        supabaseServer.from('marcaciones_raw').upsert(fullRows, { onConflict: 'id' })
-      ),
-      3500,
-      'Timeout guardando marcaciones en Supabase PostgreSQL'
-    );
-
-    if (!sbRes?.error) {
-      return { dbSaved: true, dbError: null };
-    }
-
-    const errMsg = String(sbRes.error.message || '');
-    // Fallback si la tabla marcaciones_raw tiene solo columnas base (sin employee_code/source/punch_state)
-    if (errMsg.includes('column') || sbRes.error.code === '42703' || sbRes.error.code === 'PGRST204') {
-      const coreRows = records.map((r) => ({
-        id: r.id,
-        device_id: r.device_id || 'dev-01',
-        device_sn: r.device_sn,
-        device_name: r.device_name,
-        employee_dni: r.employee_dni || r.employee_code,
-        timestamp: r.timestamp,
-        punch_type: r.punch_type || 'AUTO',
-        verify_mode: r.verify_mode || 'FINGERPRINT',
-        processed: Boolean(r.processed),
-        validation_status: r.validation_status || 'VALIDA',
-        raw_payload: r.raw_payload || null,
-      }));
-      const retryRes: any = await withServerTimeout(
+    const CHUNK_SIZE = 250;
+    for (let i = 0; i < fullRows.length; i += CHUNK_SIZE) {
+      const chunk = fullRows.slice(i, i + CHUNK_SIZE);
+      const sbRes: any = await withServerTimeout(
         Promise.resolve(
-          supabaseServer.from('marcaciones_raw').upsert(coreRows, { onConflict: 'id' })
+          supabaseServer.from('marcaciones_raw').upsert(chunk, { onConflict: 'id' })
         ),
-        3500,
-        'Timeout guardando marcaciones base en Supabase PostgreSQL'
+        5000,
+        'Timeout guardando lote de marcaciones en Supabase PostgreSQL'
       );
-      if (!retryRes?.error) {
-        return { dbSaved: true, dbError: null };
+
+      if (!sbRes?.error) continue;
+
+      const errMsg = String(sbRes.error.message || '');
+      if (errMsg.includes('column') || sbRes.error.code === '42703' || sbRes.error.code === 'PGRST204') {
+        const coreChunk = records.slice(i, i + CHUNK_SIZE).map((r) => ({
+          id: r.id,
+          device_id: r.device_id || 'dev-01',
+          device_sn: r.device_sn,
+          device_name: r.device_name,
+          employee_dni: r.employee_dni || r.employee_code,
+          timestamp: r.timestamp,
+          punch_type: r.punch_type || 'AUTO',
+          verify_mode: r.verify_mode || 'FINGERPRINT',
+          processed: Boolean(r.processed),
+          validation_status: r.validation_status || 'VALIDA',
+          raw_payload: r.raw_payload || null,
+        }));
+        const retryRes: any = await withServerTimeout(
+          Promise.resolve(
+            supabaseServer.from('marcaciones_raw').upsert(coreChunk, { onConflict: 'id' })
+          ),
+          5000,
+          'Timeout guardando marcaciones base en Supabase PostgreSQL'
+        );
+        if (retryRes?.error) {
+          return { dbSaved: false, dbError: retryRes.error.message || errMsg };
+        }
+      } else {
+        return { dbSaved: false, dbError: errMsg || 'Error SQL Supabase en marcaciones_raw' };
       }
-      return { dbSaved: false, dbError: retryRes.error.message || errMsg };
     }
 
-    return { dbSaved: false, dbError: errMsg || 'Error SQL Supabase en marcaciones_raw' };
+    return { dbSaved: true, dbError: null };
   } catch (err: any) {
     return { dbSaved: false, dbError: err?.message || 'Sin conexión hacia Supabase PostgreSQL' };
   }
@@ -4411,6 +4435,77 @@ app.post('/api/zkteco/diagnose-pipeline', async (req, res) => {
   });
 });
 
+// GET /api/supabase/status & POST /api/supabase/config
+app.get('/api/supabase/status', async (_req, res) => {
+  const isPlaceholder =
+    !SUPABASE_URL ||
+    SUPABASE_URL.includes('rfqgmoremevypexrrsyf.supabase.co') ||
+    SUPABASE_URL.includes('your-project-ref.supabase.co');
+
+  const localCounts = {
+    trabajadores: readJsonFile<any[]>(EMPLOYEES_FILE, []).length,
+    dependencias: readJsonFile<any[]>(DEPENDENCIAS_FILE, []).length,
+    direcciones: readJsonFile<any[]>(DIRECCIONES_FILE, []).length,
+    areas_oficinas: readJsonFile<any[]>(AREAS_FILE, []).length,
+    horarios: readJsonFile<any[]>(HORARIOS_FILE, []).length,
+    turnos: readJsonFile<any[]>(TURNOS_FILE, []).length,
+    papeletas: readJsonFile<any[]>(PAPELETAS_FILE, []).length,
+    vacaciones: readJsonFile<any[]>(VACACIONES_FILE, []).length,
+    encargaturas: readJsonFile<any[]>(ENCARGATURAS_FILE, []).length,
+    dispositivos_zkteco: readJsonFile<any[]>(DEVICES_FILE, []).length,
+    marcaciones_raw: readJsonFile<any[]>(RAW_PUNCHES_FILE, []).length,
+    asistencias: readJsonFile<any[]>(ATTENDANCE_FILE, []).length,
+    auditoria: readJsonFile<any[]>(AUDIT_LOGS_FILE, []).length,
+  };
+
+  if (isPlaceholder) {
+    return res.json({
+      connected: false,
+      isPlaceholder: true,
+      supabaseUrl: SUPABASE_URL,
+      tablesCount: localCounts,
+      message: 'Instancia Supabase no configurada (usando almacenamiento local en servidor/escritorio).',
+    });
+  }
+
+  try {
+    const sbCheck: any = await withServerTimeout(
+      Promise.resolve(supabaseServer.from('marcaciones_raw').select('id', { count: 'exact', head: true })),
+      2500,
+      'Timeout verificando Supabase'
+    );
+    return res.json({
+      connected: !sbCheck?.error,
+      isPlaceholder: false,
+      supabaseUrl: SUPABASE_URL,
+      tablesCount: localCounts,
+      error: sbCheck?.error?.message || null,
+    });
+  } catch (err: any) {
+    return res.json({
+      connected: false,
+      isPlaceholder: false,
+      supabaseUrl: SUPABASE_URL,
+      tablesCount: localCounts,
+      error: err?.message || 'Error conectando a Supabase',
+    });
+  }
+});
+
+app.post('/api/supabase/config', (req, res) => {
+  const { url, anonKey } = req.body || {};
+  const cleanUrl = String(url || '').trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+  const cleanKey = String(anonKey || '').trim();
+  if (!cleanUrl || !cleanKey) {
+    return res.status(400).json({ success: false, message: 'URL y Anon Key de Supabase son obligatorios.' });
+  }
+  SUPABASE_URL = cleanUrl;
+  SUPABASE_ANON_KEY = cleanKey;
+  supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  writeJsonFile(SUPABASE_CFG_FILE, { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, updatedAt: new Date().toISOString() });
+  return res.json({ success: true, supabaseUrl: SUPABASE_URL });
+});
+
 // GET /api/health
 app.get('/api/health', (req, res) => {
   return res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -4440,8 +4535,11 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[DRAC ZKTECO SERVER] Servidor institucional escuchando en http://0.0.0.0:${PORT}`);
+  });
+  server.on('error', (err: any) => {
+    console.error(`[DRAC ZKTECO SERVER] Aviso en puerto ${PORT}:`, err?.code || err?.message);
   });
 }
 
