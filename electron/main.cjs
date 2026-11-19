@@ -484,7 +484,7 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     deviceIp = fallbackIp,
     devicePort = 7496,
   } = params;
-  const webPort = Number(rawWebPort) === 89 ? 8088 : (Number(rawWebPort) || 8088);
+  const webPort = Number(rawWebPort) || 8088;
   log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);
   try {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });

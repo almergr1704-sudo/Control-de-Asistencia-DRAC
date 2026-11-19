@@ -2067,13 +2067,21 @@ async function runIndependentDiagnostics(
  */
 async function checkBioTimeService(host = '192.168.1.29', webPort = 8088, dbPort = 7496, serial = 'AEH2223460040') {
   const cleanHost = String(host || '192.168.1.29').trim();
-  const targetWebPort = Number(webPort) || 8088;
+  let targetWebPort = Number(webPort) || 8088;
   const targetDbPort = Number(dbPort) || 7496;
   const targetSerial = String(serial || 'AEH2223460040').trim().toUpperCase();
   const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
 
-  // 1. Probar socket TCP al puerto Web de BioTime PRO (8088)
-  const webProbe = await probeTcpPort(cleanHost, targetWebPort, 2500);
+  // 1. Probar socket TCP al puerto Web de BioTime PRO (ej. 8088 u 89 como respaldo automático)
+  let webProbe = await probeTcpPort(cleanHost, targetWebPort, 2500);
+  if (!webProbe.ok && (targetWebPort === 8088 || targetWebPort === 89)) {
+    const altPort = targetWebPort === 8088 ? 89 : 8088;
+    const altProbe = await probeTcpPort(cleanHost, altPort, 2000);
+    if (altProbe.ok) {
+      webProbe = altProbe;
+      targetWebPort = altPort;
+    }
+  }
 
   // 2. Probar socket TCP al puerto de PostgreSQL BioTime (7496)
   const dbProbe = await probeTcpPort(cleanHost, targetDbPort, 2500);
@@ -2387,12 +2395,20 @@ async function inspectBioTimeDatabase(options = {}) {
   } = options;
 
   const cleanHost = String(host || '192.168.1.29').trim();
-  const targetWebPort = Number(webPort) === 89 ? 8088 : (Number(webPort) || 8088);
+  let targetWebPort = Number(webPort) || 8088;
   const targetDbPort = Number(dbPort) || 7496;
   const cleanSerial = String(serial || '').trim().toUpperCase();
 
-  const webProbe = await probeTcpPort(cleanHost, targetWebPort, 2000);
-  const dbProbe = await probeTcpPort(cleanHost, targetDbPort, 2000);
+  let webProbe = await probeTcpPort(cleanHost, targetWebPort, 3000);
+  if (!webProbe.ok && (targetWebPort === 8088 || targetWebPort === 89)) {
+    const altPort = targetWebPort === 8088 ? 89 : 8088;
+    const altProbe = await probeTcpPort(cleanHost, altPort, 2500);
+    if (altProbe.ok) {
+      webProbe = altProbe;
+      targetWebPort = altPort;
+    }
+  }
+  const dbProbe = await probeTcpPort(cleanHost, targetDbPort, 3000);
 
   const report = {
     success: false,
@@ -2402,6 +2418,8 @@ async function inspectBioTimeDatabase(options = {}) {
     dbName,
     webReachable: webProbe.ok,
     dbReachable: dbProbe.ok,
+    webError: webProbe.code || webProbe.error || null,
+    dbError: dbProbe.code || dbProbe.error || null,
     needsWebCredentials: false,
     tablesFound: [],
     attendanceTable: null,
@@ -2447,8 +2465,13 @@ async function inspectBioTimeDatabase(options = {}) {
   }
 
   if (!dbProbe.ok) {
-    report.error = dbProbe.code || 'DB_UNREACHABLE';
-    report.message = `BioTime en ${cleanHost} (HTTP :${targetWebPort} / PostgreSQL :${targetDbPort}) no está alcanzable desde este equipo.`;
+    const webCode = webProbe.code || 'ETIMEDOUT';
+    const causeDetail =
+      webCode === 'ECONNREFUSED'
+        ? `La PC ${cleanHost} respondió en red pero rechazó la conexión (ECONNREFUSED): el servicio web de BioTime PRO en :${targetWebPort} está detenido o usa otro puerto.`
+        : `Sin respuesta TCP en HTTP :${targetWebPort} (${webCode}). Verifique en ${cleanHost} que la PC esté encendida (no suspendida), que ambos equipos estén en la subred 192.168.1.x y que el servicio BioTime PRO / Firewall permitan el puerto ${targetWebPort}.`;
+    report.error = webCode || dbProbe.code || 'BIOTIME_UNREACHABLE';
+    report.message = `BioTime en ${cleanHost} (HTTP :${targetWebPort} / PostgreSQL :${targetDbPort}) no está alcanzable desde este equipo. ${causeDetail}`;
     return report;
   }
 
@@ -2553,11 +2576,11 @@ async function syncBioTimeRecords(options = {}) {
   } = options;
 
   const cleanHost = String(host || '192.168.1.29').trim();
-  const targetWebPort = Number(webPort) === 89 ? 8088 : (Number(webPort) || 8088);
+  const targetWebPort = Number(webPort) || 8088;
   const cleanSerial = String(serial || '').trim().toUpperCase();
   const targetDbPort = Number(dbPort) || 7496;
 
-  // 1. Inspección previa obligatoria (solo lectura)
+  // 1. Inspección previa obligatoria (solo lectura, detecta puerto activo 8088 u 89 automáticamente)
   const inspection = await inspectBioTimeDatabase({
     host: cleanHost,
     webPort: targetWebPort,
@@ -2570,11 +2593,13 @@ async function syncBioTimeRecords(options = {}) {
     serial: cleanSerial,
   });
 
-  // 2. Si HTTP BioTime PRO (:8088) está disponible y (PG no está accesible o se proveyeron credenciales Web), usar API oficial BioTime PRO
+  const effectiveWebPort = Number(inspection.webPort || targetWebPort);
+
+  // 2. Si HTTP BioTime PRO (:8088 o :89) está disponible y (PG no está accesible o se proveyeron credenciales Web), usar API oficial BioTime PRO
   if (inspection.webReachable && (!inspection.dbReachable || (webUser && webPassword))) {
     const apiRes = await fetchBioTimeHttpApi({
       host: cleanHost,
-      webPort: targetWebPort,
+      webPort: effectiveWebPort,
       serial: cleanSerial,
       webUser,
       webPassword,

@@ -2395,7 +2395,7 @@ async function fetchBioTimeHttpApiServer(options: {
   message: string;
 }> {
   const cleanHost = String(options?.host || '192.168.1.29').trim();
-  const port = Number(options?.webPort) === 89 ? 8088 : (Number(options?.webPort) || 8088);
+  const port = Number(options?.webPort) || 8088;
   const cleanSerial = String(options?.serial || '').trim().toUpperCase();
   const webUser = String(options?.webUser || '').trim();
   const webPassword = String(options?.webPassword || '').trim();
@@ -2689,7 +2689,7 @@ async function inspectBioTimeDb(options?: {
   const start = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
   const rawWebPort = Number(options?.webPort);
-  const webPort = rawWebPort === 89 ? 8088 : (rawWebPort || 8088);
+  let webPort = rawWebPort || 8088;
   const dbPort = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
@@ -2721,8 +2721,16 @@ async function inspectBioTimeDb(options?: {
       s.connect(p, h);
     });
 
-  const webProbe = await probePort(host, webPort, 1800);
-  const dbProbe = await probePort(host, dbPort, 1800);
+  let webProbe = await probePort(host, webPort, 2500);
+  if (!webProbe.ok && (webPort === 8088 || webPort === 89)) {
+    const altPort = webPort === 8088 ? 89 : 8088;
+    const altProbe = await probePort(host, altPort, 2000);
+    if (altProbe.ok) {
+      webProbe = altProbe;
+      webPort = altPort;
+    }
+  }
+  const dbProbe = await probePort(host, dbPort, 2500);
 
   const report = {
     success: false,
@@ -2732,6 +2740,8 @@ async function inspectBioTimeDb(options?: {
     dbName,
     webReachable: webProbe.ok,
     dbReachable: dbProbe.ok,
+    webError: webProbe.code || webProbe.message || null,
+    dbError: dbProbe.code || dbProbe.message || null,
     needsWebCredentials: false,
     tablesFound: [] as string[],
     attendanceTable: null as string | null,
@@ -2784,8 +2794,13 @@ async function inspectBioTimeDb(options?: {
   }
 
   if (!dbProbe.ok) {
-    report.error = dbProbe.code || 'DB_UNREACHABLE';
-    report.message = `BioTime en ${host} (HTTP :${webPort} / PostgreSQL :${dbPort}) inaccesible desde este servidor (${dbProbe.code || dbProbe.message || 'Sin conexión'}).`;
+    const webCode = webProbe.code || 'ETIMEDOUT';
+    const causeDetail =
+      webCode === 'ECONNREFUSED'
+        ? `La PC ${host} respondió pero rechazó el puerto HTTP :${webPort} (ECONNREFUSED): el servicio BioTime PRO está detenido.`
+        : `Sin respuesta TCP en HTTP :${webPort} (${webCode}). Verifique que ${host} esté encendida, en la subred 192.168.1.x y con Firewall abierto en puerto ${webPort}.`;
+    report.error = webCode || dbProbe.code || 'BIOTIME_UNREACHABLE';
+    report.message = `BioTime en ${host} (HTTP :${webPort} / PostgreSQL :${dbPort}) no está alcanzable. ${causeDetail}`;
     report.latency = Date.now() - start;
     return report;
   }
@@ -2887,13 +2902,13 @@ async function syncPunchesFromBioTimeDb(options?: {
   const startTime = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
   const rawWebPort = Number(options?.webPort);
-  const webPort = rawWebPort === 89 ? 8088 : (rawWebPort || 8088);
+  const webPort = rawWebPort || 8088;
   const port = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
   const serial = String(options?.serial || '').trim().toUpperCase();
 
-  // 1. Inspección obligatoria de solo lectura (HTTP 8088 y PostgreSQL 7496)
+  // 1. Inspección obligatoria de solo lectura (HTTP 8088 / 89 y PostgreSQL 7496)
   const inspection = await inspectBioTimeDb({
     host,
     webPort,
@@ -2906,11 +2921,13 @@ async function syncPunchesFromBioTimeDb(options?: {
     serial,
   });
 
-  // 2. Si HTTP BioTime PRO (:8088) está disponible y PG no está accesible o se enviaron credenciales web
+  const effectiveWebPort = Number(inspection.webPort || webPort);
+
+  // 2. Si HTTP BioTime PRO está disponible y PG no está accesible o se enviaron credenciales web
   if (inspection.webReachable && (!inspection.dbReachable || (options?.webUser && options?.webPassword))) {
     const apiRes = await fetchBioTimeHttpApiServer({
       host,
-      webPort,
+      webPort: effectiveWebPort,
       serial,
       webUser: options?.webUser,
       webPassword: options?.webPassword,
@@ -3429,7 +3446,7 @@ app.post('/api/zkteco/upload-attlog', async (req, res) => {
   });
 });
 
-// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (:7496) + HTTP PRO (:8088)
+// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (:7496) + HTTP PRO (:8088 / :89)
 app.post('/api/zkteco/biotime/inspect', async (req, res) => {
   const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
   const devices = await getLatestDeviceConfig();
@@ -3438,7 +3455,7 @@ app.post('/api/zkteco/biotime/inspect', async (req, res) => {
 
   const report = await inspectBioTimeDb({
     host: String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim(),
-    webPort: rawWp === 89 ? 8088 : (rawWp || 8088),
+    webPort: rawWp || 8088,
     port: Number(port || dev?.biotime_config?.db_port || 7496),
     dbName: String(dbName || dev?.biotime_config?.db_name || 'biotime').trim(),
     user: String(user || dev?.biotime_config?.db_user || 'postgres').trim(),
@@ -3451,7 +3468,7 @@ app.post('/api/zkteco/biotime/inspect', async (req, res) => {
   return res.status(report.success ? 200 : 503).json(report);
 });
 
-// POST /api/zkteco/biotime/sync - Sincronización desde BioTime PRO (:8088 HTTP API o :7496 PostgreSQL)
+// POST /api/zkteco/biotime/sync - Sincronización desde BioTime PRO (:8088/:89 HTTP API o :7496 PostgreSQL)
 app.post('/api/zkteco/biotime/sync', async (req, res) => {
   const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
   const devices = await getLatestDeviceConfig();
@@ -3459,7 +3476,7 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
 
   const targetHost = String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim();
   const rawWp = Number(webPort || dev?.biotime_config?.web_port);
-  const targetWebPort = rawWp === 89 ? 8088 : (rawWp || 8088);
+  const targetWebPort = rawWp || 8088;
   const targetPort = Number(port || dev?.biotime_config?.db_port || 7496);
   const targetDb = String(dbName || dev?.biotime_config?.db_name || 'biotime').trim();
   const targetUser = String(user || dev?.biotime_config?.db_user || 'postgres').trim();
@@ -3488,7 +3505,7 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
       message: result.message,
       inspection: result.inspection,
       host: targetHost,
-      webPort: targetWebPort,
+      webPort: Number(result.inspection?.webPort || targetWebPort),
       port: targetPort,
       dbName: targetDb,
     });
@@ -3532,7 +3549,7 @@ app.post('/api/zkteco/biotime/test', async (req, res) => {
   const rawWp = Number(webPort);
   const report = await inspectBioTimeDb({
     host: String(host || '192.168.1.29').trim(),
-    webPort: rawWp === 89 ? 8088 : (rawWp || 8088),
+    webPort: rawWp || 8088,
     port: Number(port || 7496),
     dbName: String(dbName || 'biotime').trim(),
     user: String(user || 'postgres').trim(),
@@ -3998,46 +4015,64 @@ app.post('/api/zkteco/agent/command', async (req, res) => {
   }
 
   if (command === 'SYNC_BIOTIME') {
+    const btHost = String(params?.host || targetDev?.biotime_config?.db_host || '192.168.1.29').trim();
+    const rawWp = Number(params?.webPort ?? targetDev?.biotime_config?.web_port);
+    const btWebPort = rawWp || 8088;
+    const btDbPort = Number(params?.dbPort || targetDev?.biotime_config?.db_port || 7496);
+
     const bioResult = await syncPunchesFromBioTimeDb({
-      host: String(params?.host || targetDev?.biotime_config?.db_host || '192.168.1.29'),
-      port: Number(params?.dbPort || targetDev?.biotime_config?.db_port || 7496),
+      host: btHost,
+      webPort: btWebPort,
+      port: btDbPort,
+      dbName: params?.dbName ? String(params.dbName) : undefined,
+      user: params?.dbUser ? String(params.dbUser) : undefined,
+      password: params?.password ? String(params.password) : undefined,
+      webUser: params?.webUser ? String(params.webUser) : undefined,
+      webPassword: params?.webPassword ? String(params.webPassword) : undefined,
       serial: cleanSerial,
     });
 
     if (!bioResult.success) {
       return res.status(503).json({
         success: false,
+        needsWebCredentials: !!bioResult.needsWebCredentials,
         status_code: 'OFFLINE',
         message: bioResult.message,
         details: {
-          ip: activeIp,
-          port: devPort,
-          model: cleanModel,
+          ip: btHost,
+          port: btWebPort,
+          model: 'BioTime PRO HTTP',
           serial: cleanSerial,
           latency_ms: bioResult.latency,
           users_in_clock: 0,
+          needsWebCredentials: !!bioResult.needsWebCredentials,
           inspection: bioResult.inspection,
         },
       });
     }
 
-    const integration = await integrateRealPunchesIntoSystem(bioResult.punches, 'BIOTIME_DB', {
+    const integration = await integrateRealPunchesIntoSystem(bioResult.punches, bioResult.source || 'BIOTIME_API', {
       id: targetDev?.id,
       serial: cleanSerial,
       name: targetDev?.name || 'ZKTeco G3 (vía BioTime)',
       ip: activeIp,
     });
 
+    const isCloudOptionalFail = !integration.dbSaved && integration.newlyAdded > 0 && /Placeholder|Failed to fetch|ENOTFOUND|Sin conexión hacia Supabase|Timeout/i.test(String(integration.dbError || ''));
+    const ok = integration.dbSaved || integration.newlyAdded === 0 || isCloudOptionalFail;
+
     return res.json({
-      success: integration.dbSaved || integration.newlyAdded === 0,
-      status_code: !integration.dbSaved && integration.newlyAdded > 0 ? 'DB_ERROR' : 'PUNCHES_RECEIVED',
-      message: !integration.dbSaved && integration.newlyAdded > 0
+      success: ok,
+      status_code: !ok ? 'DB_ERROR' : 'PUNCHES_RECEIVED',
+      message: !ok
         ? `Error de almacenamiento Supabase: ${integration.dbError}`
+        : isCloudOptionalFail
+        ? `Sincronización BioTime PRO exitosa (modo local): ${integration.newlyAdded} nuevas marcaciones guardadas en este equipo (${integration.duplicatesSkipped} duplicadas omitidas).`
         : `Sincronización BioTime finalizada: ${integration.newlyAdded} nuevas marcaciones (${integration.duplicatesSkipped} duplicadas omitidas).`,
       details: {
-        ip: activeIp,
-        port: devPort,
-        model: cleanModel,
+        ip: btHost,
+        port: btWebPort,
+        model: 'BioTime PRO HTTP',
         serial: cleanSerial,
         serial_number: cleanSerial,
         latency_ms: bioResult.latency || 0,

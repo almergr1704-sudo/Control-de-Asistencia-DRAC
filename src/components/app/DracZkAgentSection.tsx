@@ -85,6 +85,67 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
   const [isUploadingUsb, setIsUploadingUsb] = useState(false);
   const usbInputRef = React.useRef<HTMLInputElement | null>(null);
 
+  // BioTime PRO (:8088) saved settings & inline credentials prompt
+  const [showBioCredsForm, setShowBioCredsForm] = useState(false);
+  const [btHostInput, setBtHostInput] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.host || '192.168.1.29';
+    } catch { return '192.168.1.29'; }
+  });
+  const [btWebPortInput, setBtWebPortInput] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return Number(s.webPort) || 8088;
+    } catch { return 8088; }
+  });
+  const [btWebUserInput, setBtWebUserInput] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.webUser || '';
+    } catch { return ''; }
+  });
+  const [btWebPasswordInput, setBtWebPasswordInput] = useState(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
+      return s.webPassword || '';
+    } catch { return ''; }
+  });
+
+  const getSavedBioTimeConfig = (targetDev?: DispositivoZkTeco) => {
+    let saved: any = {};
+    try {
+      saved = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}') || {};
+    } catch { saved = {}; }
+    const rawWp = Number(btWebPortInput || saved.webPort || targetDev?.biotime_config?.web_port);
+    return {
+      host: String(btHostInput || saved.host || targetDev?.biotime_config?.db_host || '192.168.1.29').trim(),
+      webPort: rawWp || 8088,
+      dbPort: Number(saved.dbPort || targetDev?.biotime_config?.db_port || 7496),
+      dbName: String(saved.dbName || targetDev?.biotime_config?.db_name || 'biotime'),
+      dbUser: String(saved.dbUser || targetDev?.biotime_config?.db_user || 'postgres'),
+      password: saved.password || undefined,
+      webUser: (btWebUserInput || saved.webUser || '').trim() || undefined,
+      webPassword: (btWebPasswordInput || saved.webPassword || '').trim() || undefined,
+    };
+  };
+
+  const persistBioTimeQuickSettings = (cfg: ReturnType<typeof getSavedBioTimeConfig>) => {
+    try {
+      const prev = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}') || {};
+      localStorage.setItem('drac_biotime_settings', JSON.stringify({
+        ...prev,
+        host: cfg.host,
+        webPort: cfg.webPort,
+        dbPort: cfg.dbPort,
+        dbName: cfg.dbName,
+        dbUser: cfg.dbUser,
+        webUser: cfg.webUser || '',
+        webPassword: cfg.webPassword || '',
+      }));
+    } catch {}
+  };
+
   const handleUsbFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -275,25 +336,32 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
           setExecutingCommand(null);
           return;
         } else if (command === 'SYNC_BIOTIME' && typeof electronAPI.syncBioTimePunches === 'function') {
+          const btCfg = getSavedBioTimeConfig(targetDev);
+          persistBioTimeQuickSettings(btCfg);
           const bioRes = await electronAPI.syncBioTimePunches({
-            host: targetDev?.biotime_config?.db_host || '192.168.1.29',
-            webPort: targetDev?.biotime_config?.web_port === 89 ? 8088 : (targetDev?.biotime_config?.web_port || 8088),
-            dbPort: targetDev?.biotime_config?.db_port || 7496,
+            ...btCfg,
             serial: targetDev?.serial_number || 'AEH2223460040',
+            deviceId: targetDev?.id || 'dev-01',
             deviceIp: activeIp,
             devicePort: devPort,
           });
+          if (bioRes.needsWebCredentials) {
+            setShowBioCredsForm(true);
+          } else if (bioRes.success) {
+            setShowBioCredsForm(false);
+          }
           setCommandResult({
             success: bioRes.success,
             message: bioRes.message || `Sincronización BioTime finalizada (${bioRes.new_count || 0} nuevas).`,
             details: {
               ...bioRes,
-              ip: activeIp,
-              port: devPort,
-              model: targetDev?.model || 'ZKTeco G3',
+              isBioTime: true,
+              ip: btCfg.host,
+              port: bioRes.inspection?.webPort || btCfg.webPort,
+              model: bioRes.source === 'BIOTIME_API' ? 'BioTime PRO HTTP' : `BioTime PRO (:${bioRes.inspection?.webPort || btCfg.webPort})`,
               serial: targetDev?.serial_number || 'AEH2223460040',
-              latency_ms: 0,
-              users_in_clock: targetDev?.enrolled_user_count ?? 0,
+              latency_ms: bioRes.inspection?.webReachable ? 12 : 0,
+              users_in_clock: bioRes.new_count ?? bioRes.punches_count ?? targetDev?.enrolled_user_count ?? 0,
             },
           });
           if (onRefreshPunches) onRefreshPunches();
@@ -307,6 +375,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
 
     // 2. Despacho hacia el agente HTTP LAN
     try {
+      const btCfg = command === 'SYNC_BIOTIME' ? getSavedBioTimeConfig(targetDev) : null;
+      if (btCfg) persistBioTimeQuickSettings(btCfg);
       const url = getApiUrl('/api/zkteco/agent/command');
       const res = await fetch(url, {
         method: 'POST',
@@ -321,6 +391,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
             serial: targetDev?.serial_number || 'AEH2223460040',
             model: targetDev?.model || 'ZKTeco G3',
             comm_key: targetDev?.comm_key || 0,
+            ...(btCfg || {}),
           },
         }),
       });
@@ -362,15 +433,19 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
         }
       } else {
         const errData = await res.json().catch(() => ({}));
+        if (command === 'SYNC_BIOTIME' && (errData?.needsWebCredentials || errData?.details?.needsWebCredentials)) {
+          setShowBioCredsForm(true);
+        }
         setCommandResult({
           success: false,
           message: errData.message || (agents.length === 0
             ? 'No hay agentes locales Windows conectados (0 registrados) o el reloj no respondió desde este servidor.'
             : 'El agente local no pudo completar la operación.'),
           details: errData.details || {
-            ip: activeIp,
-            port: devPort,
-            model: targetDev?.model || 'ZKTeco G3',
+            isBioTime: command === 'SYNC_BIOTIME',
+            ip: command === 'SYNC_BIOTIME' ? (btCfg?.host || '192.168.1.29') : activeIp,
+            port: command === 'SYNC_BIOTIME' ? (btCfg?.webPort || 8088) : devPort,
+            model: command === 'SYNC_BIOTIME' ? 'BioTime PRO HTTP' : (targetDev?.model || 'ZKTeco G3'),
             serial: targetDev?.serial_number || 'AEH2223460040',
             latency_ms: 0,
             users_in_clock: 0,
@@ -680,10 +755,73 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">Usuarios Reloj:</span>
-                        <span className="text-indigo-300 font-bold">
-                          {commandResult.details.users_in_clock ?? commandResult.details.user_count ?? 0}
+                        <span className="text-slate-500 block">
+                          {commandResult.details.isBioTime ? 'Marcaciones BioTime:' : 'Usuarios Reloj:'}
                         </span>
+                        <span className="text-indigo-300 font-bold">
+                          {commandResult.details.isBioTime
+                            ? (commandResult.details.new_count ?? commandResult.details.punches_count ?? commandResult.details.new_punches_downloaded ?? 0)
+                            : (commandResult.details.users_in_clock ?? commandResult.details.user_count ?? 0)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Configuración rápida de BioTime PRO (:8088) si faltan credenciales o quiere cambiar IP/Puerto */}
+                  {(showBioCredsForm || commandResult.details?.needsWebCredentials) && (
+                    <div className="mt-3 p-3 bg-slate-900/90 border border-indigo-500/40 rounded-lg space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-indigo-300">
+                          Credenciales Web BioTime PRO (HTTP API)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowBioCredsForm(false)}
+                          className="text-slate-400 hover:text-white text-[11px]"
+                        >
+                          Ocultar
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <input
+                          type="text"
+                          value={btHostInput}
+                          onChange={(e) => setBtHostInput(e.target.value)}
+                          placeholder="IP BioTime (192.168.1.29)"
+                          className="bg-[#090A0D] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                        />
+                        <input
+                          type="number"
+                          value={btWebPortInput}
+                          onChange={(e) => setBtWebPortInput(Number(e.target.value) || 8088)}
+                          placeholder="Puerto Web (8088)"
+                          className="bg-[#090A0D] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-mono"
+                        />
+                        <input
+                          type="text"
+                          value={btWebUserInput}
+                          onChange={(e) => setBtWebUserInput(e.target.value)}
+                          placeholder="Usuario BioTime PRO"
+                          className="bg-[#090A0D] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
+                        />
+                        <input
+                          type="password"
+                          value={btWebPasswordInput}
+                          onChange={(e) => setBtWebPasswordInput(e.target.value)}
+                          placeholder="Contraseña BioTime"
+                          className="bg-[#090A0D] border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white"
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleExecuteCommand('SYNC_BIOTIME')}
+                          disabled={executingCommand !== null}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded text-[11px] flex items-center gap-1.5"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          Guardar y Sincronizar BioTime PRO (:{btWebPortInput})
+                        </button>
                       </div>
                     </div>
                   )}
@@ -695,7 +833,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                         <Info className="w-4 h-4 text-amber-400 shrink-0" /> Otras Formas de Recuperar Marcaciones Reales:
                       </div>
                       <p className="text-[11px] leading-relaxed text-slate-300">
-                        Si el terminal <strong>ZKTeco G3</strong> opera en modo ADMS PUSH enviando transacciones a BioTime PRO (<span className="font-mono text-amber-300">192.168.1.29:8088</span>) o bloquea la lectura por socket, extraiga desde BioTime PRO o cargue el archivo <strong>1_attlog.dat</strong> por USB:
+                        Si el terminal <strong>ZKTeco G3</strong> opera en modo ADMS PUSH enviando transacciones a BioTime PRO (<span className="font-mono text-amber-300">{btHostInput}:{btWebPortInput}</span>) o bloquea la lectura por socket, extraiga desde BioTime PRO o cargue el archivo <strong>1_attlog.dat</strong> por USB:
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
@@ -712,7 +850,14 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
                           disabled={executingCommand !== null}
                           className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded text-[11px] flex items-center gap-1.5 transition-colors"
                         >
-                          <Database className="w-3.5 h-3.5" /> Sincronizar BioTime PostgreSQL (:7496)
+                          <Database className="w-3.5 h-3.5" /> Sincronizar BioTime PRO (:{btWebPortInput})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowBioCredsForm((prev) => !prev)}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold rounded text-[11px] flex items-center gap-1.5 transition-colors"
+                        >
+                          <Settings className="w-3.5 h-3.5" /> Credenciales BioTime (:{btWebPortInput})
                         </button>
                         <button
                           type="button"
@@ -811,9 +956,9 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               >
                 <div className="flex items-center gap-2">
                   <Database className={`w-3.5 h-3.5 text-amber-400 ${executingCommand === 'SYNC_BIOTIME' ? 'animate-spin' : ''}`} />
-                  <span>Sincronizar desde BioTime PostgreSQL</span>
+                  <span>Sincronizar desde BioTime PRO</span>
                 </div>
-                <span className="text-[10px] font-mono text-amber-400">:7496</span>
+                <span className="text-[10px] font-mono text-amber-400">:{btWebPortInput}</span>
               </button>
 
               <button

@@ -136,8 +136,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const [btWebPort, setBtWebPort] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}');
-      const wp = Number(s.webPort);
-      return wp === 89 ? 8088 : (wp || 8088);
+      return Number(s.webPort) || 8088;
     } catch { return 8088; }
   });
   const [btDbPort, setBtDbPort] = useState(() => {
@@ -721,7 +720,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const handleInspectBioTime = async () => {
     setBtInspecting(true);
     setBtInspectReport(null);
-    const resolvedWp = Number(btWebPort) === 89 ? 8088 : (Number(btWebPort) || 8088);
+    const resolvedWp = Number(btWebPort) || 8088;
     try {
       saveBioTimeSettingsLocal({
         host: btHost,
@@ -791,7 +790,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     setActionBanner(null);
     const bioCfg = activeDevice?.biotime_config;
     const rawWp = Number(customCreds?.webPort || btWebPort || bioCfg?.web_port);
-    const normalizedWebPort = !rawWp || rawWp === 89 ? 8088 : rawWp;
+    const normalizedWebPort = rawWp || 8088;
 
     const params = {
       host: customCreds?.host || btHost || bioCfg?.db_host || '192.168.1.29',

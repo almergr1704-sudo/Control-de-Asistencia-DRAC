@@ -876,7 +876,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     } catch (_) {}
     const resolvedHost = savedBt.host || selectedDevice?.biotime_config?.db_host || '192.168.1.29';
     const rawWebPort = savedBt.webPort || selectedDevice?.biotime_config?.web_port;
-    const resolvedWebPort = !rawWebPort || Number(rawWebPort) === 89 ? 8088 : Number(rawWebPort);
+    const resolvedWebPort = Number(rawWebPort) || 8088;
     const resolvedDbPort = Number(savedBt.dbPort || selectedDevice?.biotime_config?.db_port || 7496);
 
     const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
@@ -1996,7 +1996,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-1">
                         <span className="text-[10px] uppercase font-bold text-slate-500 block">Servidor BioTime</span>
                         <div className="font-mono text-slate-300 text-[11px]">
-                          <div>Web: {selectedDevice.biotime_config?.db_host || '192.168.1.29'}:{selectedDevice.biotime_config?.web_port === 89 ? 8088 : (selectedDevice.biotime_config?.web_port || 8088)}</div>
+                          <div>Web: {selectedDevice.biotime_config?.db_host || '192.168.1.29'}:{selectedDevice.biotime_config?.web_port || 8088}</div>
                           <div>DB: Puerto {selectedDevice.biotime_config?.db_port || 7496}</div>
                         </div>
                       </div>
