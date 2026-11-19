@@ -215,6 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'devices_list', label: 'Marcador ZKTeco G3' },
+        { id: 'devices_users', label: 'Usuarios Registrados en Relojes' },
         { id: 'devices_sync', label: 'Servidor ADMS Push (HTTP)' },
         { id: 'devices_agent', label: 'Agente Local LAN (ZK Agent)' },
         { id: 'devices_diag', label: 'Pruebas & Diagnóstico Socket' },

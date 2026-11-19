@@ -439,6 +439,7 @@ export const SupabaseSyncSection: React.FC = () => {
                 { name: 'vacaciones', label: 'Solicitudes de Vacaciones', count: dbStats?.tablesCount.vacaciones ?? 2, icon: Terminal, color: 'text-amber-400' },
                 { name: 'encargaturas', label: 'Encargaturas Temporales', count: dbStats?.tablesCount.encargaturas ?? 1, icon: ShieldCheck, color: 'text-purple-400' },
                 { name: 'dispositivos_zkteco', label: 'Marcadores ZKTeco', count: dbStats?.tablesCount.dispositivos_zkteco ?? 1, icon: Cpu, color: 'text-blue-400' },
+                { name: 'usuarios_reloj', label: 'Usuarios de Relojes ZK', count: dbStats?.tablesCount.usuarios_reloj ?? 0, icon: Cpu, color: 'text-sky-400' },
                 { name: 'marcaciones_raw', label: 'Marcaciones Crudas (Logs)', count: dbStats?.tablesCount.marcaciones_raw ?? 4, icon: Database, color: 'text-blue-400' },
                 { name: 'asistencias', label: 'Asistencias Procesadas', count: dbStats?.tablesCount.asistencias ?? 10, icon: CheckCircle2, color: 'text-emerald-400' },
                 { name: 'auditoria', label: 'Logs de Auditoría Inmutable', count: dbStats?.tablesCount.auditoria ?? 24, icon: ShieldCheck, color: 'text-slate-300' },

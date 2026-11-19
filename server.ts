@@ -32,6 +32,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.text({ type: ['text/*', 'application/octet-stream'], limit: '10mb' }));
 
 import { normalizeText, normalizeInstitutionalName, normalizePersonName } from './src/utils/nameUtils';
+import {
+  reconcileDeviceUsers,
+  classifyDeviceUserBinding,
+  resolveEmployeeForDevicePin,
+  buildDeviceUserId,
+  normalizePrivilegeLabel,
+  RawClockUserInput,
+} from './src/utils/deviceUserSync';
+import type { BiometricDeviceUser, DeviceUserChangeLog, DeviceUserSyncRun } from './src/types';
 
 // Data Directory and Files (supports writable DRAC_DATA_DIR when running inside Electron app.asar)
 const DATA_DIR = process.env.DRAC_DATA_DIR
@@ -69,6 +78,9 @@ const RESPONSABLES_FILE = path.join(DATA_DIR, 'responsables.json');
 const PAPELETAS_FILE = path.join(DATA_DIR, 'papeletas.json');
 const VACACIONES_FILE = path.join(DATA_DIR, 'vacaciones.json');
 const ENCARGATURAS_FILE = path.join(DATA_DIR, 'encargaturas.json');
+const DEVICE_USERS_FILE = path.join(DATA_DIR, 'device-users.json');
+const DEVICE_USER_HISTORY_FILE = path.join(DATA_DIR, 'device-user-history.json');
+const DEVICE_USER_SYNC_LOGS_FILE = path.join(DATA_DIR, 'device-user-sync-logs.json');
 const SUPABASE_CFG_FILE = path.join(DATA_DIR, 'supabase-config.json');
 
 try {
@@ -173,6 +185,7 @@ const getPunchesHandler = (req: express.Request, res: express.Response) => {
   const storedPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
   const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+  const deviceUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
   const { fecha, dni, device, status, limit } = req.query;
 
   // Filter out any legacy synthetic IDs if any remain
@@ -190,11 +203,15 @@ const getPunchesHandler = (req: express.Request, res: express.Response) => {
     filtered = filtered.filter((p) => p.device_sn === qDev || p.device_id === qDev);
   }
 
-  // Enrich strictly by biometric ID or manually linked employee_id (never by name)
+  // Enrich strictly by (device_sn, pin) binding FIRST, then unambiguous biometric ID (never by name)
   const enriched = filtered.map((p) => {
     const rawCode = String(p.employee_code || p.employee_dni || '').trim();
+    const deviceSn = String(p.device_sn || '').trim().toUpperCase();
     const linkedById = p.employee_id ? employees.find((e) => e.id === p.employee_id) : undefined;
-    const emp = linkedById || findEmployeeByBiometricCode(employees, rawCode);
+    const resolved = linkedById
+      ? { employee: linkedById, ambiguous: false }
+      : resolveEmployeeForDevicePin(employees, deviceUsers, deviceSn, rawCode);
+    const emp = resolved.employee;
     const dev = devices.find((d) => d.serial_number === p.device_sn || d.id === p.device_id);
     const isIdentified = !!emp;
     return {
@@ -2286,6 +2303,7 @@ async function integrateRealPunchesIntoSystem(
     storedPunches.map((p) => `${p.device_sn || ''}_${p.employee_code || p.employee_dni}_${p.timestamp}`)
   );
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const deviceUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
   const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
   let newlyAdded = 0;
   let duplicatesSkipped = 0;
@@ -2308,8 +2326,9 @@ async function integrateRealPunchesIntoSystem(
     }
     existingKeys.add(key);
 
-    // Vinculación estricta SOLO por identificador biométrico (NUNCA por nombre)
-    const emp = findEmployeeByBiometricCode(employees, rawPin);
+    // Vinculación estricta por (device_sn, pin) primero y luego coincidencia biométrica inequívoca
+    const resolved = resolveEmployeeForDevicePin(employees, deviceUsers, deviceSn, rawPin);
+    const emp = resolved.employee;
     const isIdentified = !!emp;
     const workerName = emp
       ? normalizePersonName(`${emp.first_name} ${emp.last_name}`)
@@ -3641,6 +3660,84 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
   writeJsonFile(ATTENDANCE_FILE, existingAttendance);
   const dbRes = await persistRawPunchesToSupabase(updatedPunches);
 
+  // Sincronizar también la vinculación (device_sn, pin) en Usuarios Registrados en Relojes
+  if (codeToLink) {
+    try {
+      const devices = readJsonFile<any[]>(DEVICES_FILE, []);
+      const dev = devices.find((d) => d.serial_number === targetSn || d.id === targetPunch?.device_id) || devices[0];
+      const snResolved = String(targetSn || dev?.serial_number || 'AEH2223460040').trim().toUpperCase();
+      const duId = buildDeviceUserId(snResolved, codeToLink);
+      const deviceUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
+      const history = readJsonFile<DeviceUserChangeLog[]>(DEVICE_USER_HISTORY_FILE, []);
+      const nowIso = new Date().toISOString();
+      const operatorName = String(req.headers['x-user-name'] || req.body?.user_name || 'Operador Autorizado');
+      const operatorRole = String(req.headers['x-user-role'] || req.body?.user_role || 'ADMIN_GENERAL');
+      const idx = deviceUsers.findIndex((u) => u.id === duId || (u.device_sn === snResolved && u.pin === codeToLink));
+      const baseFields = {
+        link_status: 'VINCULADO' as const,
+        employee_id: emp.id,
+        employee_codigo_drac: emp.codigo_trabajador || null,
+        employee_dni: emp.dni,
+        employee_full_name: empFullName,
+        employee_dependencia_name: emp.dependencia_name || null,
+        employee_area_name: emp.area_name || null,
+        employee_cargo_name: emp.cargo_name || null,
+        linked_by: operatorName,
+        linked_at: nowIso,
+        unlinked_at: null,
+        updated_at: nowIso,
+      };
+      if (idx >= 0) {
+        const prev = deviceUsers[idx];
+        deviceUsers[idx] = { ...prev, ...baseFields };
+        history.unshift({
+          id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          device_user_id: prev.id,
+          device_sn: snResolved,
+          pin: codeToLink,
+          event_type: prev.employee_id ? 'RELINKED' : 'LINKED',
+          previous_employee_id: prev.employee_id || null,
+          new_employee_id: emp.id,
+          observation: `Vinculado desde Control de Asistencia (${updatedPunches.length} marcaciones actualizadas).`,
+          operator_name: operatorName,
+          operator_role: operatorRole,
+          created_at: nowIso,
+        });
+      } else {
+        deviceUsers.push({
+          id: duId,
+          device_id: dev?.id || targetPunch?.device_id || 'dev-01',
+          device_sn: snResolved,
+          device_name: dev?.name || targetPunch?.device_name || snResolved,
+          device_ip: dev?.ip_address,
+          pin: codeToLink,
+          clock_name: null,
+          source_method: 'MANUAL',
+          source_scope: 'DIRECT_CLOCK',
+          available_fields: ['pin'],
+          present_on_device: true,
+          first_seen_at: nowIso,
+          last_queried_at: nowIso,
+          ...baseFields,
+        });
+        history.unshift({
+          id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          device_user_id: duId,
+          device_sn: snResolved,
+          pin: codeToLink,
+          event_type: 'LINKED',
+          new_employee_id: emp.id,
+          observation: `Registro creado por vinculación de marcación pendiente en ${snResolved}.`,
+          operator_name: operatorName,
+          operator_role: operatorRole,
+          created_at: nowIso,
+        });
+      }
+      writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
+      writeJsonFile(DEVICE_USER_HISTORY_FILE, history.slice(0, 1500));
+    } catch (_) {}
+  }
+
   return res.json({
     success: true,
     updated_count: updatedPunches.length,
@@ -3655,6 +3752,1112 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
 
 app.post('/api/zkteco/punches/:id/assign-employee', handleAssignEmployeeToPunch);
 app.post('/api/zkteco/link-pin', handleAssignEmployeeToPunch);
+
+// =========================================================================
+// USUARIOS REALES REGISTRADOS EN RELOJES ZKTECO & VINCULACIÓN INSTITUCIONAL
+// =========================================================================
+
+async function persistDeviceUsersToSupabase(
+  users: BiometricDeviceUser[],
+  history: DeviceUserChangeLog[] = [],
+  syncRuns: DeviceUserSyncRun[] = []
+): Promise<{ dbSaved: boolean; dbError: string | null }> {
+  const isPlaceholder =
+    !SUPABASE_URL ||
+    SUPABASE_URL.includes('rfqgmoremevypexrrsyf.supabase.co') ||
+    SUPABASE_URL.includes('your-project-ref.supabase.co');
+  if (isPlaceholder) {
+    return { dbSaved: false, dbError: 'Instancia Supabase no configurada (persistencia local activa).' };
+  }
+  try {
+    if (users.length > 0) {
+      const originRows = users.map((u) => ({
+        id: u.id,
+        device_id: u.device_id,
+        device_sn: u.device_sn,
+        device_name: u.device_name,
+        pin: u.pin,
+        uid: u.uid ?? null,
+        clock_name: u.clock_name ?? null,
+        clock_employee_code: u.clock_employee_code ?? null,
+        card_number: u.card_number ?? null,
+        privilege_code: u.privilege_code ?? null,
+        privilege_label: u.privilege_label ?? null,
+        clock_status: u.clock_status ?? null,
+        source_method: u.source_method,
+        source_scope: u.source_scope,
+        available_fields: u.available_fields || [],
+        raw_attributes: u.raw_attributes || {},
+        present_on_device: Boolean(u.present_on_device),
+        first_seen_at: u.first_seen_at,
+        last_queried_at: u.last_queried_at,
+        last_clock_updated_at: u.last_clock_updated_at || null,
+        missing_since_at: u.missing_since_at || null,
+      }));
+      const uRes: any = await withServerTimeout(
+        Promise.resolve(supabaseServer.from('usuarios_reloj').upsert(originRows, { onConflict: 'id' })),
+        3500,
+        'Timeout upsert usuarios_reloj'
+      );
+      if (uRes?.error) return { dbSaved: false, dbError: uRes.error.message };
+
+      const linkRows = users.map((u) => ({
+        id: `vinc_${u.id}`,
+        device_user_id: u.id,
+        device_sn: u.device_sn,
+        pin: u.pin,
+        trabajador_id: u.employee_id || null,
+        codigo_drac: u.employee_codigo_drac || null,
+        dni: u.employee_dni || null,
+        nombre_institucional: u.employee_full_name || null,
+        dependencia_name: u.employee_dependencia_name || null,
+        area_name: u.employee_area_name || null,
+        cargo_name: u.employee_cargo_name || null,
+        estado_vinculacion: u.link_status,
+        conflicto_detalle: u.conflict_reason || null,
+        posible_trabajador_id: u.candidate_employee_id || null,
+        posible_trabajador_nombre: u.candidate_employee_name || null,
+        posible_motivo: u.candidate_reason || null,
+        observaciones: u.observations || null,
+        vinculado_por: u.linked_by || null,
+        vinculado_en: u.linked_at || null,
+        desvinculado_en: u.unlinked_at || null,
+        updated_at: u.updated_at,
+      }));
+      await withServerTimeout(
+        Promise.resolve(supabaseServer.from('vinculaciones_usuario_reloj').upsert(linkRows, { onConflict: 'id' })),
+        3500,
+        'Timeout upsert vinculaciones_usuario_reloj'
+      );
+    }
+    if (history.length > 0) {
+      const hRows = history.slice(0, 50).map((h) => ({
+        id: h.id,
+        device_user_id: h.device_user_id,
+        device_sn: h.device_sn,
+        pin: h.pin,
+        tipo_evento: h.event_type,
+        trabajador_anterior_id: h.previous_employee_id || null,
+        trabajador_nuevo_id: h.new_employee_id || null,
+        valores_anteriores: h.previous_values || null,
+        valores_nuevos: h.new_values || null,
+        observacion: h.observation || null,
+        usuario_operador: h.operator_name,
+        rol_operador: h.operator_role,
+        created_at: h.created_at,
+      }));
+      await withServerTimeout(
+        Promise.resolve(supabaseServer.from('historial_usuarios_reloj').upsert(hRows, { onConflict: 'id' })),
+        3000,
+        'Timeout upsert historial_usuarios_reloj'
+      );
+    }
+    if (syncRuns.length > 0) {
+      const sRows = syncRuns.slice(0, 20).map((s) => ({
+        id: s.id,
+        device_id: s.device_id,
+        device_sn: s.device_sn,
+        device_name: s.device_name,
+        metodo: s.method,
+        alcance: s.source_scope,
+        exito: s.success,
+        mensaje: s.message,
+        total_recuperados: s.total_fetched,
+        nuevos: s.new_users,
+        actualizados: s.updated_users,
+        sin_cambios: s.unchanged_users,
+        no_encontrados_en_reloj: s.missing_users,
+        reaparecidos: s.reappeared_users,
+        pendientes_vinculacion: s.pending_count,
+        vinculados: s.linked_count,
+        ejecutado_por: s.executed_by,
+        created_at: s.created_at,
+      }));
+      await withServerTimeout(
+        Promise.resolve(supabaseServer.from('consultas_usuarios_reloj').upsert(sRows, { onConflict: 'id' })),
+        3000,
+        'Timeout upsert consultas_usuarios_reloj'
+      );
+    }
+    return { dbSaved: true, dbError: null };
+  } catch (err: any) {
+    return { dbSaved: false, dbError: err?.message || 'Error sincronizando usuarios de reloj con Supabase' };
+  }
+}
+
+async function queryDeviceUsersFromBioTimeServer(options: {
+  host?: string;
+  webPort?: number;
+  dbPort?: number;
+  dbName?: string;
+  dbUser?: string;
+  password?: string;
+  webUser?: string;
+  webPassword?: string;
+  serial?: string;
+}): Promise<{
+  success: boolean;
+  needsWebCredentials?: boolean;
+  source_method: 'BIOTIME_HTTP_API' | 'BIOTIME_PG_SQL';
+  source_scope: 'BIOTIME_DEVICE_SCOPED' | 'BIOTIME_GLOBAL';
+  users: RawClockUserInput[];
+  message: string;
+  error?: string;
+}> {
+  const cleanHost = String(options.host || '192.168.1.29').trim();
+  const baseWebPort = Number(options.webPort) || 8088;
+  const dbPort = Number(options.dbPort) || 7496;
+  const cleanSerial = String(options.serial || '').trim().toUpperCase();
+  const webUser = String(options.webUser || '').trim();
+  const webPassword = String(options.webPassword || '').trim();
+
+  const candidatePorts = [baseWebPort, baseWebPort === 89 ? 8088 : 89].filter((p, i, a) => p > 0 && a.indexOf(p) === i);
+  const probeTcp = (h: string, p: number) =>
+    new Promise<boolean>((resolve) => {
+      const s = new net.Socket();
+      let done = false;
+      s.setTimeout(2200);
+      s.on('connect', () => { if (!done) { done = true; s.destroy(); resolve(true); } });
+      s.on('timeout', () => { if (!done) { done = true; s.destroy(); resolve(false); } });
+      s.on('error', () => { if (!done) { done = true; s.destroy(); resolve(false); } });
+      s.connect(p, h);
+    });
+
+  let activeWebPort: number | null = null;
+  for (const p of candidatePorts) {
+    if (await probeTcp(cleanHost, p)) {
+      activeWebPort = p;
+      break;
+    }
+  }
+
+  if (activeWebPort && webUser && webPassword) {
+    const requestHttp = (urlPath: string, method = 'GET', bodyStr = '', extraHeaders: Record<string, string> = {}) =>
+      new Promise<{ status: number; headers: http.IncomingHttpHeaders; json: any; raw: string }>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: cleanHost,
+            port: activeWebPort!,
+            path: urlPath,
+            method,
+            headers: {
+              Accept: 'application/json, text/html;q=0.9',
+              ...(bodyStr ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) } : {}),
+              ...extraHeaders,
+            },
+            timeout: 5500,
+          },
+          (resp) => {
+            let data = '';
+            resp.on('data', (c) => { data += c; });
+            resp.on('end', () => {
+              let json: any = null;
+              try { json = JSON.parse(data); } catch (_) {}
+              resolve({ status: resp.statusCode || 0, headers: resp.headers || {}, json, raw: data });
+            });
+          }
+        );
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout BioTime HTTP ${cleanHost}:${activeWebPort}`)); });
+        if (bodyStr) req.write(bodyStr);
+        req.end();
+      });
+
+    let authHeaders: Record<string, string> | null = null;
+    try {
+      const jwtRes = await requestHttp('/jwt-api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
+      if (jwtRes?.json?.token) authHeaders = { Authorization: `JWT ${jwtRes.json.token}` };
+    } catch (_) {}
+    if (!authHeaders) {
+      try {
+        const tokRes = await requestHttp('/api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
+        if (tokRes?.json?.token) authHeaders = { Authorization: `Token ${tokRes.json.token}` };
+      } catch (_) {}
+    }
+    if (!authHeaders) {
+      try {
+        const loginPage = await requestHttp('/login/', 'GET');
+        const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
+        const cookieMap = new Map<string, string>();
+        const absorb = (arr: string[]) => {
+          for (const c of arr || []) {
+            const kv = String(c).split(';')[0];
+            const eq = kv.indexOf('=');
+            if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
+          }
+        };
+        absorb(setCookies);
+        let csrfToken = cookieMap.get('csrftoken') || '';
+        const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
+        if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
+        const formParams = new URLSearchParams({ username: webUser, password: webPassword });
+        if (csrfToken) formParams.set('csrfmiddlewaretoken', csrfToken);
+        const cookieHeader = Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+        const postLogin = await requestHttp('/login/?next=/', 'POST', formParams.toString(), {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Referer: `http://${cleanHost}:${activeWebPort}/login/`,
+          Origin: `http://${cleanHost}:${activeWebPort}`,
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+          ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+        });
+        absorb(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
+        if (cookieMap.has('sessionid') || postLogin.status === 302) {
+          authHeaders = {
+            Cookie: Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; '),
+            ...(cookieMap.get('csrftoken') ? { 'X-CSRFToken': cookieMap.get('csrftoken')! } : {}),
+          };
+        }
+      } catch (_) {}
+    }
+
+    if (authHeaders) {
+      const terminalAreaIds = new Set<string>();
+      try {
+        const tRes = await requestHttp('/iclock/api/terminals/?page=1&page_size=50', 'GET', '', authHeaders);
+        const terminals = Array.isArray(tRes?.json?.data) ? tRes.json.data : [];
+        const term = terminals.find((t: any) => String(t.sn || '').trim().toUpperCase() === cleanSerial);
+        if (term?.area) {
+          const areaArr = Array.isArray(term.area) ? term.area : [term.area];
+          areaArr.forEach((a: any) => terminalAreaIds.add(String(typeof a === 'object' ? a.id : a)));
+        }
+      } catch (_) {}
+
+      const emps: any[] = [];
+      for (let page = 1; page <= 15; page++) {
+        const eRes = await requestHttp(`/personnel/api/employees/?page=${page}&page_size=200`, 'GET', '', authHeaders);
+        if (eRes.status !== 200 || !eRes.json || !Array.isArray(eRes.json.data)) break;
+        emps.push(...eRes.json.data);
+        if (!eRes.json.next || emps.length >= Number(eRes.json.count || 0)) break;
+      }
+
+      if (emps.length > 0) {
+        let scoped = emps;
+        let scope: 'BIOTIME_DEVICE_SCOPED' | 'BIOTIME_GLOBAL' = 'BIOTIME_GLOBAL';
+        if (terminalAreaIds.size > 0) {
+          const areaMatched = emps.filter((e) => {
+            const areas = Array.isArray(e.area) ? e.area : e.area ? [e.area] : [];
+            return areas.some((a: any) => terminalAreaIds.has(String(typeof a === 'object' ? a.id : a)));
+          });
+          if (areaMatched.length > 0) {
+            scoped = areaMatched;
+            scope = 'BIOTIME_DEVICE_SCOPED';
+          }
+        }
+        const users: RawClockUserInput[] = scoped
+          .map((e): RawClockUserInput | null => {
+            const pin = String(e.emp_code || e.pin || '').trim();
+            if (!pin) return null;
+            const fullName = [e.first_name, e.last_name].filter(Boolean).join(' ').trim() || e.nickname || null;
+            const priv = e.dev_privilege !== null && e.dev_privilege !== undefined ? Number(e.dev_privilege) : null;
+            const cardNo = e.card_no ? String(e.card_no).trim() : null;
+            const statusStr = e.enable_att === false ? 'INACTIVO' : e.enable_att === true ? 'ACTIVO' : e.status !== undefined ? String(e.status) : null;
+            const available = ['pin', 'clock_employee_code'];
+            if (fullName) available.push('clock_name');
+            if (cardNo) available.push('card_number');
+            if (priv !== null && !Number.isNaN(priv)) available.push('privilege');
+            if (statusStr) available.push('clock_status');
+            return {
+              pin,
+              uid: e.id !== undefined ? Number(e.id) : null,
+              clock_name: fullName,
+              clock_employee_code: pin,
+              card_number: cardNo,
+              privilege_code: priv,
+              privilege_label: normalizePrivilegeLabel(priv),
+              clock_status: statusStr,
+              clock_updated_at: e.update_time || e.change_time || null,
+              source_method: 'BIOTIME_HTTP_API',
+              source_scope: scope,
+              available_fields: available,
+              raw_attributes: { biotime_emp_id: e.id, terminal_sn: cleanSerial },
+            };
+          })
+          .filter((x): x is RawClockUserInput => x !== null);
+
+        return {
+          success: true,
+          source_method: 'BIOTIME_HTTP_API',
+          source_scope: scope,
+          users,
+          message: `${users.length} usuarios recuperados vía BioTime PRO HTTP (http://${cleanHost}:${activeWebPort}) [${scope}].`,
+        };
+      }
+    }
+  }
+
+  // Fallback PostgreSQL BioTime solo lectura
+  if (await probeTcp(cleanHost, dbPort)) {
+    const passwords = [...new Set([options.password, '', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'].filter((x) => x !== undefined))];
+    for (const pwd of passwords) {
+      const client = new pg.Client({
+        host: cleanHost,
+        port: dbPort,
+        database: options.dbName || 'biotime',
+        user: options.dbUser || 'postgres',
+        password: pwd,
+        connectionTimeoutMillis: 2500,
+        statement_timeout: 4000,
+      });
+      try {
+        await client.connect();
+        const snPins = new Set<string>();
+        if (cleanSerial) {
+          try {
+            const pRes = await client.query(
+              `SELECT DISTINCT emp_code FROM iclock_transaction WHERE UPPER(COALESCE(terminal_sn::text, '')) = $1 AND emp_code IS NOT NULL`,
+              [cleanSerial]
+            );
+            pRes.rows.forEach((r: any) => snPins.add(String(r.emp_code).trim()));
+          } catch (_) {}
+        }
+        const empQ = await client.query(`SELECT id, emp_code, first_name, last_name, card_no, dev_privilege, enable_att, status, update_time FROM personnel_employee ORDER BY emp_code ASC LIMIT 5000`);
+        await client.end();
+
+        let rows = empQ.rows || [];
+        let scope: 'BIOTIME_DEVICE_SCOPED' | 'BIOTIME_GLOBAL' = 'BIOTIME_GLOBAL';
+        if (snPins.size > 0) {
+          const filtered = rows.filter((r: any) => snPins.has(String(r.emp_code || '').trim()));
+          if (filtered.length > 0) {
+            rows = filtered;
+            scope = 'BIOTIME_DEVICE_SCOPED';
+          }
+        }
+        const users: RawClockUserInput[] = rows
+          .map((r: any): RawClockUserInput | null => {
+            const pin = String(r.emp_code || '').trim();
+            if (!pin) return null;
+            const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;
+            const priv = r.dev_privilege !== null && r.dev_privilege !== undefined ? Number(r.dev_privilege) : null;
+            const cardNo = r.card_no ? String(r.card_no).trim() : null;
+            const statusStr = r.enable_att === false ? 'INACTIVO' : r.enable_att === true ? 'ACTIVO' : r.status !== null && r.status !== undefined ? String(r.status) : null;
+            const available = ['pin', 'clock_employee_code'];
+            if (fullName) available.push('clock_name');
+            if (cardNo) available.push('card_number');
+            if (priv !== null) available.push('privilege');
+            if (statusStr) available.push('clock_status');
+            return {
+              pin,
+              uid: r.id !== undefined ? Number(r.id) : null,
+              clock_name: fullName,
+              clock_employee_code: pin,
+              card_number: cardNo,
+              privilege_code: priv,
+              privilege_label: normalizePrivilegeLabel(priv),
+              clock_status: statusStr,
+              clock_updated_at: r.update_time ? new Date(r.update_time).toISOString() : null,
+              source_method: 'BIOTIME_PG_SQL',
+              source_scope: scope,
+              available_fields: available,
+              raw_attributes: { biotime_emp_id: r.id, terminal_sn: cleanSerial },
+            };
+          })
+          .filter((x): x is RawClockUserInput => x !== null);
+
+        return {
+          success: true,
+          source_method: 'BIOTIME_PG_SQL',
+          source_scope: scope,
+          users,
+          message: `${users.length} usuarios reales consultados desde PostgreSQL BioTime PRO (${cleanHost}:${dbPort}) [${scope}].`,
+        };
+      } catch (_) {
+        try { await client.end(); } catch (_) {}
+      }
+    }
+  }
+
+  return {
+    success: false,
+    needsWebCredentials: Boolean(activeWebPort && (!webUser || !webPassword)),
+    source_method: 'BIOTIME_HTTP_API',
+    source_scope: 'BIOTIME_GLOBAL',
+    users: [],
+    error: activeWebPort ? 'BIOTIME_CREDENTIALS_OR_AUTH' : 'BIOTIME_UNREACHABLE',
+    message: activeWebPort
+      ? `BioTime PRO HTTP activo en ${cleanHost}:${activeWebPort}. Ingrese usuario y contraseña de BioTime PRO para consultar usuarios.`
+      : `BioTime PRO en ${cleanHost} (HTTP :${baseWebPort} / PostgreSQL :${dbPort}) no está alcanzable desde este servidor.`,
+  };
+}
+
+async function queryDeviceUsersTcpServer(dev: any): Promise<{
+  success: boolean;
+  users: RawClockUserInput[];
+  serial?: string;
+  deviceName?: string;
+  portUsed?: number;
+  error?: string;
+  message: string;
+}> {
+  const ip = String(dev?.ip_address || '').trim();
+  const port = Number(dev?.port) || 7496;
+  const candidatePorts = [port, 4370].filter((p, i, arr) => p > 0 && arr.indexOf(p) === i);
+  let lastError = 'Sin respuesta TCP del reloj';
+
+  for (const testPort of candidatePorts) {
+    let zk: any = null;
+    try {
+      const inport = 5200 + Math.floor(Math.random() * 1000);
+      zk = new ZKLib(ip, testPort, 3500, inport);
+      await withServerTimeout(zk.createSocket(), 4000, `Timeout socket TCP en ${ip}:${testPort}`);
+      let detectedSn = dev?.serial_number;
+      let detectedName = dev?.name;
+      try {
+        if (typeof zk.getSerialNumber === 'function') {
+          const sn = await withServerTimeout(zk.getSerialNumber(), 2000, 'Timeout SN');
+          if (sn) detectedSn = String(sn).trim().toUpperCase();
+        }
+      } catch (_) {}
+      try {
+        if (typeof zk.getDeviceName === 'function') {
+          const dn = await withServerTimeout(zk.getDeviceName(), 2000, 'Timeout DN');
+          if (dn) detectedName = String(dn).trim();
+        }
+      } catch (_) {}
+
+      const uRes: any = await withServerTimeout(zk.getUsers(), 5000, 'Timeout getUsers');
+      try { await zk.disconnect(); } catch (_) {}
+
+      const list = Array.isArray(uRes?.data) ? uRes.data : Array.isArray(uRes) ? uRes : [];
+      const users: RawClockUserInput[] = list
+        .map((u: any): RawClockUserInput | null => {
+          const pin = String(u.userId ?? u.pin ?? u.uid ?? '').trim();
+          if (!pin) return null;
+          const uid = u.uid !== undefined && u.uid !== null && !Number.isNaN(Number(u.uid)) ? Number(u.uid) : null;
+          const clockName = u.name ? String(u.name).replace(/\0/g, '').trim() || null : null;
+          const cardNo = u.cardno && String(u.cardno).trim() !== '0' ? String(u.cardno).trim() : null;
+          const priv = u.role !== undefined && u.role !== null && !Number.isNaN(Number(u.role)) ? Number(u.role) : null;
+          const hasPwd = u.password !== undefined ? Boolean(String(u.password || '').trim()) : null;
+          const available = ['pin'];
+          if (uid !== null) available.push('uid');
+          if (clockName) available.push('clock_name');
+          if (cardNo) available.push('card_number');
+          if (priv !== null) available.push('privilege');
+          if (hasPwd !== null) available.push('has_password');
+          return {
+            pin,
+            uid,
+            clock_name: clockName,
+            card_number: cardNo,
+            privilege_code: priv,
+            privilege_label: normalizePrivilegeLabel(priv),
+            clock_status: null,
+            has_password: hasPwd,
+            source_method: 'TCP_NODE_ZKLIB',
+            source_scope: 'DIRECT_CLOCK',
+            available_fields: available,
+            raw_attributes: { uid, userId: pin, role: priv, cardno: cardNo },
+          };
+        })
+        .filter((x: RawClockUserInput | null): x is RawClockUserInput => x !== null);
+
+      return {
+        success: true,
+        users,
+        serial: detectedSn,
+        deviceName: detectedName,
+        portUsed: testPort,
+        message: `${users.length} usuarios leídos directamente vía TCP (${ip}:${testPort}).`,
+      };
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      if (zk) { try { await zk.disconnect(); } catch (_) {} }
+    }
+  }
+
+  return {
+    success: false,
+    users: [],
+    error: lastError,
+    message: `No se pudo consultar ${ip}:${port} por TCP (${lastError}).`,
+  };
+}
+
+// GET /api/zkteco/device-users
+app.get('/api/zkteco/device-users', (_req, res) => {
+  const users = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
+  const history = readJsonFile<DeviceUserChangeLog[]>(DEVICE_USER_HISTORY_FILE, []);
+  const syncLogs = readJsonFile<DeviceUserSyncRun[]>(DEVICE_USER_SYNC_LOGS_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+
+  // Refrescar estado dinámico sin alterar datos originales del reloj
+  const refreshedUsers = users.map((u) => {
+    const ev = classifyDeviceUserBinding(u, employees, users);
+    const emp = ev.matchedEmployee;
+    const cand = ev.candidateEmployee;
+    return {
+      ...u,
+      link_status: ev.link_status,
+      employee_codigo_drac: emp?.codigo_trabajador || u.employee_codigo_drac || null,
+      employee_dni: emp?.dni || u.employee_dni || null,
+      employee_full_name: emp ? normalizePersonName(`${emp.first_name} ${emp.last_name}`) : u.employee_full_name || null,
+      employee_dependencia_name: emp?.dependencia_name || u.employee_dependencia_name || null,
+      employee_area_name: emp?.area_name || u.employee_area_name || null,
+      employee_cargo_name: emp?.cargo_name || u.employee_cargo_name || null,
+      candidate_employee_id: !emp && cand ? cand.id : null,
+      candidate_employee_name: !emp && cand ? normalizePersonName(`${cand.first_name} ${cand.last_name}`) : null,
+      candidate_employee_dni: !emp && cand ? cand.dni : null,
+      candidate_employee_code: !emp && cand ? cand.codigo_trabajador : null,
+      candidate_reason: !emp ? ev.candidateReason : null,
+      conflict_reason: ev.conflictReason,
+    };
+  });
+
+  return res.json({
+    success: true,
+    users: refreshedUsers,
+    history,
+    syncLogs,
+  });
+});
+
+// POST /api/zkteco/device-users/sync-store - Persiste resultados obtenidos directamente desde Electron Desktop
+app.post('/api/zkteco/device-users/sync-store', async (req, res) => {
+  const { users, history, syncLogs } = req.body || {};
+  if (Array.isArray(users)) writeJsonFile(DEVICE_USERS_FILE, users);
+  if (Array.isArray(history)) writeJsonFile(DEVICE_USER_HISTORY_FILE, history.slice(0, 1500));
+  if (Array.isArray(syncLogs)) writeJsonFile(DEVICE_USER_SYNC_LOGS_FILE, syncLogs.slice(0, 300));
+  const dbRes = await persistDeviceUsersToSupabase(
+    Array.isArray(users) ? users : [],
+    Array.isArray(history) ? history : [],
+    Array.isArray(syncLogs) ? syncLogs : []
+  );
+  return res.json({ success: true, db_saved: dbRes.dbSaved, db_error: dbRes.dbError });
+});
+
+// POST /api/zkteco/device-users/query - Consulta real e idempotente de usuarios en relojes / BioTime PRO
+app.post('/api/zkteco/device-users/query', async (req, res) => {
+  const {
+    deviceId,
+    mode = 'AUTO',
+    biotime = {},
+  } = req.body || {};
+
+  const operatorName = String(req.headers['x-user-name'] || req.body?.user_name || 'Administrador DRAC');
+  const operatorRole = String(req.headers['x-user-role'] || req.body?.user_role || 'ADMIN_GENERAL');
+
+  const allDevices = await getLatestDeviceConfig(deviceId);
+  const targets = deviceId
+    ? allDevices.filter((d) => d.id === deviceId || d.serial_number === deviceId)
+    : allDevices;
+
+  if (targets.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: 'No hay dispositivos biométricos configurados para consultar.',
+      results: [],
+    });
+  }
+
+  let currentUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
+  let currentHistory = readJsonFile<DeviceUserChangeLog[]>(DEVICE_USER_HISTORY_FILE, []);
+  let currentSyncLogs = readJsonFile<DeviceUserSyncRun[]>(DEVICE_USER_SYNC_LOGS_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+
+  const perDeviceResults: any[] = [];
+  let anySuccess = false;
+  let needsWebCredentials = false;
+
+  for (const dev of targets) {
+    const devSn = String(dev.serial_number || dev.id || 'AEH2223460040').trim().toUpperCase();
+    let tcpResult: any = { success: false, users: [], message: 'Omitido por modo BioTime' };
+
+    if (mode !== 'BIOTIME') {
+      tcpResult = await queryDeviceUsersTcpServer(dev);
+    }
+
+    if (tcpResult.success) {
+      anySuccess = true;
+      const rec = reconcileDeviceUsers({
+        existingUsers: currentUsers,
+        fetchedUsers: tcpResult.users,
+        employees,
+        deviceId: dev.id,
+        deviceSn: tcpResult.serial || devSn,
+        deviceName: tcpResult.deviceName || dev.name || devSn,
+        deviceIp: dev.ip_address,
+        method: 'TCP_NODE_ZKLIB',
+        sourceScope: 'DIRECT_CLOCK',
+        executedBy: operatorName,
+        executedRole: operatorRole,
+        message: tcpResult.message,
+      });
+      currentUsers = rec.mergedUsers;
+      currentHistory = [...rec.newLogs, ...currentHistory].slice(0, 1500);
+      currentSyncLogs = [rec.syncRun, ...currentSyncLogs].slice(0, 300);
+      perDeviceResults.push(rec.syncRun);
+      continue;
+    }
+
+    if (mode !== 'TCP_DIRECT' && (biotime?.host || dev.biotime_config?.enabled || dev.push_enabled)) {
+      const btRes = await queryDeviceUsersFromBioTimeServer({
+        host: biotime?.host || dev.push_server_address || '192.168.1.29',
+        webPort: biotime?.webPort || dev.biotime_config?.web_port || 8088,
+        dbPort: biotime?.dbPort || dev.biotime_config?.db_port || 7496,
+        dbName: biotime?.dbName || dev.biotime_config?.db_name || 'biotime',
+        dbUser: biotime?.dbUser || dev.biotime_config?.db_user || 'postgres',
+        password: biotime?.password,
+        webUser: biotime?.webUser,
+        webPassword: biotime?.webPassword,
+        serial: devSn,
+      });
+
+      if (btRes.success) {
+        anySuccess = true;
+        const rec = reconcileDeviceUsers({
+          existingUsers: currentUsers,
+          fetchedUsers: btRes.users,
+          employees,
+          deviceId: dev.id,
+          deviceSn: devSn,
+          deviceName: dev.name || devSn,
+          deviceIp: dev.ip_address,
+          method: btRes.source_method,
+          sourceScope: btRes.source_scope,
+          executedBy: operatorName,
+          executedRole: operatorRole,
+          message: btRes.message,
+        });
+        currentUsers = rec.mergedUsers;
+        currentHistory = [...rec.newLogs, ...currentHistory].slice(0, 1500);
+        currentSyncLogs = [rec.syncRun, ...currentSyncLogs].slice(0, 300);
+        perDeviceResults.push(rec.syncRun);
+        continue;
+      }
+
+      if (btRes.needsWebCredentials) needsWebCredentials = true;
+      const failRun: DeviceUserSyncRun = {
+        id: `du_sync_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        device_id: dev.id,
+        device_sn: devSn,
+        device_name: dev.name || devSn,
+        method: mode === 'BIOTIME' ? 'BIOTIME_HTTP_API' : 'AUTO',
+        source_scope: 'DIRECT_CLOCK',
+        success: false,
+        message: mode === 'BIOTIME' ? btRes.message : `${tcpResult.message} | ${btRes.message}`,
+        error: btRes.error || tcpResult.error || 'CONNECTION_FAILED',
+        total_fetched: 0,
+        new_users: 0,
+        updated_users: 0,
+        unchanged_users: 0,
+        missing_users: 0,
+        reappeared_users: 0,
+        linked_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'VINCULADO').length,
+        pending_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'PENDIENTE_VINCULACION').length,
+        possible_match_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'POSIBLE_COINCIDENCIA').length,
+        review_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'REVISAR').length,
+        executed_by: operatorName,
+        created_at: new Date().toISOString(),
+      };
+      currentSyncLogs = [failRun, ...currentSyncLogs].slice(0, 300);
+      perDeviceResults.push(failRun);
+    } else {
+      const failRun: DeviceUserSyncRun = {
+        id: `du_sync_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        device_id: dev.id,
+        device_sn: devSn,
+        device_name: dev.name || devSn,
+        method: 'TCP_NODE_ZKLIB',
+        source_scope: 'DIRECT_CLOCK',
+        success: false,
+        message: tcpResult.message,
+        error: tcpResult.error || 'TCP_FAILED',
+        total_fetched: 0,
+        new_users: 0,
+        updated_users: 0,
+        unchanged_users: 0,
+        missing_users: 0,
+        reappeared_users: 0,
+        linked_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'VINCULADO').length,
+        pending_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'PENDIENTE_VINCULACION').length,
+        possible_match_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'POSIBLE_COINCIDENCIA').length,
+        review_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'REVISAR').length,
+        executed_by: operatorName,
+        created_at: new Date().toISOString(),
+      };
+      currentSyncLogs = [failRun, ...currentSyncLogs].slice(0, 300);
+      perDeviceResults.push(failRun);
+    }
+  }
+
+  writeJsonFile(DEVICE_USERS_FILE, currentUsers);
+  writeJsonFile(DEVICE_USER_HISTORY_FILE, currentHistory);
+  writeJsonFile(DEVICE_USER_SYNC_LOGS_FILE, currentSyncLogs);
+
+  const dbRes = await persistDeviceUsersToSupabase(currentUsers, currentHistory.slice(0, 40), perDeviceResults);
+
+  return res.status(anySuccess ? 200 : 200).json({
+    success: anySuccess,
+    needsWebCredentials,
+    results: perDeviceResults,
+    users: currentUsers,
+    history: currentHistory,
+    syncLogs: currentSyncLogs,
+    db_saved: dbRes.dbSaved,
+    db_error: dbRes.dbError,
+    message: anySuccess
+      ? perDeviceResults.filter((r) => r.success).map((r) => r.message).join(' ')
+      : perDeviceResults.map((r) => r.message).join(' | '),
+  });
+});
+
+// POST /api/zkteco/device-users/link - Vincular, reasignar, desvincular o editar observaciones preservando datos originales
+app.post('/api/zkteco/device-users/link', async (req, res) => {
+  const {
+    device_user_id,
+    action = 'LINK', // 'LINK' | 'RELINK' | 'UNLINK' | 'UPDATE_OBSERVATION'
+    employee_id,
+    observations,
+    save_pin_to_employee = true,
+    apply_to_historical_punches = true,
+  } = req.body || {};
+
+  const userRole = String(req.headers['x-user-role'] || req.body?.user_role || '').trim();
+  const ALLOWED_ROLES = ['ADMIN_GENERAL', 'HR_ADMIN', 'JEFE_RRHH', 'CONTROL_ASISTENCIA', 'SUPERVISOR', 'DIRECTOR_GENERAL'];
+  if (userRole && !ALLOWED_ROLES.includes(userRole)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado: No tiene permisos para modificar vinculaciones biométricas.',
+    });
+  }
+
+  const operatorName = String(req.headers['x-user-name'] || req.body?.user_name || 'Administrador DRAC');
+  const operatorRole = userRole || 'ADMIN_GENERAL';
+  const nowIso = new Date().toISOString();
+
+  const deviceUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
+  const history = readJsonFile<DeviceUserChangeLog[]>(DEVICE_USER_HISTORY_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+  const attendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+
+  const idx = deviceUsers.findIndex((u) => u.id === device_user_id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Usuario del reloj no encontrado en el registro.' });
+  }
+
+  const target = deviceUsers[idx];
+  const logsToAdd: DeviceUserChangeLog[] = [];
+  let updatedPunchesCount = 0;
+  const touchedPunches: any[] = [];
+
+  if (action === 'UNLINK') {
+    const prevEmpId = target.employee_id || null;
+    const prevEmpName = target.employee_full_name || null;
+    deviceUsers[idx] = {
+      ...target,
+      employee_id: null,
+      employee_codigo_drac: null,
+      employee_dni: null,
+      employee_full_name: null,
+      employee_dependencia_name: null,
+      employee_area_name: null,
+      employee_cargo_name: null,
+      observations: observations !== undefined ? String(observations).trim() || null : target.observations || null,
+      unlinked_at: nowIso,
+      updated_at: nowIso,
+    };
+    const ev = classifyDeviceUserBinding(deviceUsers[idx], employees, deviceUsers);
+    deviceUsers[idx].link_status = ev.link_status;
+    deviceUsers[idx].conflict_reason = ev.conflictReason;
+
+    logsToAdd.push({
+      id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      device_user_id: target.id,
+      device_sn: target.device_sn,
+      pin: target.pin,
+      event_type: 'UNLINKED',
+      previous_employee_id: prevEmpId,
+      new_employee_id: null,
+      previous_values: { employee_id: prevEmpId, employee_full_name: prevEmpName },
+      new_values: { employee_id: null },
+      observation: observations ? String(observations).trim() : `Desvinculación manual de ${prevEmpName || prevEmpId || 'trabajador'}.`,
+      operator_name: operatorName,
+      operator_role: operatorRole,
+      created_at: nowIso,
+    });
+  } else if (action === 'UPDATE_OBSERVATION') {
+    const prevObs = target.observations || null;
+    const nextObs = observations !== undefined ? String(observations).trim() || null : prevObs;
+    deviceUsers[idx] = {
+      ...target,
+      observations: nextObs,
+      updated_at: nowIso,
+    };
+    logsToAdd.push({
+      id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      device_user_id: target.id,
+      device_sn: target.device_sn,
+      pin: target.pin,
+      event_type: 'OBSERVATION_UPDATED',
+      previous_values: { observations: prevObs },
+      new_values: { observations: nextObs },
+      observation: nextObs || 'Observación limpiada.',
+      operator_name: operatorName,
+      operator_role: operatorRole,
+      created_at: nowIso,
+    });
+  } else {
+    // LINK or RELINK
+    const emp = employees.find((e) => e.id === employee_id || e.dni === employee_id);
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'Trabajador institucional seleccionado no existe.' });
+    }
+    const prevEmpId = target.employee_id || null;
+    const empFullName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+
+    // Nota: NUNCA modificamos clock_name ni employee.first_name / last_name
+    deviceUsers[idx] = {
+      ...target,
+      employee_id: emp.id,
+      employee_codigo_drac: emp.codigo_trabajador || null,
+      employee_dni: emp.dni,
+      employee_full_name: empFullName,
+      employee_dependencia_name: emp.dependencia_name || null,
+      employee_area_name: emp.area_name || null,
+      employee_cargo_name: emp.cargo_name || null,
+      candidate_employee_id: null,
+      candidate_employee_name: null,
+      candidate_employee_dni: null,
+      candidate_employee_code: null,
+      candidate_reason: null,
+      observations: observations !== undefined ? String(observations).trim() || null : target.observations || null,
+      linked_by: operatorName,
+      linked_at: nowIso,
+      unlinked_at: null,
+      updated_at: nowIso,
+    };
+
+    const ev = classifyDeviceUserBinding(deviceUsers[idx], employees, deviceUsers);
+    deviceUsers[idx].link_status = ev.link_status;
+    deviceUsers[idx].conflict_reason = ev.conflictReason;
+
+    logsToAdd.push({
+      id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      device_user_id: target.id,
+      device_sn: target.device_sn,
+      pin: target.pin,
+      event_type: prevEmpId && prevEmpId !== emp.id ? 'RELINKED' : 'LINKED',
+      previous_employee_id: prevEmpId,
+      new_employee_id: emp.id,
+      previous_values: prevEmpId ? { employee_id: prevEmpId, employee_full_name: target.employee_full_name } : null,
+      new_values: { employee_id: emp.id, employee_dni: emp.dni, employee_full_name: empFullName },
+      observation: observations ? String(observations).trim() : `PIN ${target.pin} en ${target.device_sn} vinculado a ${empFullName}.`,
+      operator_name: operatorName,
+      operator_role: operatorRole,
+      created_at: nowIso,
+    });
+
+    if (save_pin_to_employee) {
+      const empIdx = employees.findIndex((e) => e.id === emp.id);
+      if (empIdx >= 0 && String(employees[empIdx].zkteco_pin || '') !== target.pin) {
+        const oldPin = employees[empIdx].zkteco_pin || null;
+        employees[empIdx] = {
+          ...employees[empIdx],
+          zkteco_pin: target.pin,
+          biometric_user_id: target.pin,
+        };
+        writeJsonFile(EMPLOYEES_FILE, employees);
+        logsToAdd.push({
+          id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          device_user_id: target.id,
+          device_sn: target.device_sn,
+          pin: target.pin,
+          event_type: 'PIN_ASSIGNED_TO_WORKER',
+          new_employee_id: emp.id,
+          previous_values: { zkteco_pin: oldPin },
+          new_values: { zkteco_pin: target.pin },
+          observation: `PIN biométrico "${target.pin}" guardado en la ficha institucional de ${empFullName}.`,
+          operator_name: operatorName,
+          operator_role: operatorRole,
+          created_at: nowIso,
+        });
+      }
+    }
+
+    // Aplicación retroactiva automática sobre marcaciones históricas de MISMO (device_sn, pin)
+    // Conserva intactos timestamp, device_sn, punch_type, verify_mode y raw_payload originales.
+    if (apply_to_historical_punches) {
+      for (let i = 0; i < rawPunches.length; i++) {
+        const p = rawPunches[i];
+        const pSn = String(p.device_sn || '').trim().toUpperCase();
+        const pCode = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+        if (pSn === target.device_sn && pCode === target.pin) {
+          if (p.employee_id !== emp.id || p.validation_status === 'PENDIENTE_IDENTIFICACION') {
+            rawPunches[i] = {
+              ...p,
+              employee_id: emp.id,
+              employee_dni: emp.dni,
+              employee_code: pCode,
+              employee_name: empFullName,
+              validation_status: 'VALIDA',
+              processed: true,
+              linked_at: nowIso,
+              linked_by: operatorName,
+            };
+            updatedPunchesCount++;
+            touchedPunches.push(rawPunches[i]);
+            upsertAttendanceFromIdentifiedPunch(attendance, emp, rawPunches[i]);
+          }
+        }
+      }
+      if (updatedPunchesCount > 0) {
+        writeJsonFile(RAW_PUNCHES_FILE, rawPunches);
+        writeJsonFile(ATTENDANCE_FILE, attendance);
+        await persistRawPunchesToSupabase(touchedPunches);
+        logsToAdd.push({
+          id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          device_user_id: target.id,
+          device_sn: target.device_sn,
+          pin: target.pin,
+          event_type: 'RETROACTIVE_PUNCHES_APPLIED',
+          new_employee_id: emp.id,
+          observation: `${updatedPunchesCount} marcación(es) histórica(s) del reloj ${target.device_sn} (PIN ${target.pin}) asociadas a ${empFullName}.`,
+          operator_name: operatorName,
+          operator_role: operatorRole,
+          created_at: nowIso,
+        });
+      }
+    }
+  }
+
+  const nextHistory = [...logsToAdd, ...history].slice(0, 1500);
+  writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
+  writeJsonFile(DEVICE_USER_HISTORY_FILE, nextHistory);
+
+  // Auditoría global institucional
+  try {
+    const audits = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
+    audits.unshift({
+      id: `audit-du-${Date.now()}`,
+      timestamp: nowIso,
+      user_id: String(req.body?.user_id || 'admin-drac'),
+      user_name: operatorName,
+      role: operatorRole,
+      app_origin: 'WEB',
+      module: 'USUARIOS_RELOJES',
+      action: `VINCULACION_${action}`,
+      affected_record_id: target.id,
+      details: logsToAdd.map((l) => l.observation).join(' | '),
+      result: 'SUCCESS',
+    });
+    writeJsonFile(AUDIT_LOGS_FILE, audits.slice(0, 1000));
+  } catch (_) {}
+
+  const dbRes = await persistDeviceUsersToSupabase([deviceUsers[idx]], logsToAdd, []);
+
+  return res.json({
+    success: true,
+    record: deviceUsers[idx],
+    added_logs: logsToAdd,
+    retroactive_punches_updated: updatedPunchesCount,
+    db_saved: dbRes.dbSaved,
+    db_error: dbRes.dbError,
+    message:
+      action === 'UNLINK'
+        ? `Usuario PIN ${target.pin} (${target.device_sn}) desvinculado conservando los registros históricos.`
+        : action === 'UPDATE_OBSERVATION'
+        ? `Observación actualizada para PIN ${target.pin}.`
+        : `PIN ${target.pin} (${target.device_sn}) vinculado a ${deviceUsers[idx].employee_full_name}. ${updatedPunchesCount > 0 ? `${updatedPunchesCount} marcaciones históricas actualizadas.` : ''}`.trim(),
+  });
+});
+
+// POST /api/zkteco/device-users/:id/clock-name - Edición OPCIONAL, INDEPENDIENTE y SOLO ADMIN del nombre en el reloj físico
+app.post('/api/zkteco/device-users/:id/clock-name', async (req, res) => {
+  const userRole = String(req.headers['x-user-role'] || req.body?.user_role || '').trim();
+  const ADMIN_ONLY_ROLES = ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'];
+  if (!ADMIN_ONLY_ROLES.includes(userRole)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Acceso denegado: Solo administradores autorizados pueden modificar el nombre directamente en el reloj físico.',
+    });
+  }
+
+  const newClockName = String(req.body?.clock_name || '').trim().slice(0, 24);
+  if (!newClockName) {
+    return res.status(400).json({ success: false, message: 'Debe indicar un nombre válido para el reloj (máximo 24 caracteres).' });
+  }
+
+  const deviceUsers = readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []);
+  const idx = deviceUsers.findIndex((u) => u.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ success: false, message: 'Usuario del reloj no encontrado.' });
+  }
+
+  const target = deviceUsers[idx];
+  const devices = await getLatestDeviceConfig(target.device_sn);
+  const dev = devices.find((d) => d.serial_number === target.device_sn || d.id === target.device_id) || devices[0];
+  if (!dev || !dev.ip_address) {
+    return res.status(400).json({ success: false, message: 'No se encontró configuración IP para el reloj asociado.' });
+  }
+
+  const ip = String(dev.ip_address).trim();
+  const candidatePorts = [Number(dev.port) || 7496, 4370].filter((p, i, a) => p > 0 && a.indexOf(p) === i);
+  let lastError = 'El dispositivo no acepta escritura TCP de nombres o está en modo ADMS exclusivo.';
+  let written = false;
+
+  for (const testPort of candidatePorts) {
+    let zk: any = null;
+    try {
+      const inport = 5200 + Math.floor(Math.random() * 1000);
+      zk = new ZKLib(ip, testPort, 3500, inport);
+      await withServerTimeout(zk.createSocket(), 4000, `Timeout TCP en ${ip}:${testPort}`);
+      if (typeof zk.setUser === 'function') {
+        await withServerTimeout(
+          zk.setUser(Number(target.uid || target.pin) || 1, target.pin, newClockName, '', Number(target.privilege_code || 0), 0),
+          4000,
+          'Timeout setUser'
+        );
+        written = true;
+      } else {
+        lastError = 'La interfaz TCP de este reloj no expone escritura remota de usuario (setUser).';
+      }
+      try { await zk.disconnect(); } catch (_) {}
+      if (written) break;
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      if (zk) { try { await zk.disconnect(); } catch (_) {} }
+    }
+  }
+
+  if (!written) {
+    return res.status(400).json({
+      success: false,
+      message: `No se modificó el nombre en el reloj físico (${ip}): ${lastError}`,
+    });
+  }
+
+  const nowIso = new Date().toISOString();
+  const prevClockName = target.clock_name || null;
+  deviceUsers[idx] = {
+    ...target,
+    clock_name: newClockName,
+    last_clock_updated_at: nowIso,
+    updated_at: nowIso,
+  };
+  const history = readJsonFile<DeviceUserChangeLog[]>(DEVICE_USER_HISTORY_FILE, []);
+  const logEntry: DeviceUserChangeLog = {
+    id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    device_user_id: target.id,
+    device_sn: target.device_sn,
+    pin: target.pin,
+    event_type: 'CLOCK_NAME_UPDATED',
+    previous_values: { clock_name: prevClockName },
+    new_values: { clock_name: newClockName },
+    observation: `Nombre en reloj actualizado manualmente vía TCP por administrador: "${prevClockName || '(vacío)'}" → "${newClockName}".`,
+    operator_name: String(req.headers['x-user-name'] || req.body?.user_name || 'Administrador DRAC'),
+    operator_role: userRole,
+    created_at: nowIso,
+  };
+  writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
+  writeJsonFile(DEVICE_USER_HISTORY_FILE, [logEntry, ...history].slice(0, 1500));
+  await persistDeviceUsersToSupabase([deviceUsers[idx]], [logEntry], []);
+
+  return res.json({
+    success: true,
+    record: deviceUsers[idx],
+    message: `Nombre en el reloj físico actualizado a "${newClockName}" para el PIN ${target.pin}.`,
+  });
+});
 
 // GET /api/zkteco/agent/status - Lista de agentes Windows LAN
 app.get('/api/zkteco/agent/status', (req, res) => {
@@ -4488,6 +5691,7 @@ app.get('/api/supabase/status', async (_req, res) => {
     vacaciones: readJsonFile<any[]>(VACACIONES_FILE, []).length,
     encargaturas: readJsonFile<any[]>(ENCARGATURAS_FILE, []).length,
     dispositivos_zkteco: readJsonFile<any[]>(DEVICES_FILE, []).length,
+    usuarios_reloj: readJsonFile<any[]>(DEVICE_USERS_FILE, []).length,
     marcaciones_raw: readJsonFile<any[]>(RAW_PUNCHES_FILE, []).length,
     asistencias: readJsonFile<any[]>(ATTENDANCE_FILE, []).length,
     auditoria: readJsonFile<any[]>(AUDIT_LOGS_FILE, []).length,

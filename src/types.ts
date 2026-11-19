@@ -1036,6 +1036,7 @@ export interface SupabaseConfigStatus {
     vacaciones: number;
     encargaturas: number;
     dispositivos_zkteco: number;
+    usuarios_reloj?: number;
     marcaciones_raw: number;
     asistencias: number;
     auditoria: number;
@@ -1043,6 +1044,128 @@ export interface SupabaseConfigStatus {
   rlsPoliciesActive: boolean;
   centralDracSequenceActive: boolean;
   lastSyncTimestamp?: string;
+}
+
+export type DeviceUserLinkStatus =
+  | 'VINCULADO'
+  | 'PENDIENTE_VINCULACION'
+  | 'POSIBLE_COINCIDENCIA'
+  | 'REVISAR'
+  | 'INACTIVO';
+
+export type DeviceUserSourceMethod =
+  | 'TCP_NODE_ZKLIB'
+  | 'TCP_RAW_ZK'
+  | 'BIOTIME_HTTP_API'
+  | 'BIOTIME_PG_SQL'
+  | 'ADMS_PUSH'
+  | 'MANUAL';
+
+export type DeviceUserSourceScope =
+  | 'DIRECT_CLOCK'
+  | 'BIOTIME_DEVICE_SCOPED'
+  | 'BIOTIME_GLOBAL';
+
+export interface BiometricDeviceUser {
+  id: string; // Determinístico: `${device_sn}__${pin}`
+  device_id: string;
+  device_sn: string;
+  device_name: string;
+  device_ip?: string;
+  // A. DATOS ORIGINALES DEL RELOJ (Inmutables frente a la vinculación)
+  pin: string;
+  uid?: number | null;
+  clock_name?: string | null;
+  clock_employee_code?: string | null;
+  card_number?: string | null;
+  privilege_code?: number | null;
+  privilege_label?: string | null;
+  clock_status?: string | null; // Solo cuando el dispositivo/origen lo provee realmente
+  has_password?: boolean | null;
+  clock_updated_at?: string | null;
+  source_method: DeviceUserSourceMethod;
+  source_scope: DeviceUserSourceScope;
+  available_fields: string[];
+  raw_attributes?: Record<string, any>;
+  present_on_device: boolean;
+  first_seen_at: string;
+  last_queried_at: string;
+  last_clock_updated_at?: string | null;
+  missing_since_at?: string | null;
+  // B. DATOS DE VINCULACIÓN INSTITUCIONAL
+  link_status: DeviceUserLinkStatus;
+  employee_id?: string | null;
+  employee_codigo_drac?: string | null;
+  employee_dni?: string | null;
+  employee_full_name?: string | null;
+  employee_dependencia_name?: string | null;
+  employee_area_name?: string | null;
+  employee_cargo_name?: string | null;
+  candidate_employee_id?: string | null;
+  candidate_employee_name?: string | null;
+  candidate_employee_dni?: string | null;
+  candidate_employee_code?: string | null;
+  candidate_reason?: string | null;
+  conflict_reason?: string | null;
+  observations?: string | null;
+  linked_by?: string | null;
+  linked_at?: string | null;
+  unlinked_at?: string | null;
+  updated_at: string;
+}
+
+export type DeviceUserChangeEventType =
+  | 'DISCOVERED'
+  | 'CLOCK_DATA_UPDATED'
+  | 'MARKED_MISSING'
+  | 'REAPPEARED'
+  | 'LINKED'
+  | 'RELINKED'
+  | 'UNLINKED'
+  | 'PIN_ASSIGNED_TO_WORKER'
+  | 'OBSERVATION_UPDATED'
+  | 'RETROACTIVE_PUNCHES_APPLIED'
+  | 'CLOCK_NAME_UPDATED';
+
+export interface DeviceUserChangeLog {
+  id: string;
+  device_user_id: string;
+  device_sn: string;
+  pin: string;
+  event_type: DeviceUserChangeEventType;
+  previous_employee_id?: string | null;
+  new_employee_id?: string | null;
+  previous_values?: Record<string, any> | null;
+  new_values?: Record<string, any> | null;
+  observation?: string | null;
+  operator_name: string;
+  operator_role: string;
+  created_at: string;
+}
+
+export interface DeviceUserSyncRun {
+  id: string;
+  device_id: string;
+  device_sn: string;
+  device_name: string;
+  method: DeviceUserSourceMethod | 'AUTO';
+  source_scope: DeviceUserSourceScope | 'MIXED';
+  success: boolean;
+  message: string;
+  error?: string | null;
+  total_fetched: number;
+  new_users: number;
+  updated_users: number;
+  unchanged_users: number;
+  missing_users: number;
+  reappeared_users: number;
+  linked_count: number;
+  pending_count: number;
+  possible_match_count: number;
+  review_count: number;
+  detected_capabilities?: string[];
+  executed_by: string;
+  created_at: string;
 }
 
 export interface PasswordPolicy {
@@ -1141,6 +1264,46 @@ declare global {
       }>;
       inspectBioTimeDatabase?: (config?: any) => Promise<any>;
       syncBioTimePunches?: (config?: any) => Promise<any>;
+      queryZkDeviceUsers?: (config: {
+        deviceId?: string;
+        deviceName?: string;
+        ip: string;
+        port?: number;
+        timeoutMs?: number;
+        commKey?: number | string;
+        model?: string;
+        serial?: string;
+        mode?: 'AUTO' | 'TCP_DIRECT' | 'BIOTIME';
+        biotime?: {
+          host?: string;
+          webPort?: number;
+          dbPort?: number;
+          dbName?: string;
+          dbUser?: string;
+          password?: string;
+          webUser?: string;
+          webPassword?: string;
+        };
+      }) => Promise<any>;
+      getDeviceUsersStore?: () => Promise<{
+        users: BiometricDeviceUser[];
+        history: DeviceUserChangeLog[];
+        syncLogs: DeviceUserSyncRun[];
+      }>;
+      saveDeviceUsersStore?: (payload: {
+        users: BiometricDeviceUser[];
+        history: DeviceUserChangeLog[];
+        syncLogs: DeviceUserSyncRun[];
+      }) => Promise<{ success: boolean; error?: string }>;
+      setZkDeviceUserName?: (config: {
+        ip: string;
+        port?: number;
+        timeoutMs?: number;
+        commKey?: number | string;
+        uid?: number;
+        pin: string;
+        name: string;
+      }) => Promise<{ success: boolean; message: string; method?: string }>;
       getRawPunches?: () => Promise<any[]>;
       saveRawPunches?: (punches?: any[]) => Promise<{ success: boolean; count: number; error?: string }>;
       pingZkDevice: (ip: string, port?: number, timeoutMs?: number) => Promise<{

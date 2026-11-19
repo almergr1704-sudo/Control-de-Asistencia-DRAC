@@ -3,6 +3,7 @@ import { DispositivoZkTeco, MarcacionRaw, Employee } from '../../types';
 import { getApiUrl } from '../../utils/apiConfig';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
+import { DeviceUsersSection } from './DeviceUsersSection';
 import { ZkTecoSpec } from '../ZkTecoSpec';
 import {
   Server,
@@ -61,11 +62,12 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   onRefreshPunches,
 }) => {
   // Navigation tabs within Biometrics Module
-  const [activeTab, setActiveTab] = useState<'terminal' | 'adms' | 'agent' | 'diag' | 'spec'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'users' | 'adms' | 'agent' | 'diag' | 'spec'>('terminal');
 
   // Sync with activeSubView from Sidebar if provided
   useEffect(() => {
-    if (activeSubView === 'devices_sync') setActiveTab('adms');
+    if (activeSubView === 'devices_users') setActiveTab('users');
+    else if (activeSubView === 'devices_sync') setActiveTab('adms');
     else if (activeSubView === 'devices_agent') setActiveTab('agent');
     else if (activeSubView === 'devices_diag') setActiveTab('diag');
     else if (activeSubView === 'devices_spec') setActiveTab('spec');
@@ -1122,6 +1124,18 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           >
             <Cpu className="w-4 h-4" />
             <span>Marcador G3 ({selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198'})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
+              activeTab === 'users'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Users className="w-4 h-4 text-sky-400" />
+            <span>Usuarios Registrados en Relojes</span>
           </button>
 
           <button
@@ -2472,6 +2486,20 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           activeRole={activeRole}
           onRefreshDevices={onRefreshDevices}
           onRefreshPunches={onRefreshPunches}
+        />
+      )}
+
+      {/* TAB 1B: USUARIOS REGISTRADOS EN RELOJES BIOMÉTRICOS */}
+      {activeTab === 'users' && (
+        <DeviceUsersSection
+          devices={devices}
+          employees={employees}
+          rawPunches={rawPunches}
+          activeRole={activeRole}
+          onRefreshAll={() => {
+            if (onRefreshDevices) onRefreshDevices();
+            if (onRefreshPunches) onRefreshPunches();
+          }}
         />
       )}
 

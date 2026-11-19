@@ -56,6 +56,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncBioTimePunches: (params = {}) => {
     return ipcRenderer.invoke('biotime:sync-punches', params);
   },
+  queryZkDeviceUsers: (params = {}) => {
+    return ipcRenderer.invoke('zk:query-device-users', params);
+  },
+  getDeviceUsersStore: () => {
+    return ipcRenderer.invoke('zk:get-device-users-store');
+  },
+  saveDeviceUsersStore: (payload = {}) => {
+    return ipcRenderer.invoke('zk:save-device-users-store', payload);
+  },
+  setZkDeviceUserName: (params = {}) => {
+    return ipcRenderer.invoke('zk:set-device-user-name', params);
+  },
   getRawPunches: () => {
     return ipcRenderer.invoke('punches:get-all');
   },

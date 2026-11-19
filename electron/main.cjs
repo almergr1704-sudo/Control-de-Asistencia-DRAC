@@ -253,19 +253,82 @@ ipcMain.handle(
       if (res && res.success && Array.isArray(res.punches) && res.punches.length > 0) {
         try {
           const punchesPath = getStorageFilePath('raw-punches.json');
+          const employeesPath = getStorageFilePath('employees.json');
+          const deviceUsersPath = getStorageFilePath('device-users.json');
           let currentList = [];
+          let localEmployees = [];
+          let deviceUsers = [];
           if (fs.existsSync(punchesPath)) {
             try { currentList = JSON.parse(fs.readFileSync(punchesPath, 'utf8')); } catch (_) {}
           }
-          const existingKeys = new Set(currentList.map((p) => `${p.employee_dni || p.pin}_${p.timestamp}`));
+          if (fs.existsSync(employeesPath)) {
+            try { localEmployees = JSON.parse(fs.readFileSync(employeesPath, 'utf8')); } catch (_) {}
+          }
+          if (fs.existsSync(deviceUsersPath)) {
+            try { deviceUsers = JSON.parse(fs.readFileSync(deviceUsersPath, 'utf8')); } catch (_) {}
+          }
+
+          const resolveEmpForPunch = (snVal, codeVal) => {
+            const cleanCode = String(codeVal || '').trim();
+            const snUpper = String(snVal || cleanSerial).trim().toUpperCase();
+            if (!cleanCode) return null;
+            const binding = (Array.isArray(deviceUsers) ? deviceUsers : []).find(
+              (u) => String(u.device_sn || '').trim().toUpperCase() === snUpper && String(u.pin || '').trim() === cleanCode
+            );
+            if (binding) {
+              if (binding.employee_id) {
+                const bound = localEmployees.find((e) => e.id === binding.employee_id);
+                if (bound) return bound;
+              }
+              if (binding.unlinked_at || binding.link_status === 'REVISAR') return null;
+            }
+            const matches = localEmployees.filter(
+              (e) =>
+                (e.zkteco_pin && String(e.zkteco_pin).trim() === cleanCode) ||
+                (e.biometric_user_id && String(e.biometric_user_id).trim() === cleanCode) ||
+                (e.codigo_trabajador && String(e.codigo_trabajador).trim() === cleanCode) ||
+                (e.dni && String(e.dni).trim() === cleanCode)
+            );
+            return matches.length === 1 ? matches[0] : null;
+          };
+
+          const existingKeys = new Set(currentList.map((p) => `${p.device_sn || ''}_${p.employee_code || p.employee_dni}_${p.timestamp}`));
           const newlyAdded = [];
           for (const p of res.punches) {
-            const key = `${p.employee_dni || p.pin}_${p.timestamp}`;
+            const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+            const snVal = String(p.device_sn || res.serial_number || cleanSerial).trim().toUpperCase();
+            const key = `${snVal}_${code}_${p.timestamp}`;
+            const emp = resolveEmpForPunch(snVal, code);
+            const enrichedPunch = {
+              ...p,
+              device_sn: snVal,
+              employee_id: emp ? emp.id : null,
+              employee_dni: emp ? emp.dni : code,
+              employee_code: code,
+              employee_name: emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Pendiente de Identificación',
+              validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+              processed: !!emp,
+            };
             if (!existingKeys.has(key)) {
               existingKeys.add(key);
-              newlyAdded.push(p);
+              newlyAdded.push(enrichedPunch);
             }
           }
+          res.punches = res.punches.map((p) => {
+            const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+            const snVal = String(p.device_sn || res.serial_number || cleanSerial).trim().toUpperCase();
+            const emp = resolveEmpForPunch(snVal, code);
+            return {
+              ...p,
+              device_sn: snVal,
+              employee_id: emp ? emp.id : null,
+              employee_dni: emp ? emp.dni : code,
+              employee_code: code,
+              employee_name: emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Pendiente de Identificación',
+              validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+              processed: !!emp,
+            };
+          });
           const merged = [...newlyAdded, ...currentList];
           if (merged.length > 0) {
             fs.writeFileSync(punchesPath, JSON.stringify(merged, null, 2), 'utf8');
@@ -535,23 +598,40 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     }
 
     const employeesPath = getStorageFilePath('employees.json');
+    const deviceUsersPath = getStorageFilePath('device-users.json');
     let localEmployees = [];
+    let deviceUsers = [];
     try {
       if (fs.existsSync(employeesPath)) {
         localEmployees = JSON.parse(fs.readFileSync(employeesPath, 'utf8'));
       }
+      if (fs.existsSync(deviceUsersPath)) {
+        deviceUsers = JSON.parse(fs.readFileSync(deviceUsersPath, 'utf8'));
+      }
     } catch (_) {}
 
-    const findLocalEmployee = (code) => {
+    const findLocalEmployee = (snVal, code) => {
       if (!code || !Array.isArray(localEmployees)) return null;
       const clean = String(code).trim();
-      return localEmployees.find(
+      const snUpper = String(snVal || serial || '').trim().toUpperCase();
+      const binding = (Array.isArray(deviceUsers) ? deviceUsers : []).find(
+        (u) => String(u.device_sn || '').trim().toUpperCase() === snUpper && String(u.pin || '').trim() === clean
+      );
+      if (binding) {
+        if (binding.employee_id) {
+          const boundEmp = localEmployees.find((e) => e.id === binding.employee_id);
+          if (boundEmp) return boundEmp;
+        }
+        if (binding.unlinked_at || binding.link_status === 'REVISAR') return null;
+      }
+      const matches = localEmployees.filter(
         (e) =>
           (e.zkteco_pin && String(e.zkteco_pin).trim() === clean) ||
           (e.biometric_user_id && String(e.biometric_user_id).trim() === clean) ||
           (e.codigo_trabajador && String(e.codigo_trabajador).trim() === clean) ||
           (e.dni && String(e.dni).trim() === clean)
-      ) || null;
+      );
+      return matches.length === 1 ? matches[0] : null;
     };
 
     const existingKeys = new Set(
@@ -562,17 +642,19 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     if (Array.isArray(syncResult.punches) && syncResult.punches.length > 0) {
       for (const p of syncResult.punches) {
         const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
-        const key = `${p.device_sn || ''}_${code}_${p.timestamp}`;
+        const snVal = String(p.device_sn || serial || '').trim().toUpperCase();
+        const key = `${snVal}_${code}_${p.timestamp}`;
         if (!existingKeys.has(key)) {
           existingKeys.add(key);
-          const emp = findLocalEmployee(code);
+          const emp = findLocalEmployee(snVal, code);
           const empName = emp
             ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim()
-            : (p.employee_name || 'Pendiente de Identificación');
+            : 'Pendiente de Identificación';
           newlyAdded.push({
             ...p,
-            employee_id: emp ? emp.id : (p.employee_id || null),
-            employee_dni: emp ? emp.dni : (p.employee_dni || code),
+            device_sn: snVal,
+            employee_id: emp ? emp.id : null,
+            employee_dni: emp ? emp.dni : code,
             employee_code: code,
             employee_name: empName,
             validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
@@ -614,6 +696,69 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       message: `Error al sincronizar con BioTime: ${err.message}`,
       timestamp: new Date().toISOString(),
     };
+  }
+});
+
+// =========================================================================
+// IPC HANDLERS - CONSULTA Y PERSISTENCIA DE USUARIOS REALES DE RELOJES
+// =========================================================================
+
+ipcMain.handle('zk:query-device-users', async (_event, params = {}) => {
+  log(`IPC zk:query-device-users -> ${params.ip || 'BioTime'}:${params.port || 7496} (Modo: ${params.mode || 'AUTO'})`);
+  try {
+    if (typeof zktecoDriver.queryZkDeviceUsers === 'function') {
+      return await zktecoDriver.queryZkDeviceUsers(params);
+    }
+    return { success: false, message: 'Función queryZkDeviceUsers no disponible en el driver.', users: [] };
+  } catch (err) {
+    return { success: false, message: `Error consultando usuarios del reloj: ${err.message}`, users: [] };
+  }
+});
+
+ipcMain.handle('zk:get-device-users-store', async () => {
+  const readSafe = (fileName) => {
+    try {
+      const p = getStorageFilePath(fileName);
+      if (fs.existsSync(p)) {
+        const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (Array.isArray(data)) return data;
+      }
+    } catch (_) {}
+    return [];
+  };
+  return {
+    users: readSafe('device-users.json'),
+    history: readSafe('device-user-history.json'),
+    syncLogs: readSafe('device-user-sync-logs.json'),
+  };
+});
+
+ipcMain.handle('zk:save-device-users-store', async (_event, payload = {}) => {
+  try {
+    if (Array.isArray(payload.users)) {
+      fs.writeFileSync(getStorageFilePath('device-users.json'), JSON.stringify(payload.users, null, 2), 'utf8');
+    }
+    if (Array.isArray(payload.history)) {
+      fs.writeFileSync(getStorageFilePath('device-user-history.json'), JSON.stringify(payload.history.slice(0, 1500), null, 2), 'utf8');
+    }
+    if (Array.isArray(payload.syncLogs)) {
+      fs.writeFileSync(getStorageFilePath('device-user-sync-logs.json'), JSON.stringify(payload.syncLogs.slice(0, 300), null, 2), 'utf8');
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('zk:set-device-user-name', async (_event, params = {}) => {
+  log(`IPC zk:set-device-user-name -> ${params.ip}:${params.port} PIN=${params.pin}`);
+  try {
+    if (typeof zktecoDriver.setZkDeviceUserName === 'function') {
+      return await zktecoDriver.setZkDeviceUserName(params);
+    }
+    return { success: false, message: 'Función setZkDeviceUserName no disponible en el driver.' };
+  } catch (err) {
+    return { success: false, message: `Error actualizando nombre en el reloj: ${err.message}` };
   }
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { AttendanceRecord, MarcacionRaw, Employee, DispositivoZkTeco } from '../../types';
+import { AttendanceRecord, MarcacionRaw, Employee, DispositivoZkTeco, BiometricDeviceUser } from '../../types';
 import {
   Clock,
   Calendar,
@@ -25,6 +25,7 @@ import {
 import { DataTablePagination } from '../common/DataTablePagination';
 import { getApiUrl } from '../../utils/apiConfig';
 import { normalizePersonName } from '../../utils/nameUtils';
+import { resolveEmployeeForDevicePin } from '../../utils/deviceUserSync';
 import { supabase, getSupabaseClient, isPlaceholderSupabaseUrl } from '../../lib/supabaseClient';
 
 type SyncBannerStatus =
@@ -362,17 +363,29 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
     const syncedAt = new Date().toISOString();
     let unidentified = 0;
 
+    // Obtener vinculaciones reales por dispositivo (device_sn, pin) antes de resolver
+    let deviceUsersList: BiometricDeviceUser[] = [];
+    try {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.isDesktop && typeof electronAPI.getDeviceUsersStore === 'function') {
+        const ipcStore = await electronAPI.getDeviceUsersStore();
+        if (Array.isArray(ipcStore?.users)) deviceUsersList = ipcStore.users;
+      }
+      if (deviceUsersList.length === 0) {
+        const duRes = await fetch(getApiUrl('/api/zkteco/device-users'));
+        if (duRes.ok) {
+          const duData = await duRes.json();
+          if (Array.isArray(duData?.users)) deviceUsersList = duData.users;
+        }
+      }
+    } catch (_) {}
+
     const fullRows = punches.map((p: any, idx: number) => {
       const code = String(p.employee_code || p.employee_dni || p.dni || p.pin || p.deviceUserId || '').trim();
       const ts = String(p.timestamp || p.recordTime || '').replace('T', ' ').substring(0, 19);
       const sn = String(p.device_sn || p.serialNumber || deviceMeta?.serial || 'AEH2223460040').trim().toUpperCase();
-      const matchedEmp = employees.find(
-        (e) =>
-          (e.zkteco_pin && e.zkteco_pin === code) ||
-          (e.biometric_user_id && e.biometric_user_id === code) ||
-          (e.codigo_trabajador && e.codigo_trabajador === code) ||
-          (e.dni && e.dni === code)
-      );
+      const resolved = resolveEmployeeForDevicePin(employees, deviceUsersList, sn, code);
+      const matchedEmp = resolved.employee;
       if (!matchedEmp) unidentified++;
       const fullName = matchedEmp
         ? normalizePersonName(`${matchedEmp.first_name || ''} ${matchedEmp.last_name || ''}`.trim())
@@ -1008,12 +1021,19 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         if (emp) {
           const empName = normalizePersonName(`${emp.first_name || ''} ${emp.last_name || ''}`.trim());
           const code = linkingPunch.employee_code || linkingPunch.employee_dni;
+          const punchSn = String(linkingPunch.device_sn || '').trim().toUpperCase();
           const targetIds = applyToSameCode && code
-            ? rawPunches.filter((p) => (p.employee_code || p.employee_dni) === code).map((p) => p.id)
+            ? rawPunches
+                .filter(
+                  (p) =>
+                    (p.employee_code || p.employee_dni) === code &&
+                    (!punchSn || String(p.device_sn || '').trim().toUpperCase() === punchSn)
+                )
+                .map((p) => p.id)
             : [linkingPunch.id];
           const { error: upErr } = await supabase
             .from('marcaciones_raw')
-            .update({ employee_id: emp.id, employee_dni: emp.dni, employee_name: empName })
+            .update({ employee_id: emp.id, employee_dni: emp.dni, employee_name: empName, validation_status: 'VALIDA', processed: true })
             .in('id', targetIds);
           if (!upErr) {
             if (savePinToEmployee && code) {

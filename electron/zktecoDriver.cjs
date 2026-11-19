@@ -331,14 +331,44 @@ class ZKLibTCP {
       const users = [];
       if (reply && reply.length > 8) {
         const dataBuf = reply.slice(8);
-        const recordSize = 72;
-        if (dataBuf.length >= recordSize) {
-          for (let i = 0; i + recordSize <= dataBuf.length; i += recordSize) {
-            const chunk = dataBuf.slice(i, i + recordSize);
-            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
-            const name = chunk.slice(24, 48).toString('ascii').replace(/\0/g, '').trim();
-            if (pin) {
-              users.push({ uid: pin, userId: pin, name: name || `Usuario ${pin}` });
+        if (dataBuf.length >= 72 && dataBuf.length % 72 === 0) {
+          for (let i = 0; i + 72 <= dataBuf.length; i += 72) {
+            const chunk = dataBuf.slice(i, i + 72);
+            const uid = chunk.readUInt16LE(0);
+            const role = chunk.readUInt8(2);
+            const pwd = chunk.slice(3, 11).toString('ascii').split('\0')[0].trim();
+            const rawName = chunk.slice(11, 35).toString('utf8').split('\0')[0].trim();
+            const cardno = chunk.readUInt32LE(35);
+            const userId = chunk.slice(48, 72).toString('ascii').split('\0')[0].trim() || String(uid);
+            if (userId) {
+              users.push({
+                uid,
+                userId,
+                pin: userId,
+                name: rawName || null,
+                role,
+                cardno: cardno > 0 ? String(cardno) : null,
+                hasPassword: Boolean(pwd),
+              });
+            }
+          }
+        } else if (dataBuf.length >= 28) {
+          for (let i = 0; i + 28 <= dataBuf.length; i += 28) {
+            const chunk = dataBuf.slice(i, i + 28);
+            const uid = chunk.readUInt16LE(0);
+            const role = chunk.readUInt8(2);
+            const rawName = chunk.slice(8, 16).toString('utf8').split('\0')[0].trim();
+            const userId = String(chunk.readUInt32LE(24) || uid);
+            if (userId) {
+              users.push({
+                uid,
+                userId,
+                pin: userId,
+                name: rawName || null,
+                role,
+                cardno: null,
+                hasPassword: null,
+              });
             }
           }
         }
@@ -717,14 +747,44 @@ class ZKLibUDP {
       const users = [];
       if (reply && reply.length > 8) {
         const dataBuf = reply.slice(8);
-        const recordSize = 72;
-        if (dataBuf.length >= recordSize) {
-          for (let i = 0; i + recordSize <= dataBuf.length; i += recordSize) {
-            const chunk = dataBuf.slice(i, i + recordSize);
-            const pin = chunk.slice(0, 24).toString('ascii').replace(/\0/g, '').trim();
-            const name = chunk.slice(24, 48).toString('ascii').replace(/\0/g, '').trim();
-            if (pin) {
-              users.push({ uid: pin, userId: pin, name: name || `Usuario ${pin}` });
+        if (dataBuf.length >= 72 && dataBuf.length % 72 === 0) {
+          for (let i = 0; i + 72 <= dataBuf.length; i += 72) {
+            const chunk = dataBuf.slice(i, i + 72);
+            const uid = chunk.readUInt16LE(0);
+            const role = chunk.readUInt8(2);
+            const pwd = chunk.slice(3, 11).toString('ascii').split('\0')[0].trim();
+            const rawName = chunk.slice(11, 35).toString('utf8').split('\0')[0].trim();
+            const cardno = chunk.readUInt32LE(35);
+            const userId = chunk.slice(48, 72).toString('ascii').split('\0')[0].trim() || String(uid);
+            if (userId) {
+              users.push({
+                uid,
+                userId,
+                pin: userId,
+                name: rawName || null,
+                role,
+                cardno: cardno > 0 ? String(cardno) : null,
+                hasPassword: Boolean(pwd),
+              });
+            }
+          }
+        } else if (dataBuf.length >= 28) {
+          for (let i = 0; i + 28 <= dataBuf.length; i += 28) {
+            const chunk = dataBuf.slice(i, i + 28);
+            const uid = chunk.readUInt16LE(0);
+            const role = chunk.readUInt8(2);
+            const rawName = chunk.slice(8, 16).toString('utf8').split('\0')[0].trim();
+            const userId = String(chunk.readUInt32LE(24) || uid);
+            if (userId) {
+              users.push({
+                uid,
+                userId,
+                pin: userId,
+                name: rawName || null,
+                role,
+                cardno: null,
+                hasPassword: null,
+              });
             }
           }
         }
@@ -2752,6 +2812,631 @@ async function syncBioTimeRecords(options = {}) {
   };
 }
 
+function mapZkRoleLabel(roleCode) {
+  if (roleCode === undefined || roleCode === null || Number.isNaN(Number(roleCode))) return null;
+  const r = Number(roleCode);
+  if (r === 0) return 'Usuario';
+  if (r === 2) return 'Registrador';
+  if (r === 6) return 'Administrador';
+  if (r === 14) return 'Super Administrador';
+  return `Privilegio ${r}`;
+}
+
+function normalizeDirectClockUser(raw, method) {
+  const pin = String(raw.userId ?? raw.pin ?? raw.uid ?? '').trim();
+  if (!pin) return null;
+  const uid = raw.uid !== undefined && raw.uid !== null && !Number.isNaN(Number(raw.uid)) ? Number(raw.uid) : null;
+  const clockName = raw.name !== undefined && raw.name !== null ? String(raw.name).replace(/\0/g, '').trim() || null : null;
+  const cardRaw = raw.cardno !== undefined && raw.cardno !== null ? String(raw.cardno).trim() : '';
+  const cardNumber = cardRaw && cardRaw !== '0' ? cardRaw : null;
+  const privCode = raw.role !== undefined && raw.role !== null && !Number.isNaN(Number(raw.role)) ? Number(raw.role) : null;
+  const hasPassword = raw.password !== undefined ? Boolean(String(raw.password || '').trim()) : raw.hasPassword ?? null;
+  const availableFields = ['pin'];
+  if (uid !== null) availableFields.push('uid');
+  if (clockName) availableFields.push('clock_name');
+  if (cardNumber) availableFields.push('card_number');
+  if (privCode !== null) availableFields.push('privilege');
+  if (hasPassword !== null) availableFields.push('has_password');
+
+  return {
+    pin,
+    uid,
+    clock_name: clockName,
+    clock_employee_code: null,
+    card_number: cardNumber,
+    privilege_code: privCode,
+    privilege_label: mapZkRoleLabel(privCode),
+    clock_status: null,
+    has_password: hasPassword,
+    clock_updated_at: null,
+    source_method: method,
+    source_scope: 'DIRECT_CLOCK',
+    available_fields: availableFields,
+    raw_attributes: {
+      uid,
+      userId: pin,
+      role: privCode,
+      cardno: cardNumber,
+      has_password: hasPassword,
+    },
+  };
+}
+
+/**
+ * Consulta usuarios reales vía API HTTP de BioTime PRO (SOLO LECTURA)
+ * Obtiene terminales (/iclock/api/terminals/) y personal (/personnel/api/employees/).
+ */
+async function fetchBioTimeHttpUsers(options = {}) {
+  const http = require('http');
+  const cleanHost = String(options.host || '192.168.1.29').trim();
+  const port = Number(options.webPort) || 8088;
+  const cleanSerial = String(options.serial || '').trim().toUpperCase();
+  const webUser = String(options.webUser || '').trim();
+  const webPassword = String(options.webPassword || '').trim();
+
+  const requestHttp = (urlPath, method = 'GET', bodyStr = '', extraHeaders = {}) =>
+    new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: cleanHost,
+          port,
+          path: urlPath,
+          method,
+          headers: {
+            Accept: 'application/json, text/html;q=0.9',
+            ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+            ...extraHeaders,
+          },
+          timeout: 6000,
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (c) => { data += c; });
+          res.on('end', () => {
+            let json = null;
+            try { json = JSON.parse(data); } catch (_) {}
+            resolve({ status: res.statusCode || 0, headers: res.headers || {}, json, raw: data });
+          });
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error(`Timeout conectando a BioTime PRO HTTP ${cleanHost}:${port}`));
+      });
+      if (bodyStr) req.write(bodyStr);
+      req.end();
+    });
+
+  if (!webUser || !webPassword) {
+    return {
+      success: false,
+      needsWebCredentials: true,
+      error: 'MISSING_WEB_CREDENTIALS',
+      message: `BioTime PRO en http://${cleanHost}:${port} requiere usuario y contraseña web para consultar usuarios.`,
+      users: [],
+    };
+  }
+
+  let authHeaders = null;
+  try {
+    const jwtRes = await requestHttp('/jwt-api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
+    if (jwtRes?.json?.token) authHeaders = { Authorization: `JWT ${jwtRes.json.token}` };
+  } catch (_) {}
+
+  if (!authHeaders) {
+    try {
+      const tokRes = await requestHttp('/api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
+      if (tokRes?.json?.token) authHeaders = { Authorization: `Token ${tokRes.json.token}` };
+    } catch (_) {}
+  }
+
+  if (!authHeaders) {
+    try {
+      const loginPage = await requestHttp('/login/', 'GET');
+      const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
+      const cookieMap = new Map();
+      const absorb = (arr) => {
+        for (const c of arr || []) {
+          const kv = String(c).split(';')[0];
+          const eq = kv.indexOf('=');
+          if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
+        }
+      };
+      absorb(setCookies);
+      let csrfToken = cookieMap.get('csrftoken') || '';
+      const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
+      if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
+      const formBody = new URLSearchParams({
+        username: webUser,
+        password: webPassword,
+        ...(csrfToken ? { csrfmiddlewaretoken: csrfToken } : {}),
+      }).toString();
+      const cookieHeader = Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+      const postLogin = await requestHttp('/login/?next=/', 'POST', formBody, {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: `http://${cleanHost}:${port}/login/`,
+        Origin: `http://${cleanHost}:${port}`,
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+      });
+      absorb(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
+      if (cookieMap.has('sessionid') || postLogin.status === 302) {
+        const finalCookie = Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+        authHeaders = { Cookie: finalCookie, ...(cookieMap.get('csrftoken') ? { 'X-CSRFToken': cookieMap.get('csrftoken') } : {}) };
+      }
+    } catch (_) {}
+  }
+
+  if (!authHeaders) {
+    return {
+      success: false,
+      needsWebCredentials: true,
+      error: 'BIOTIME_AUTH_FAILED',
+      message: `Credenciales web de BioTime PRO rechazadas para "${webUser}" en http://${cleanHost}:${port}.`,
+      users: [],
+    };
+  }
+
+  // 1. Verificar terminal en BioTime si hay SN
+  let terminalAreaIds = new Set();
+  let terminalMeta = null;
+  try {
+    const termRes = await requestHttp('/iclock/api/terminals/?page=1&page_size=50', 'GET', '', authHeaders);
+    const terminals = Array.isArray(termRes?.json?.data) ? termRes.json.data : [];
+    terminalMeta = terminals.find((t) => String(t.sn || '').trim().toUpperCase() === cleanSerial) || null;
+    if (terminalMeta && terminalMeta.area) {
+      if (Array.isArray(terminalMeta.area)) {
+        terminalMeta.area.forEach((a) => terminalAreaIds.add(String(typeof a === 'object' ? a.id : a)));
+      } else {
+        terminalAreaIds.add(String(typeof terminalMeta.area === 'object' ? terminalMeta.area.id : terminalMeta.area));
+      }
+    }
+  } catch (_) {}
+
+  // 2. Consultar empleados en BioTime
+  const employeesList = [];
+  for (let page = 1; page <= 15; page++) {
+    const empRes = await requestHttp(`/personnel/api/employees/?page=${page}&page_size=200`, 'GET', '', authHeaders);
+    if (empRes.status !== 200 || !empRes.json || !Array.isArray(empRes.json.data)) break;
+    employeesList.push(...empRes.json.data);
+    if (!empRes.json.next || employeesList.length >= Number(empRes.json.count || 0)) break;
+  }
+
+  if (employeesList.length === 0) {
+    return {
+      success: false,
+      error: 'BIOTIME_NO_USERS',
+      message: `BioTime PRO HTTP respondió pero no retornó empleados en /personnel/api/employees/.`,
+      users: [],
+    };
+  }
+
+  let scopedRows = employeesList;
+  let sourceScope = 'BIOTIME_GLOBAL';
+  if (terminalAreaIds.size > 0) {
+    const areaMatched = employeesList.filter((e) => {
+      const empAreas = Array.isArray(e.area) ? e.area : e.area ? [e.area] : [];
+      return empAreas.some((a) => terminalAreaIds.has(String(typeof a === 'object' ? a.id : a)));
+    });
+    if (areaMatched.length > 0) {
+      scopedRows = areaMatched;
+      sourceScope = 'BIOTIME_DEVICE_SCOPED';
+    }
+  }
+
+  const users = scopedRows
+    .map((e) => {
+      const pin = String(e.emp_code || e.pin || '').trim();
+      if (!pin) return null;
+      const fullName = [e.first_name, e.last_name].filter(Boolean).join(' ').trim() || e.nickname || null;
+      const cardNo = e.card_no ? String(e.card_no).trim() : null;
+      const priv = e.dev_privilege !== undefined && e.dev_privilege !== null ? Number(e.dev_privilege) : null;
+      const statusStr = e.enable_att === false ? 'INACTIVO' : e.enable_att === true ? 'ACTIVO' : e.status !== undefined ? String(e.status) : null;
+      const updatedTs = e.update_time || e.change_time || e.create_time || null;
+      const available = ['pin', 'clock_employee_code'];
+      if (fullName) available.push('clock_name');
+      if (cardNo) available.push('card_number');
+      if (priv !== null && !Number.isNaN(priv)) available.push('privilege');
+      if (statusStr) available.push('clock_status');
+      if (updatedTs) available.push('clock_updated_at');
+
+      return {
+        pin,
+        uid: e.id !== undefined ? Number(e.id) : null,
+        clock_name: fullName,
+        clock_employee_code: pin,
+        card_number: cardNo,
+        privilege_code: priv,
+        privilege_label: mapZkRoleLabel(priv),
+        clock_status: statusStr,
+        has_password: null,
+        clock_updated_at: updatedTs,
+        source_method: 'BIOTIME_HTTP_API',
+        source_scope: sourceScope,
+        available_fields: available,
+        raw_attributes: {
+          biotime_emp_id: e.id,
+          emp_code: pin,
+          department: typeof e.department === 'object' ? e.department?.dept_name : e.department,
+          area: e.area,
+          terminal_sn: cleanSerial,
+          verify_mode: e.verify_mode,
+        },
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    success: true,
+    source_method: 'BIOTIME_HTTP_API',
+    source_scope: sourceScope,
+    terminal_meta: terminalMeta,
+    users,
+    message: `${users.length} usuarios recuperados desde BioTime PRO API HTTP (http://${cleanHost}:${port}) [${sourceScope}].`,
+  };
+}
+
+/**
+ * Consulta directa y real de usuarios registrados en un reloj ZKTeco.
+ * Orden: TCP Directo (node-zklib / Raw TCP ZKTeco) -> Fallback opcional BioTime PRO (HTTP / PostgreSQL).
+ */
+async function queryZkDeviceUsers(options = {}) {
+  const cleanIp = String(options.ip || '').trim();
+  const targetPort = Number(options.port) || 7496;
+  const timeout = Math.min(8000, Math.max(2000, Number(options.timeoutMs) || 4000));
+  const numericCommKey = Number(options.commKey) || 0;
+  const cleanSerial = String(options.serial || '').trim().toUpperCase();
+  const cleanModel = String(options.model || 'ZKTeco G3').trim();
+  const mode = String(options.mode || 'AUTO').toUpperCase();
+  const bt = options.biotime || {};
+
+  const lockKey = `${cleanIp}:${targetPort}:users`;
+  if (activeConnections.has(lockKey)) {
+    return {
+      success: false,
+      error: 'BUSY',
+      message: 'Ya existe una consulta de usuarios en curso para este dispositivo.',
+      users: [],
+    };
+  }
+
+  activeConnections.add(lockKey);
+  let tcpErrorMsg = null;
+
+  try {
+    if (mode !== 'BIOTIME' && isValidIpv4(cleanIp)) {
+      const candidatePorts = [targetPort, 4370].filter((p, idx, arr) => p > 0 && arr.indexOf(p) === idx);
+
+      // 1. Intentar node-zklib en TCP directo
+      try {
+        const NodeZkLib = require('node-zklib');
+        for (const testPort of candidatePorts) {
+          try {
+            const inport = 5200 + Math.floor(Math.random() * 1000);
+            const zk = new NodeZkLib(cleanIp, testPort, Math.min(timeout, 4000), inport);
+            await zk.createSocket();
+
+            let detectedSerial = cleanSerial;
+            let detectedName = cleanModel;
+            let detectedFirmware = null;
+            try {
+              if (typeof zk.getSerialNumber === 'function') {
+                const sn = await withTimeout(zk.getSerialNumber(), 2000, 'Timeout SN');
+                if (sn) detectedSerial = String(sn).trim().toUpperCase();
+              }
+            } catch (_) {}
+            try {
+              if (typeof zk.getDeviceName === 'function') {
+                const dn = await withTimeout(zk.getDeviceName(), 2000, 'Timeout DN');
+                if (dn) detectedName = String(dn).trim();
+              }
+            } catch (_) {}
+            try {
+              if (typeof zk.getDeviceVersion === 'function') {
+                const fw = await withTimeout(zk.getDeviceVersion(), 2000, 'Timeout FW');
+                if (fw) detectedFirmware = String(fw).trim();
+              }
+            } catch (_) {}
+
+            const usersRes = await withTimeout(zk.getUsers(), 6000, 'Timeout getUsers');
+            try { await zk.disconnect(); } catch (_) {}
+
+            const rawList = Array.isArray(usersRes?.data) ? usersRes.data : Array.isArray(usersRes) ? usersRes : [];
+            const normalized = rawList.map((u) => normalizeDirectClockUser(u, 'TCP_NODE_ZKLIB')).filter(Boolean);
+            return {
+              success: true,
+              source_method: 'TCP_NODE_ZKLIB',
+              source_scope: 'DIRECT_CLOCK',
+              ip: cleanIp,
+              port: testPort,
+              serial_number: detectedSerial,
+              device_name: detectedName,
+              firmware_version: detectedFirmware,
+              users: normalized,
+              message: `Consulta directa exitosa vía node-zklib (${cleanIp}:${testPort}): ${normalized.length} usuarios reales leídos del reloj.`,
+            };
+          } catch (errPort) {
+            tcpErrorMsg = errPort?.message || String(errPort);
+          }
+        }
+      } catch (e) {
+        tcpErrorMsg = e?.message || String(e);
+      }
+
+      // 2. Intentar driver RawZKTecoTcpClient
+      for (const testPort of candidatePorts) {
+        let tcpZk = null;
+        try {
+          tcpZk = new ZKLibTCP(cleanIp, testPort, timeout);
+          await withTimeout(tcpZk.createSocket(), timeout, `Timeout socket TCP ${cleanIp}:${testPort}`);
+          const reply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_CONNECT, ''), timeout, 'Timeout CMD_CONNECT');
+          const responseCode = reply && reply.length >= 2 ? reply.readUInt16LE(0) : 0;
+          const sessionId = tcpZk.sessionId || (reply && reply.length >= 6 ? reply.readUInt16LE(4) : 0);
+
+          if (responseCode === COMMANDS.CMD_ACK_UNAUTH || numericCommKey > 0) {
+            const authPacket = makeCommkey(numericCommKey, sessionId);
+            const authReply = await withTimeout(tcpZk.executeCmd(COMMANDS.CMD_AUTH, authPacket), timeout, 'Timeout CMD_AUTH');
+            const authCode = authReply && authReply.length >= 2 ? authReply.readUInt16LE(0) : 0;
+            if (authCode !== COMMANDS.CMD_ACK_OK) {
+              throw new Error(`CommKey rechazada (${numericCommKey}).`);
+            }
+          }
+
+          let detectedSerial = cleanSerial;
+          try {
+            const sn = await withTimeout(tcpZk.getSerialNumber(), 2000, 'Timeout SN');
+            if (sn) detectedSerial = String(sn).trim().toUpperCase();
+          } catch (_) {}
+
+          const uRes = await withTimeout(tcpZk.getUsers(), 6000, 'Timeout getUsers raw');
+          await tcpZk.disconnect();
+
+          const rawList = Array.isArray(uRes?.data) ? uRes.data : [];
+          const normalized = rawList.map((u) => normalizeDirectClockUser(u, 'TCP_RAW_ZK')).filter(Boolean);
+          return {
+            success: true,
+            source_method: 'TCP_RAW_ZK',
+            source_scope: 'DIRECT_CLOCK',
+            ip: cleanIp,
+            port: testPort,
+            serial_number: detectedSerial,
+            device_name: cleanModel,
+            users: normalized,
+            message: `Consulta directa exitosa vía TCP nativo (${cleanIp}:${testPort}): ${normalized.length} usuarios reales leídos del reloj.`,
+          };
+        } catch (errRaw) {
+          tcpErrorMsg = errRaw?.message || tcpErrorMsg || String(errRaw);
+          if (tcpZk) {
+            try { await tcpZk.disconnect(); } catch (_) {}
+          }
+        }
+      }
+    }
+
+    if (mode === 'TCP_DIRECT') {
+      return {
+        success: false,
+        source_method: 'TCP_NODE_ZKLIB',
+        source_scope: 'DIRECT_CLOCK',
+        error: 'TCP_DIRECT_FAILED',
+        message: `No se pudo leer usuarios directamente desde ${cleanIp}:${targetPort} (${tcpErrorMsg || 'Dispositivo inaccesible o operando exclusivamente en modo ADMS Push'}).`,
+        users: [],
+      };
+    }
+
+    // 3. Fallback BioTime PRO (HTTP API y PostgreSQL de solo lectura)
+    if (bt && (bt.host || bt.webPort || bt.dbPort)) {
+      const btHost = String(bt.host || '192.168.1.29').trim();
+      const btWebPort = Number(bt.webPort) || 8088;
+      const btDbPort = Number(bt.dbPort) || 7496;
+      const inspection = await inspectBioTimeDatabase({
+        host: btHost,
+        webPort: btWebPort,
+        dbPort: btDbPort,
+        dbName: bt.dbName || 'biotime',
+        dbUser: bt.dbUser || 'postgres',
+        password: bt.password,
+        webUser: bt.webUser,
+        webPassword: bt.webPassword,
+        serial: cleanSerial,
+      });
+
+      const effectiveWebPort = Number(inspection.webPort || btWebPort);
+      if (inspection.webReachable && (bt.webUser && bt.webPassword)) {
+        const httpRes = await fetchBioTimeHttpUsers({
+          host: btHost,
+          webPort: effectiveWebPort,
+          serial: cleanSerial,
+          webUser: bt.webUser,
+          webPassword: bt.webPassword,
+        });
+        if (httpRes.success) {
+          return {
+            ...httpRes,
+            serial_number: cleanSerial,
+            tcp_error: tcpErrorMsg,
+          };
+        }
+        if (!inspection.dbReachable) {
+          return {
+            ...httpRes,
+            serial_number: cleanSerial,
+            tcp_error: tcpErrorMsg,
+          };
+        }
+      }
+
+      if (inspection.dbReachable) {
+        const pg = require('pg');
+        const passwords = [...new Set([bt.password, '', '123456', 'admin', 'postgres', 'biotime', 'root', 'ZKTeco123', 'ZK123456'].filter((x) => x !== undefined))];
+        for (const pwd of passwords) {
+          const client = new pg.Client({
+            host: btHost,
+            port: btDbPort,
+            database: bt.dbName || 'biotime',
+            user: bt.dbUser || 'postgres',
+            password: pwd,
+            connectionTimeoutMillis: 2500,
+            statement_timeout: 4000,
+          });
+          try {
+            await client.connect();
+            let scopedPunchesPins = new Set();
+            let scope = 'BIOTIME_GLOBAL';
+            if (cleanSerial) {
+              try {
+                const snPinsRes = await client.query(
+                  `SELECT DISTINCT emp_code FROM iclock_transaction WHERE UPPER(COALESCE(terminal_sn::text, '')) = $1 AND emp_code IS NOT NULL`,
+                  [cleanSerial]
+                );
+                snPinsRes.rows.forEach((r) => scopedPunchesPins.add(String(r.emp_code).trim()));
+              } catch (_) {}
+            }
+            const empQ = await client.query(`
+              SELECT e.id, e.emp_code, e.first_name, e.last_name, e.card_no, e.dev_privilege, e.enable_att, e.status, e.update_time
+              FROM personnel_employee e
+              ORDER BY e.emp_code ASC
+              LIMIT 5000
+            `);
+            await client.end();
+
+            let rows = empQ.rows || [];
+            if (scopedPunchesPins.size > 0) {
+              const filtered = rows.filter((r) => scopedPunchesPins.has(String(r.emp_code || '').trim()));
+              if (filtered.length > 0) {
+                rows = filtered;
+                scope = 'BIOTIME_DEVICE_SCOPED';
+              }
+            }
+
+            const users = rows
+              .map((r) => {
+                const pin = String(r.emp_code || '').trim();
+                if (!pin) return null;
+                const fullName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;
+                const cardNo = r.card_no ? String(r.card_no).trim() : null;
+                const priv = r.dev_privilege !== null && r.dev_privilege !== undefined ? Number(r.dev_privilege) : null;
+                const statusStr = r.enable_att === false ? 'INACTIVO' : r.enable_att === true ? 'ACTIVO' : r.status !== null && r.status !== undefined ? String(r.status) : null;
+                const available = ['pin', 'clock_employee_code'];
+                if (fullName) available.push('clock_name');
+                if (cardNo) available.push('card_number');
+                if (priv !== null) available.push('privilege');
+                if (statusStr) available.push('clock_status');
+                if (r.update_time) available.push('clock_updated_at');
+
+                return {
+                  pin,
+                  uid: r.id !== undefined ? Number(r.id) : null,
+                  clock_name: fullName,
+                  clock_employee_code: pin,
+                  card_number: cardNo,
+                  privilege_code: priv,
+                  privilege_label: mapZkRoleLabel(priv),
+                  clock_status: statusStr,
+                  has_password: null,
+                  clock_updated_at: r.update_time ? new Date(r.update_time).toISOString() : null,
+                  source_method: 'BIOTIME_PG_SQL',
+                  source_scope: scope,
+                  available_fields: available,
+                  raw_attributes: {
+                    biotime_emp_id: r.id,
+                    emp_code: pin,
+                    terminal_sn: cleanSerial,
+                  },
+                };
+              })
+              .filter(Boolean);
+
+            return {
+              success: true,
+              source_method: 'BIOTIME_PG_SQL',
+              source_scope: scope,
+              serial_number: cleanSerial,
+              users,
+              tcp_error: tcpErrorMsg,
+              message: `${users.length} usuarios reales consultados desde PostgreSQL BioTime PRO (${btHost}:${btDbPort}) [${scope}].`,
+            };
+          } catch (_) {
+            try { await client.end(); } catch (_) {}
+          }
+        }
+      }
+
+      return {
+        success: false,
+        needsWebCredentials: !!inspection.needsWebCredentials,
+        error: inspection.error || 'BIOTIME_AND_TCP_FAILED',
+        message: `TCP directo hacia ${cleanIp}:${targetPort} falló (${tcpErrorMsg || 'sin respuesta'}) y BioTime PRO tampoco pudo completarse: ${inspection.message}`,
+        users: [],
+      };
+    }
+
+    return {
+      success: false,
+      error: 'TCP_DIRECT_FAILED',
+      message: `No se pudo leer usuarios del reloj en ${cleanIp}:${targetPort}: ${tcpErrorMsg || 'Sin respuesta TCP del dispositivo.'}`,
+      users: [],
+    };
+  } finally {
+    activeConnections.delete(lockKey);
+  }
+}
+
+/**
+ * Operación independiente, opcional y controlada por administrador para actualizar
+ * el nombre de un usuario directamente en la memoria del reloj ZKTeco vía TCP.
+ */
+async function setZkDeviceUserName(options = {}) {
+  const cleanIp = String(options.ip || '').trim();
+  const targetPort = Number(options.port) || 7496;
+  const timeout = Math.min(8000, Math.max(2000, Number(options.timeoutMs) || 4000));
+  const pin = String(options.pin || '').trim();
+  const name = String(options.name || '').trim().slice(0, 24);
+  const uid = Number(options.uid || pin) || 1;
+
+  if (!isValidIpv4(cleanIp) || !pin || !name) {
+    return { success: false, message: 'Parámetros inválidos (IP, PIN y nombre son obligatorios).' };
+  }
+
+  const candidatePorts = [targetPort, 4370].filter((p, idx, arr) => p > 0 && arr.indexOf(p) === idx);
+  let lastError = 'El dispositivo no acepta escritura remota por TCP.';
+
+  try {
+    const NodeZkLib = require('node-zklib');
+    for (const testPort of candidatePorts) {
+      try {
+        const inport = 5200 + Math.floor(Math.random() * 1000);
+        const zk = new NodeZkLib(cleanIp, testPort, timeout, inport);
+        await zk.createSocket();
+        if (typeof zk.setUser !== 'function') {
+          try { await zk.disconnect(); } catch (_) {}
+          return {
+            success: false,
+            message: 'El protocolo/librería activa del dispositivo no soporta escritura remota de nombre (setUser).',
+          };
+        }
+        await zk.setUser(uid, pin, name, '', 0, 0);
+        try { await zk.disconnect(); } catch (_) {}
+        return {
+          success: true,
+          method: 'TCP_NODE_ZKLIB',
+          message: `Nombre "${name}" enviado correctamente al reloj (${cleanIp}:${testPort}) para PIN ${pin}.`,
+        };
+      } catch (err) {
+        lastError = err?.message || String(err);
+      }
+    }
+  } catch (err) {
+    lastError = err?.message || String(err);
+  }
+
+  return {
+    success: false,
+    message: `No se pudo actualizar el nombre en el reloj físico (${cleanIp}): ${lastError}`,
+  };
+}
+
 module.exports = {
   diagnoseZkDevice,
   readZkDevicePunches,
@@ -2761,5 +3446,7 @@ module.exports = {
   checkBioTimeService,
   inspectBioTimeDatabase,
   syncBioTimeRecords,
+  queryZkDeviceUsers,
+  setZkDeviceUserName,
 };
 
