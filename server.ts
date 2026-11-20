@@ -931,11 +931,19 @@ const normalizeEmployeePayload = (body: any, existing?: any) => {
     position: normalizeInstitutionalName(body.position || body.cargo || existing?.position || 'Servidor Público'),
     cargo: normalizeInstitutionalName(body.cargo || body.position || existing?.cargo || 'Servidor Público'),
     cargo_id: body.cargo_id || existing?.cargo_id || '',
+    subarea_id: body.subarea_id !== undefined ? body.subarea_id : (existing?.subarea_id || ''),
+    subarea_name: normalizeInstitutionalName(body.subarea_name !== undefined ? body.subarea_name : (existing?.subarea_name || '')),
+    supervisor_id: body.supervisor_id !== undefined ? body.supervisor_id : (existing?.supervisor_id || ''),
+    supervisor_name: normalizePersonName(body.supervisor_name !== undefined ? body.supervisor_name : (existing?.supervisor_name || '')),
     regimen_laboral: body.regimen_laboral || existing?.regimen_laboral || 'D.L. 276',
     condicion_laboral: body.condicion_laboral || body.condicion || existing?.condicion_laboral || 'NOMBRADO',
     is_jefe_director: Boolean(body.is_jefe_director),
+    unidad_dirigida_id: body.unidad_dirigida_id !== undefined ? body.unidad_dirigida_id : (existing?.unidad_dirigida_id || ''),
+    unidad_dirigida_name: body.unidad_dirigida_name !== undefined ? body.unidad_dirigida_name : (existing?.unidad_dirigida_name || ''),
+    unidad_dirigida_type: body.unidad_dirigida_type !== undefined ? body.unidad_dirigida_type : (existing?.unidad_dirigida_type || ''),
     role: body.role || existing?.role || 'TRABAJADOR',
     assigned_roles: Array.isArray(body.assigned_roles) && body.assigned_roles.length > 0 ? body.assigned_roles : (existing?.assigned_roles || ['TRABAJADOR']),
+    role_history: Array.isArray(body.role_history) ? body.role_history : (existing?.role_history || []),
     has_system_access: body.has_system_access !== undefined ? Boolean(body.has_system_access) : true,
     username: body.username || existing?.username || dni,
     account_status: body.account_status || existing?.account_status || 'ACTIVE',
@@ -943,9 +951,14 @@ const normalizeEmployeePayload = (body: any, existing?: any) => {
     primer_ingreso: body.primer_ingreso || existing?.primer_ingreso || 'PENDIENTE',
     password_change_required: body.password_change_required !== undefined ? Boolean(body.password_change_required) : false,
     password_hash: body.password_hash || existing?.password_hash || null,
+    password_salt: body.password_salt || existing?.password_salt || null,
     active: body.active !== undefined ? Boolean(body.active) : true,
     hire_date: body.hire_date || existing?.hire_date || '2026-01-01',
-    zkteco_pin: body.zkteco_pin || existing?.zkteco_pin || dni,
+    zkteco_pin: body.zkteco_pin !== undefined ? String(body.zkteco_pin).trim() : (existing?.zkteco_pin || dni),
+    biometric_user_id: body.biometric_user_id !== undefined ? body.biometric_user_id : (existing?.biometric_user_id || body.zkteco_pin || dni),
+    biometric_sync_device_id: body.biometric_sync_device_id !== undefined ? body.biometric_sync_device_id : (existing?.biometric_sync_device_id || undefined),
+    biometric_sync_device_name: body.biometric_sync_device_name !== undefined ? body.biometric_sync_device_name : (existing?.biometric_sync_device_name || undefined),
+    biometric_sync_status: body.biometric_sync_status !== undefined ? body.biometric_sync_status : (existing?.biometric_sync_status || undefined),
     schedule_id: body.schedule_id || existing?.schedule_id || 'hor-01',
     schedule_name: normalizeInstitutionalName(body.schedule_name || existing?.schedule_name || 'Jornada Partida Institucional DRAC'),
     updated_at: new Date().toISOString(),
@@ -960,7 +973,38 @@ const handleGetEmployees = (req: express.Request, res: express.Response) => {
 const handleSaveEmployee = (req: express.Request, res: express.Response) => {
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
   const body = req.body || {};
-  const existingIdx = employees.findIndex((e) => e.id === body.id || (body.dni && e.dni === body.dni));
+  const cleanDni = String(body.dni || '').trim();
+  const cleanCode = String(body.codigo_trabajador || '').trim();
+
+  if (body.rejectIfDniExists && cleanDni) {
+    const dupDni = employees.find((e) => String(e.dni || '').trim() === cleanDni);
+    if (dupDni) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_DNI',
+        existingEmployee: dupDni,
+        message: `El DNI ${cleanDni} ya se encuentra registrado en el directorio institucional (${dupDni.first_name} ${dupDni.last_name}). Use "Vincular con Trabajador Existente".`,
+      });
+    }
+  }
+
+  if (body.rejectIfCodeExists && cleanCode) {
+    const dupCode = employees.find(
+      (e) =>
+        String(e.codigo_trabajador || '').trim().toUpperCase() === cleanCode.toUpperCase() &&
+        (!cleanDni || String(e.dni || '').trim() !== cleanDni)
+    );
+    if (dupCode) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_CODE',
+        existingEmployee: dupCode,
+        message: `El Código DRAC ${cleanCode} ya está asignado a ${dupCode.first_name} ${dupCode.last_name} (DNI ${dupCode.dni}).`,
+      });
+    }
+  }
+
+  const existingIdx = employees.findIndex((e) => e.id === body.id || (cleanDni && e.dni === cleanDni));
   const existing = existingIdx >= 0 ? employees[existingIdx] : undefined;
   const normalized = normalizeEmployeePayload(body, existing);
 
@@ -5191,7 +5235,7 @@ app.get('/api/zkteco/device-users', (_req, res) => {
       employee_full_name: emp ? normalizePersonName(`${emp.first_name} ${emp.last_name}`) : u.employee_full_name || null,
       employee_dependencia_name: emp?.dependencia_name || u.employee_dependencia_name || null,
       employee_area_name: emp?.area_name || u.employee_area_name || null,
-      employee_cargo_name: emp?.cargo_name || u.employee_cargo_name || null,
+      employee_cargo_name: emp?.position || emp?.cargo || emp?.cargo_name || u.employee_cargo_name || null,
       candidate_employee_id: !emp && cand ? cand.id : null,
       candidate_employee_name: !emp && cand ? normalizePersonName(`${cand.first_name} ${cand.last_name}`) : null,
       candidate_employee_dni: !emp && cand ? cand.dni : null,
@@ -5352,7 +5396,7 @@ app.post('/api/zkteco/device-users/query', async (req, res) => {
         unchanged_users: 0,
         missing_users: 0,
         reappeared_users: 0,
-        linked_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'VINCULADO').length,
+        linked_count: currentUsers.filter((u) => u.device_sn === devSn && (u.link_status === 'VINCULADO' || u.link_status === 'REGISTRADO')).length,
         pending_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'PENDIENTE_VINCULACION').length,
         possible_match_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'POSIBLE_COINCIDENCIA').length,
         review_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'REVISAR').length,
@@ -5378,7 +5422,7 @@ app.post('/api/zkteco/device-users/query', async (req, res) => {
         unchanged_users: 0,
         missing_users: 0,
         reappeared_users: 0,
-        linked_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'VINCULADO').length,
+        linked_count: currentUsers.filter((u) => u.device_sn === devSn && (u.link_status === 'VINCULADO' || u.link_status === 'REGISTRADO')).length,
         pending_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'PENDIENTE_VINCULACION').length,
         possible_match_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'POSIBLE_COINCIDENCIA').length,
         review_count: currentUsers.filter((u) => u.device_sn === devSn && u.link_status === 'REVISAR').length,
@@ -5415,11 +5459,12 @@ app.post('/api/zkteco/device-users/query', async (req, res) => {
 app.post('/api/zkteco/device-users/link', async (req, res) => {
   const {
     device_user_id,
-    action = 'LINK', // 'LINK' | 'RELINK' | 'UNLINK' | 'UPDATE_OBSERVATION'
+    action = 'LINK', // 'LINK' | 'RELINK' | 'REGISTER_LINK' | 'UNLINK' | 'UPDATE_OBSERVATION'
     employee_id,
     observations,
     save_pin_to_employee = true,
     apply_to_historical_punches = true,
+    confirm_pin_change = false,
   } = req.body || {};
 
   const userRole = String(req.headers['x-user-role'] || req.body?.user_role || '').trim();
@@ -5463,6 +5508,7 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
       employee_dependencia_name: null,
       employee_area_name: null,
       employee_cargo_name: null,
+      link_type: null,
       observations: observations !== undefined ? String(observations).trim() || null : target.observations || null,
       unlinked_at: nowIso,
       updated_at: nowIso,
@@ -5508,13 +5554,53 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
       created_at: nowIso,
     });
   } else {
-    // LINK or RELINK
+    // LINK, RELINK or REGISTER_LINK
     const emp = employees.find((e) => e.id === employee_id || e.dni === employee_id);
     if (!emp) {
       return res.status(404).json({ success: false, message: 'Trabajador institucional seleccionado no existe.' });
     }
+
+    // Validación 1: El usuario del reloj ya está vinculado a otro trabajador y no se solicitó RELINK explícito
+    if (action === 'LINK' && target.employee_id && target.employee_id !== emp.id) {
+      return res.status(409).json({
+        success: false,
+        code: 'ALREADY_LINKED',
+        existing_employee_id: target.employee_id,
+        message: `El PIN ${target.pin} (${target.device_sn}) ya se encuentra vinculado a ${target.employee_full_name || target.employee_id}. Use reasignación explícita.`,
+      });
+    }
+
+    // Validación 2: Verificar si el trabajador seleccionado ya tiene asignado otro PIN biométrico distinto
+    const workerExistingPin = String(emp.zkteco_pin || '').trim();
+    const otherSameDeviceBinding = deviceUsers.find(
+      (other) =>
+        other.id !== target.id &&
+        other.device_sn === target.device_sn &&
+        other.employee_id === emp.id &&
+        other.pin !== target.pin
+    );
+    const hasDistinctPinOnWorker =
+      Boolean(workerExistingPin && workerExistingPin !== String(target.pin).trim()) ||
+      Boolean(otherSameDeviceBinding);
+
+    if (hasDistinctPinOnWorker && !confirm_pin_change) {
+      const existingPinDisplay = otherSameDeviceBinding?.pin || workerExistingPin;
+      return res.status(409).json({
+        success: false,
+        code: 'WORKER_HAS_OTHER_PIN',
+        requires_confirmation: true,
+        existing_pin: existingPinDisplay,
+        existing_device_binding: otherSameDeviceBinding
+          ? { id: otherSameDeviceBinding.id, device_sn: otherSameDeviceBinding.device_sn, pin: otherSameDeviceBinding.pin }
+          : null,
+        message: `El trabajador ${emp.first_name} ${emp.last_name} ya tiene registrado otro PIN biométrico (${existingPinDisplay}). Confirme explícitamente si desea actualizar/reemplazar el PIN asignado.`,
+      });
+    }
+
     const prevEmpId = target.employee_id || null;
     const empFullName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+    const isRegisterLink = action === 'REGISTER_LINK';
+    const nextLinkType: 'VINCULADO' | 'REGISTRADO' = isRegisterLink ? 'REGISTRADO' : 'VINCULADO';
 
     // Nota: NUNCA modificamos clock_name ni employee.first_name / last_name
     deviceUsers[idx] = {
@@ -5525,7 +5611,8 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
       employee_full_name: empFullName,
       employee_dependencia_name: emp.dependencia_name || null,
       employee_area_name: emp.area_name || null,
-      employee_cargo_name: emp.cargo_name || null,
+      employee_cargo_name: emp.cargo || emp.position || emp.cargo_name || null,
+      link_type: nextLinkType,
       candidate_employee_id: null,
       candidate_employee_name: null,
       candidate_employee_dni: null,
@@ -5547,12 +5634,16 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
       device_user_id: target.id,
       device_sn: target.device_sn,
       pin: target.pin,
-      event_type: prevEmpId && prevEmpId !== emp.id ? 'RELINKED' : 'LINKED',
+      event_type: isRegisterLink ? 'CREATED_AND_LINKED' : (prevEmpId && prevEmpId !== emp.id ? 'RELINKED' : 'LINKED'),
       previous_employee_id: prevEmpId,
       new_employee_id: emp.id,
       previous_values: prevEmpId ? { employee_id: prevEmpId, employee_full_name: target.employee_full_name } : null,
-      new_values: { employee_id: emp.id, employee_dni: emp.dni, employee_full_name: empFullName },
-      observation: observations ? String(observations).trim() : `PIN ${target.pin} en ${target.device_sn} vinculado a ${empFullName}.`,
+      new_values: { employee_id: emp.id, employee_dni: emp.dni, employee_full_name: empFullName, link_type: nextLinkType },
+      observation: observations
+        ? String(observations).trim()
+        : isRegisterLink
+        ? `Nuevo trabajador ${empFullName} (DNI ${emp.dni}) registrado desde reloj ${target.device_sn} y vinculado al PIN ${target.pin}.`
+        : `PIN ${target.pin} en ${target.device_sn} vinculado a ${empFullName}.`,
       operator_name: operatorName,
       operator_role: operatorRole,
       created_at: nowIso,
@@ -5560,28 +5651,35 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
 
     if (save_pin_to_employee) {
       const empIdx = employees.findIndex((e) => e.id === emp.id);
-      if (empIdx >= 0 && String(employees[empIdx].zkteco_pin || '') !== target.pin) {
+      if (empIdx >= 0) {
         const oldPin = employees[empIdx].zkteco_pin || null;
+        const pinChanged = String(oldPin || '') !== String(target.pin);
         employees[empIdx] = {
           ...employees[empIdx],
           zkteco_pin: target.pin,
           biometric_user_id: target.pin,
+          biometric_sync_device_id: target.device_id,
+          biometric_sync_device_name: target.device_name,
+          biometric_sync_status: 'SINCRONIZADO',
+          updated_at: nowIso,
         };
         writeJsonFile(EMPLOYEES_FILE, employees);
-        logsToAdd.push({
-          id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          device_user_id: target.id,
-          device_sn: target.device_sn,
-          pin: target.pin,
-          event_type: 'PIN_ASSIGNED_TO_WORKER',
-          new_employee_id: emp.id,
-          previous_values: { zkteco_pin: oldPin },
-          new_values: { zkteco_pin: target.pin },
-          observation: `PIN biométrico "${target.pin}" guardado en la ficha institucional de ${empFullName}.`,
-          operator_name: operatorName,
-          operator_role: operatorRole,
-          created_at: nowIso,
-        });
+        if (pinChanged) {
+          logsToAdd.push({
+            id: `du_log_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            device_user_id: target.id,
+            device_sn: target.device_sn,
+            pin: target.pin,
+            event_type: 'PIN_ASSIGNED_TO_WORKER',
+            new_employee_id: emp.id,
+            previous_values: { zkteco_pin: oldPin },
+            new_values: { zkteco_pin: target.pin },
+            observation: `PIN biométrico "${target.pin}" guardado en la ficha institucional de ${empFullName}.`,
+            operator_name: operatorName,
+            operator_role: operatorRole,
+            created_at: nowIso,
+          });
+        }
       }
     }
 

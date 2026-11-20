@@ -54,11 +54,13 @@ CREATE TABLE IF NOT EXISTS vinculaciones_usuario_reloj (
     estado_vinculacion VARCHAR(40) NOT NULL DEFAULT 'PENDIENTE_VINCULACION'
         CHECK (estado_vinculacion IN (
             'VINCULADO',
+            'REGISTRADO',
             'PENDIENTE_VINCULACION',
             'POSIBLE_COINCIDENCIA',
             'REVISAR',
             'INACTIVO'
         )),
+    link_type VARCHAR(30),
     conflicto_detalle TEXT,
     posible_trabajador_id VARCHAR(50),
     posible_trabajador_nombre VARCHAR(200),
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS consultas_usuarios_reloj (
     mensaje TEXT,
     total_recuperados INT NOT NULL DEFAULT 0,
     nuevos INT NOT NULL DEFAULT 0,
+    new_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     actualizados INT NOT NULL DEFAULT 0,
     sin_cambios INT NOT NULL DEFAULT 0,
     no_encontrados_en_reloj INT NOT NULL DEFAULT 0,

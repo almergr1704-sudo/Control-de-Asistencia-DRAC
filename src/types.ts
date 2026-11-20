@@ -1048,6 +1048,7 @@ export interface SupabaseConfigStatus {
 
 export type DeviceUserLinkStatus =
   | 'VINCULADO'
+  | 'REGISTRADO'
   | 'PENDIENTE_VINCULACION'
   | 'POSIBLE_COINCIDENCIA'
   | 'REVISAR'
@@ -1094,6 +1095,7 @@ export interface BiometricDeviceUser {
   missing_since_at?: string | null;
   // B. DATOS DE VINCULACIÓN INSTITUCIONAL
   link_status: DeviceUserLinkStatus;
+  link_type?: 'VINCULADO' | 'REGISTRADO' | null;
   employee_id?: string | null;
   employee_codigo_drac?: string | null;
   employee_dni?: string | null;
@@ -1120,6 +1122,7 @@ export type DeviceUserChangeEventType =
   | 'MARKED_MISSING'
   | 'REAPPEARED'
   | 'LINKED'
+  | 'CREATED_AND_LINKED'
   | 'RELINKED'
   | 'UNLINKED'
   | 'PIN_ASSIGNED_TO_WORKER'
@@ -1155,6 +1158,7 @@ export interface DeviceUserSyncRun {
   error?: string | null;
   total_fetched: number;
   new_users: number;
+  new_user_ids?: string[];
   updated_users: number;
   unchanged_users: number;
   missing_users: number;

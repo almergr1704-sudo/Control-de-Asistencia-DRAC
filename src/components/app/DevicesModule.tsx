@@ -1,5 +1,16 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { DispositivoZkTeco, MarcacionRaw, Employee, BioTimePublicConfig } from '../../types';
+import {
+  DispositivoZkTeco,
+  MarcacionRaw,
+  Employee,
+  BioTimePublicConfig,
+  Dependencia,
+  DireccionOrgano,
+  Area,
+  Cargo,
+  Horario,
+  ResponsableDesignation,
+} from '../../types';
 import { getApiUrl } from '../../utils/apiConfig';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
@@ -47,22 +58,36 @@ interface DevicesModuleProps {
   devices: DispositivoZkTeco[];
   rawPunches: MarcacionRaw[];
   employees: Employee[];
+  dependencias?: Dependencia[];
+  direccionesOrganos?: DireccionOrgano[];
+  areas?: Area[];
+  cargos?: Cargo[];
+  horarios?: Horario[];
+  responsables?: ResponsableDesignation[];
   activeRole: string;
   activeSubView?: string;
   onSelectView?: (viewId: string) => void;
   onRefreshDevices?: () => void;
   onRefreshPunches?: () => void;
+  onRecordAudit?: (action: string, details: string, empDni?: string, empName?: string) => void;
 }
 
 export const DevicesModule: React.FC<DevicesModuleProps> = ({
   devices,
   rawPunches,
   employees,
+  dependencias = [],
+  direccionesOrganos = [],
+  areas = [],
+  cargos = [],
+  horarios = [],
+  responsables = [],
   activeRole,
   activeSubView,
   onSelectView,
   onRefreshDevices,
   onRefreshPunches,
+  onRecordAudit,
 }) => {
   // Navigation tabs within Biometrics Module
   const [activeTab, setActiveTab] = useState<'terminal' | 'users' | 'biotime' | 'adms' | 'agent' | 'diag' | 'spec'>('terminal');
@@ -2584,7 +2609,14 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           devices={devices}
           employees={employees}
           rawPunches={rawPunches}
+          dependencias={dependencias}
+          direccionesOrganos={direccionesOrganos}
+          areas={areas}
+          cargos={cargos}
+          horarios={horarios}
+          responsables={responsables}
           activeRole={activeRole}
+          onRecordAudit={onRecordAudit}
           onRefreshAll={() => {
             if (onRefreshDevices) onRefreshDevices();
             if (onRefreshPunches) onRefreshPunches();

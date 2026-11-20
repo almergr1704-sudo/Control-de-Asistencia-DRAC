@@ -349,13 +349,14 @@ export const App: React.FC = () => {
             const normFirst = normalizePersonName(e.first_name || '');
             const normLast = normalizePersonName(e.last_name || '');
             map.set(e.dni, {
+              ...(existing || {}),
               id: e.id || `emp-${e.dni}`,
               codigo_trabajador: e.codigo_trabajador || `DRAC-${e.dni}`,
               dni: e.dni,
               first_name: normFirst,
               last_name: normLast,
-              apellido_paterno: normalizePersonName(e.apellido_paterno || ''),
-              apellido_materno: normalizePersonName(e.apellido_materno || ''),
+              apellido_paterno: normalizePersonName(e.apellido_paterno || existing?.apellido_paterno || ''),
+              apellido_materno: normalizePersonName(e.apellido_materno || existing?.apellido_materno || ''),
               email: e.email || '',
               phone: e.phone || '',
               dependencia_id: e.dependencia_id || 'dep-01',
@@ -364,15 +365,38 @@ export const App: React.FC = () => {
               direccion_organo_name: normalizeInstitutionalName(e.direccion_organo_name || ''),
               area_id: e.area_id || 'area-01',
               area_name: normalizeInstitutionalName(e.area_name || ''),
+              subarea_id: e.subarea_id || existing?.subarea_id || '',
+              subarea_name: normalizeInstitutionalName(e.subarea_name || existing?.subarea_name || ''),
+              supervisor_id: e.supervisor_id || existing?.supervisor_id || '',
+              supervisor_name: normalizePersonName(e.supervisor_name || existing?.supervisor_name || ''),
+              cargo_id: e.cargo_id || existing?.cargo_id || '',
               position: normalizeInstitutionalName(e.cargo || e.position || 'Servidor Público'),
               regimen_laboral: (e.regimen_laboral as any) || 'D.L. 276',
-              condicion_laboral: (existing?.condicion_laboral || e.condicion || 'NOMBRADO') as any,
-              role: existing?.role || e.role || 'TRABAJADOR',
-              assigned_roles: existing?.assigned_roles || e.assigned_roles || ['TRABAJADOR'],
+              condicion_laboral: (e.condicion_laboral || e.condicion || existing?.condicion_laboral || 'NOMBRADO') as any,
+              is_jefe_director: e.is_jefe_director !== undefined ? Boolean(e.is_jefe_director) : Boolean(existing?.is_jefe_director),
+              unidad_dirigida_id: e.unidad_dirigida_id || existing?.unidad_dirigida_id || '',
+              unidad_dirigida_name: e.unidad_dirigida_name || existing?.unidad_dirigida_name || '',
+              unidad_dirigida_type: e.unidad_dirigida_type || existing?.unidad_dirigida_type || '',
+              role: e.role || existing?.role || 'TRABAJADOR',
+              assigned_roles: Array.isArray(e.assigned_roles) && e.assigned_roles.length > 0 ? e.assigned_roles : (existing?.assigned_roles || ['TRABAJADOR']),
+              role_history: Array.isArray(e.role_history) ? e.role_history : (existing?.role_history || []),
               has_system_access: e.has_system_access !== undefined ? e.has_system_access : true,
+              username: e.username || existing?.username || e.dni,
               account_status: e.account_status || 'ACTIVE',
+              auth_method: e.auth_method || existing?.auth_method || 'PASSWORD',
+              primer_ingreso: e.primer_ingreso || existing?.primer_ingreso || 'PENDIENTE',
+              password_change_required: e.password_change_required ?? existing?.password_change_required ?? false,
+              password_hash: e.password_hash || existing?.password_hash || undefined,
+              password_salt: e.password_salt || existing?.password_salt || undefined,
               active: e.active !== undefined ? e.active : true,
-              zkteco_pin: e.zkteco_pin || e.dni,
+              hire_date: e.hire_date || existing?.hire_date || '2026-01-01',
+              schedule_id: e.schedule_id || existing?.schedule_id || 'hor-01',
+              schedule_name: normalizeInstitutionalName(e.schedule_name || existing?.schedule_name || ''),
+              zkteco_pin: e.zkteco_pin !== undefined ? e.zkteco_pin : (existing?.zkteco_pin || e.dni),
+              biometric_user_id: e.biometric_user_id || existing?.biometric_user_id || e.zkteco_pin || e.dni,
+              biometric_sync_device_id: e.biometric_sync_device_id || existing?.biometric_sync_device_id,
+              biometric_sync_device_name: e.biometric_sync_device_name || existing?.biometric_sync_device_name,
+              biometric_sync_status: e.biometric_sync_status || existing?.biometric_sync_status,
             });
           });
           return Array.from(map.values());
@@ -936,11 +960,18 @@ export const App: React.FC = () => {
                 devices={devices}
                 rawPunches={rawPunches}
                 employees={employees}
+                dependencias={dependencias}
+                direccionesOrganos={direccionesOrganos}
+                areas={areas}
+                cargos={cargos}
+                horarios={horarios}
+                responsables={responsables}
                 activeRole={activeRole}
                 activeSubView={activeView}
                 onSelectView={handleSelectView}
                 onRefreshDevices={loadServerData}
                 onRefreshPunches={loadServerData}
+                onRecordAudit={handleRecordAudit}
               />
             )}
 

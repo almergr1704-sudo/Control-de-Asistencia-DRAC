@@ -91,6 +91,7 @@ export function classifyDeviceUserBinding(
     | 'clock_employee_code'
     | 'clock_status'
     | 'employee_id'
+    | 'link_type'
     | 'unlinked_at'
   >,
   employees: Employee[],
@@ -152,7 +153,7 @@ export function classifyDeviceUserBinding(
     }
 
     return {
-      link_status: 'VINCULADO',
+      link_status: record.link_type === 'REGISTRADO' ? 'REGISTRADO' : 'VINCULADO',
       matchedEmployee: linkedEmp,
       candidateEmployee: null,
       candidateReason: null,
@@ -289,6 +290,7 @@ export function reconcileDeviceUsers(params: ReconcileParams): ReconcileResult {
   const fetchedKeys = new Set<string>();
   const newLogs: DeviceUserChangeLog[] = [];
   const capabilitiesSet = new Set<string>();
+  const newUserIds: string[] = [];
 
   let newCount = 0;
   let updatedCount = 0;
@@ -316,6 +318,7 @@ export function reconcileDeviceUsers(params: ReconcileParams): ReconcileResult {
 
     if (!prev) {
       newCount++;
+      newUserIds.push(id);
       const draft: BiometricDeviceUser = {
         id,
         device_id: deviceId || 'dev-01',
@@ -495,7 +498,7 @@ export function reconcileDeviceUsers(params: ReconcileParams): ReconcileResult {
       employee_full_name: emp ? normalizePersonName(`${emp.first_name} ${emp.last_name}`) : u.employee_full_name || null,
       employee_dependencia_name: emp?.dependencia_name || u.employee_dependencia_name || null,
       employee_area_name: emp?.area_name || u.employee_area_name || null,
-      employee_cargo_name: emp?.cargo_name || u.employee_cargo_name || null,
+      employee_cargo_name: emp?.position || (emp as any)?.cargo || (emp as any)?.cargo_name || u.employee_cargo_name || null,
       candidate_employee_id: !emp && cand ? cand.id : null,
       candidate_employee_name: !emp && cand ? normalizePersonName(`${cand.first_name} ${cand.last_name}`) : null,
       candidate_employee_dni: !emp && cand ? cand.dni : null,
@@ -517,11 +520,12 @@ export function reconcileDeviceUsers(params: ReconcileParams): ReconcileResult {
     message,
     total_fetched: fetchedKeys.size,
     new_users: newCount,
+    new_user_ids: newUserIds,
     updated_users: updatedCount,
     unchanged_users: unchangedCount,
     missing_users: missingCount,
     reappeared_users: reappearedCount,
-    linked_count: deviceScoped.filter((u) => u.link_status === 'VINCULADO').length,
+    linked_count: deviceScoped.filter((u) => u.link_status === 'VINCULADO' || u.link_status === 'REGISTRADO').length,
     pending_count: deviceScoped.filter((u) => u.link_status === 'PENDIENTE_VINCULACION').length,
     possible_match_count: deviceScoped.filter((u) => u.link_status === 'POSIBLE_COINCIDENCIA').length,
     review_count: deviceScoped.filter((u) => u.link_status === 'REVISAR').length,
