@@ -112,6 +112,8 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
   const [selectedEncForView, setSelectedEncForView] = useState<Encargatura | null>(null);
   const [anularModalEnc, setAnularModalEnc] = useState<Encargatura | null>(null);
   const [anularReason, setAnularReason] = useState('');
+  const [deleteConfirmEnc, setDeleteConfirmEnc] = useState<{ enc: Encargatura; approvedCount: number } | null>(null);
+  const [encNotice, setEncNotice] = useState<string | null>(null);
 
   // WIZARD STEPS FOR NEW ENCARGATURA (1: Dir/Titular, 2: Encargado, 3: Sustento/Fechas, 4: Resumen)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
@@ -695,7 +697,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
         return {
           label: 'VIGENTE',
           color: 'bg-emerald-950/50 text-emerald-300 border-emerald-500/50',
-          dot: 'bg-emerald-400 animate-pulse',
+          dot: 'bg-emerald-400',
         };
       case 'PENDIENTE':
         return {
@@ -930,10 +932,26 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
         </FilterField>
       </AdvancedSearchFilter>
 
-      {/* Encargaturas Table - Compact, Auto-fit, No Unnecessary Horizontal Scrollbar */}
+      {encNotice && (
+        <div className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-xl flex items-center justify-between gap-3 text-xs text-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{encNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEncNotice(null)}
+            className="text-amber-300 hover:text-white p-1"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Encargaturas Table */}
       <div className="bg-[#0F1115] border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-        <div className="w-full">
-          <table className="w-full text-left text-xs border-collapse">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[940px] text-left text-xs border-collapse">
             <thead className="bg-slate-900/80 text-slate-400 font-semibold border-b border-slate-800">
               <tr>
                 <SortableHeader
@@ -1095,14 +1113,12 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
                           <button
                             onClick={() => {
                               if (approvedCount > 0) {
-                                alert(
+                                setEncNotice(
                                   `No se puede eliminar la encargatura porque ya cuenta con ${approvedCount} papeleta(s) firmadas bajo esta delegación. Debe anularla para preservar la trazabilidad legal.`
                                 );
                                 return;
                               }
-                              if (confirm(`¿Desea eliminar la encargatura ${enc.cargo_encargado} asignada a ${enc.encargado_name}?`)) {
-                                onDeleteEncargatura(enc.id);
-                              }
+                              setDeleteConfirmEnc({ enc, approvedCount });
                             }}
                             className="p-1.5 bg-slate-800 hover:bg-rose-950 text-rose-400 rounded-lg transition-colors"
                             title={approvedCount > 0 ? 'Bloqueado por papeletas asociadas' : 'Eliminar Registro'}
@@ -1147,10 +1163,10 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
       {/* MODAL: REGISTRAR NUEVA ENCARGATURA TEMPORAL (WIZARD GUIADO)        */}
       {/* ================================================================= */}
       {showNewWizardModal && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl my-6 flex flex-col max-h-[92vh]">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             {/* Wizard Header */}
-            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/20">
                   <ShieldCheck className="w-6 h-6" />
@@ -1173,7 +1189,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
             </div>
 
             {/* Stepper Progress Bar */}
-            <div className="bg-[#090A0D] px-6 py-3 border-b border-slate-800 flex items-center justify-between">
+            <div className="bg-[#090A0D] px-6 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 sm:gap-4 w-full">
                 {/* Step 1 */}
                 <div className="flex items-center gap-2">
@@ -1792,7 +1808,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
             </div>
 
             {/* Wizard Footer / Navigation Buttons */}
-            <div className="p-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
               <div>
                 {wizardStep > 1 && (
                   <button
@@ -1847,9 +1863,9 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
       {/* MODAL: EDITAR ENCARGATURA EXISTENTE                               */}
       {/* ================================================================= */}
       {showEditModal && editingEnc && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl my-6">
-            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/20">
                   <Edit2 className="w-5 h-5" />
@@ -1867,7 +1883,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               {formError && (
                 <div className="p-3 bg-rose-950/30 border border-rose-500/40 rounded-xl flex items-start gap-2.5 text-rose-300">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
@@ -2007,9 +2023,9 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
       {/* MODAL: VER FICHA Y TRAZABILIDAD DE ENCARGATURA                    */}
       {/* ================================================================= */}
       {selectedEncForView && (
-        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl my-6">
-            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/20">
                   <FileText className="w-5 h-5" />
@@ -2027,7 +2043,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
               {/* Header Badge */}
               <div className="p-4 bg-[#090A0D] border border-slate-800 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
@@ -2147,7 +2163,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
               })()}
             </div>
 
-            <div className="p-4 bg-slate-900/40 border-t border-slate-800 flex justify-end">
+            <div className="p-4 bg-slate-900/40 border-t border-slate-800 flex justify-end shrink-0">
               <button
                 onClick={() => setSelectedEncForView(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors"
@@ -2164,7 +2180,7 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
       {/* ================================================================= */}
       {anularModalEnc && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4">
             <div className="flex items-center gap-2.5 text-amber-400">
               <AlertCircle className="w-6 h-6" />
               <h3 className="text-sm font-bold text-white">Anular Encargatura Temporal</h3>
@@ -2202,6 +2218,41 @@ export const EncargaturasModule: React.FC<EncargaturasModuleProps> = ({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg transition-colors"
               >
                 Confirmar Anulación
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR ELIMINACIÓN DE ENCARGATURA */}
+      {deleteConfirmEnc && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-rose-800/60 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-2.5 text-rose-400">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="text-sm font-bold text-white">Confirmar Eliminación</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              ¿Desea eliminar la encargatura <strong>{deleteConfirmEnc.enc.cargo_encargado}</strong> asignada a{' '}
+              <strong>{deleteConfirmEnc.enc.encargado_name}</strong>?
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmEnc(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteEncargatura(deleteConfirmEnc.enc.id);
+                  setDeleteConfirmEnc(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg"
+              >
+                Eliminar Registro
               </button>
             </div>
           </div>

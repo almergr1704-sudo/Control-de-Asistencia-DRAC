@@ -88,7 +88,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
             <div className="px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-center">
               <span className="block text-[10px] text-slate-500 uppercase font-bold tracking-wider">Marcador G3-id</span>
               <div className="flex items-center gap-1.5 mt-0.5 justify-center">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                 <span className="font-mono text-xs font-bold text-white">ONLINE</span>
               </div>
             </div>
@@ -177,7 +177,7 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
               <div key={d.id} className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-xs text-white">{d.name}</span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-[11px] font-mono text-slate-400">
                   <div>SN: <span className="text-slate-200">{d.serial_number}</span></div>
@@ -223,8 +223,8 @@ export const OperationalDashboard: React.FC<OperationalDashboardProps> = ({
               </p>
             </div>
           ) : (
-            <div className="border border-slate-800 rounded-lg overflow-hidden bg-[#090A0D]">
-              <table className="w-full text-left text-xs">
+            <div className="border border-slate-800 rounded-lg overflow-x-auto bg-[#090A0D]">
+              <table className="w-full min-w-[600px] text-left text-xs">
                 <thead className="bg-[#060709] text-slate-400 text-[10px] uppercase font-bold border-b border-slate-800">
                   <tr>
                     <th className="p-2.5">DNI</th>

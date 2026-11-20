@@ -4,6 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import http from 'http';
+import https from 'https';
+import os from 'os';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import ZKLib from 'node-zklib';
@@ -82,6 +85,7 @@ const DEVICE_USERS_FILE = path.join(DATA_DIR, 'device-users.json');
 const DEVICE_USER_HISTORY_FILE = path.join(DATA_DIR, 'device-user-history.json');
 const DEVICE_USER_SYNC_LOGS_FILE = path.join(DATA_DIR, 'device-user-sync-logs.json');
 const SUPABASE_CFG_FILE = path.join(DATA_DIR, 'supabase-config.json');
+const BIOTIME_CONFIG_FILE = path.join(DATA_DIR, 'biotime-config.json');
 
 try {
   if (fs.existsSync(SUPABASE_CFG_FILE)) {
@@ -113,6 +117,174 @@ function writeJsonFile<T>(filePath: string, data: T): void {
   } catch (err) {
     console.error(`Error writing ${filePath}:`, err);
   }
+}
+
+// Persistencia cifrada segura de configuración BioTime PRO (nunca expone contraseñas en GET)
+const DEFAULT_BIOTIME_SERVER_CONFIG = {
+  host: '192.168.1.29',
+  httpPort: 8088,
+  protocol: 'http' as 'http' | 'https',
+  authMethod: 'AUTO' as 'AUTO' | 'JWT' | 'DRF_TOKEN' | 'DJANGO_SESSION',
+  authUser: '',
+  authPasswordEnc: '',
+  pgPort: 7496,
+  pgDbName: 'biotime',
+  pgUser: 'postgres',
+  pgPasswordEnc: '',
+  timeoutMs: 5000,
+  lastStatus: 'NO_CONECTADO',
+  lastTestedAt: null as string | null,
+  lastMessage: '',
+  updatedAt: null as string | null,
+};
+
+function getBioTimeServerKey(): Buffer {
+  return crypto.createHash('sha256').update(`DRAC-BIOTIME-WEB-${os.hostname()}-${process.platform}`).digest();
+}
+
+function encryptBioTimeSecretServer(plain: string): string {
+  const val = String(plain || '');
+  if (!val) return '';
+  try {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', getBioTimeServerKey(), iv);
+    const enc = Buffer.concat([cipher.update(val, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `aes:${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+  } catch (_) {
+    return '';
+  }
+}
+
+function decryptBioTimeSecretServer(stored: string): string {
+  const s = String(stored || '');
+  if (!s) return '';
+  if (s.startsWith('aes:')) {
+    try {
+      const parts = s.split(':');
+      if (parts.length === 4) {
+        const iv = Buffer.from(parts[1], 'hex');
+        const tag = Buffer.from(parts[2], 'hex');
+        const data = Buffer.from(parts[3], 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', getBioTimeServerKey(), iv);
+        decipher.setAuthTag(tag);
+        return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+  return s;
+}
+
+function loadStoredBioTimeConfigServer() {
+  const raw = readJsonFile<any>(BIOTIME_CONFIG_FILE, null);
+  if (raw && typeof raw === 'object') {
+    return {
+      ...DEFAULT_BIOTIME_SERVER_CONFIG,
+      ...raw,
+      authPasswordPlain: decryptBioTimeSecretServer(raw.authPasswordEnc || ''),
+      pgPasswordPlain: decryptBioTimeSecretServer(raw.pgPasswordEnc || ''),
+    };
+  }
+  return { ...DEFAULT_BIOTIME_SERVER_CONFIG, authPasswordPlain: '', pgPasswordPlain: '' };
+}
+
+function getPublicBioTimeConfigServer(cfg = loadStoredBioTimeConfigServer()) {
+  const hasAuth = Boolean(cfg.authPasswordPlain || cfg.authPasswordEnc);
+  const hasPg = Boolean(cfg.pgPasswordPlain || cfg.pgPasswordEnc);
+  return {
+    host: String(cfg.host || '192.168.1.29').trim(),
+    httpPort: Number(cfg.httpPort) || 8088,
+    protocol: String(cfg.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http',
+    authMethod: String(cfg.authMethod || 'AUTO').toUpperCase(),
+    authUser: String(cfg.authUser || '').trim(),
+    has_auth_password: hasAuth,
+    auth_password_masked: hasAuth ? '********' : '',
+    pgPort: Number(cfg.pgPort) || 7496,
+    pgDbName: String(cfg.pgDbName || 'biotime').trim(),
+    pgUser: String(cfg.pgUser || 'postgres').trim(),
+    has_pg_password: hasPg,
+    pg_password_masked: hasPg ? '********' : '',
+    timeoutMs: Number(cfg.timeoutMs) || 5000,
+    lastStatus: cfg.lastStatus || 'NO_CONECTADO',
+    lastTestedAt: cfg.lastTestedAt || null,
+    lastMessage: cfg.lastMessage || '',
+    updatedAt: cfg.updatedAt || null,
+  };
+}
+
+function saveStoredBioTimeConfigServer(payload: any = {}) {
+  const prev = loadStoredBioTimeConfigServer();
+  const nextHttpPort = Number(payload.httpPort ?? payload.webPort ?? prev.httpPort ?? 8088);
+  const nextPgPort = Number(payload.pgPort ?? payload.dbPort ?? prev.pgPort ?? 7496);
+  const rawAuthPwd = payload.authPassword ?? payload.webPassword;
+  const rawPgPwd = payload.pgPassword ?? payload.password;
+
+  let nextAuthEnc = prev.authPasswordEnc || '';
+  if (payload.clear_auth_password) {
+    nextAuthEnc = '';
+  } else if (rawAuthPwd !== undefined && rawAuthPwd !== '' && rawAuthPwd !== '********') {
+    nextAuthEnc = encryptBioTimeSecretServer(String(rawAuthPwd));
+  }
+
+  let nextPgEnc = prev.pgPasswordEnc || '';
+  if (payload.clear_pg_password) {
+    nextPgEnc = '';
+  } else if (rawPgPwd !== undefined && rawPgPwd !== '' && rawPgPwd !== '********') {
+    nextPgEnc = encryptBioTimeSecretServer(String(rawPgPwd));
+  }
+
+  const stored = {
+    host: String(payload.host ?? prev.host ?? '192.168.1.29').trim(),
+    httpPort: Number.isInteger(nextHttpPort) && nextHttpPort >= 1 && nextHttpPort <= 65535 ? nextHttpPort : prev.httpPort,
+    protocol: String(payload.protocol ?? prev.protocol ?? 'http').toLowerCase() === 'https' ? 'https' : 'http',
+    authMethod: String(payload.authMethod ?? prev.authMethod ?? 'AUTO').toUpperCase(),
+    authUser: String(payload.authUser ?? payload.webUser ?? prev.authUser ?? '').trim(),
+    authPasswordEnc: nextAuthEnc,
+    pgPort: Number.isInteger(nextPgPort) && nextPgPort >= 1 && nextPgPort <= 65535 ? nextPgPort : prev.pgPort,
+    pgDbName: String(payload.pgDbName ?? payload.dbName ?? prev.pgDbName ?? 'biotime').trim(),
+    pgUser: String(payload.pgUser ?? payload.dbUser ?? prev.pgUser ?? 'postgres').trim(),
+    pgPasswordEnc: nextPgEnc,
+    timeoutMs: Math.min(20000, Math.max(1500, Number(payload.timeoutMs ?? prev.timeoutMs) || 5000)),
+    lastStatus: payload.lastStatus ?? prev.lastStatus ?? 'NO_CONECTADO',
+    lastTestedAt: payload.lastTestedAt ?? prev.lastTestedAt ?? null,
+    lastMessage: payload.lastMessage ?? prev.lastMessage ?? '',
+    updatedAt: new Date().toISOString(),
+  };
+
+  writeJsonFile(BIOTIME_CONFIG_FILE, stored);
+  return getPublicBioTimeConfigServer({
+    ...stored,
+    authPasswordPlain: decryptBioTimeSecretServer(stored.authPasswordEnc),
+    pgPasswordPlain: decryptBioTimeSecretServer(stored.pgPasswordEnc),
+  });
+}
+
+function resolveBioTimeEffectiveParamsServer(params: any = {}) {
+  const stored = loadStoredBioTimeConfigServer();
+  const rawAuthPwd = params.authPassword ?? params.webPassword;
+  const rawPgPwd = params.pgPassword ?? params.password;
+  return {
+    host: String(params.host || stored.host || '192.168.1.29').trim(),
+    protocol: (String(params.protocol || stored.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http') as 'http' | 'https',
+    httpPort: Number(params.httpPort ?? params.webPort ?? stored.httpPort) || 8088,
+    webPort: Number(params.httpPort ?? params.webPort ?? stored.httpPort) || 8088,
+    pgPort: Number(params.pgPort ?? params.dbPort ?? stored.pgPort) || 7496,
+    dbPort: Number(params.pgPort ?? params.dbPort ?? stored.pgPort) || 7496,
+    pgDbName: String(params.pgDbName || params.dbName || stored.pgDbName || 'biotime').trim(),
+    dbName: String(params.pgDbName || params.dbName || stored.pgDbName || 'biotime').trim(),
+    pgUser: String(params.pgUser || params.dbUser || stored.pgUser || 'postgres').trim(),
+    dbUser: String(params.pgUser || params.dbUser || stored.pgUser || 'postgres').trim(),
+    authMethod: String(params.authMethod || stored.authMethod || 'AUTO').toUpperCase(),
+    authUser: String(params.authUser ?? params.webUser ?? stored.authUser ?? '').trim(),
+    webUser: String(params.authUser ?? params.webUser ?? stored.authUser ?? '').trim(),
+    authPassword: rawAuthPwd && rawAuthPwd !== '********' ? String(rawAuthPwd) : (stored.authPasswordPlain || ''),
+    webPassword: rawAuthPwd && rawAuthPwd !== '********' ? String(rawAuthPwd) : (stored.authPasswordPlain || ''),
+    pgPassword: rawPgPwd && rawPgPwd !== '********' ? String(rawPgPwd) : (stored.pgPasswordPlain || ''),
+    password: rawPgPwd && rawPgPwd !== '********' ? String(rawPgPwd) : (stored.pgPasswordPlain || ''),
+    timeoutMs: Math.min(20000, Math.max(1500, Number(params.timeoutMs ?? stored.timeoutMs) || 5000)),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2394,213 +2566,824 @@ async function integrateRealPunchesIntoSystem(
   };
 }
 
-// Cliente HTTP de SOLO LECTURA para BioTime PRO (puerto 8088)
+function probeTcpPortServer(host: string, port: number, timeoutMs = 2500): Promise<{ ok: boolean; latencyMs: number; code?: string; error?: string }> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const s = new net.Socket();
+    let done = false;
+    s.setTimeout(timeoutMs);
+    s.on('connect', () => {
+      if (done) return;
+      done = true;
+      s.destroy();
+      resolve({ ok: true, latencyMs: Date.now() - start });
+    });
+    s.on('timeout', () => {
+      if (done) return;
+      done = true;
+      s.destroy();
+      resolve({ ok: false, latencyMs: Date.now() - start, code: 'ETIMEDOUT', error: 'Timeout' });
+    });
+    s.on('error', (err: any) => {
+      if (done) return;
+      done = true;
+      s.destroy();
+      resolve({ ok: false, latencyMs: Date.now() - start, code: err?.code, error: err?.message });
+    });
+    try {
+      s.connect(port, host);
+    } catch (e: any) {
+      if (done) return;
+      done = true;
+      resolve({ ok: false, latencyMs: Date.now() - start, code: 'EINIT', error: e?.message });
+    }
+  });
+}
+
+function requestBioTimeHttpServer({
+  protocol = 'http',
+  host,
+  port,
+  path: urlPath,
+  method = 'GET',
+  body = '',
+  headers = {},
+  timeoutMs = 6000,
+}: {
+  protocol?: string;
+  host: string;
+  port: number;
+  path: string;
+  method?: string;
+  body?: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}): Promise<{ status: number; headers: http.IncomingHttpHeaders; json: any; raw: string }> {
+  return new Promise((resolve, reject) => {
+    const isHttps = String(protocol || 'http').toLowerCase() === 'https';
+    const mod = isHttps ? https : http;
+    const reqOpts: https.RequestOptions = {
+      hostname: host,
+      port: Number(port),
+      path: urlPath,
+      method,
+      headers: {
+        Accept: 'application/json, text/html;q=0.9',
+        ...(body ? { 'Content-Length': String(Buffer.byteLength(body)) } : {}),
+        ...headers,
+      },
+      timeout: Math.min(20000, Math.max(1500, Number(timeoutMs) || 6000)),
+      ...(isHttps ? { rejectUnauthorized: false } : {}),
+    };
+    const req = mod.request(reqOpts, (res) => {
+      let data = '';
+      res.on('data', (c) => {
+        data += c;
+      });
+      res.on('end', () => {
+        let json: any = null;
+        try {
+          json = JSON.parse(data);
+        } catch (_) {}
+        resolve({
+          status: res.statusCode || 0,
+          headers: res.headers || {},
+          json,
+          raw: data,
+        });
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      const err: any = new Error(`Timeout conectando a BioTime PRO ${isHttps ? 'HTTPS' : 'HTTP'} (${host}:${port})`);
+      err.code = 'ETIMEDOUT';
+      reject(err);
+    });
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+function normalizeHttpPathServer(nextUrlOrPath: string): string | null {
+  if (!nextUrlOrPath) return null;
+  const s = String(nextUrlOrPath).trim();
+  if (s.startsWith('/')) return s;
+  try {
+    const u = new URL(s);
+    return `${u.pathname}${u.search}`;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function authenticateBioTimeServer({
+  protocol = 'http',
+  host,
+  port,
+  authMethod = 'AUTO',
+  authUser,
+  authPassword,
+  timeoutMs = 6000,
+}: {
+  protocol?: string;
+  host: string;
+  port: number;
+  authMethod?: string;
+  authUser: string;
+  authPassword: string;
+  timeoutMs?: number;
+}): Promise<{
+  ok: boolean;
+  methodUsed: string | null;
+  headers: Record<string, string>;
+  errorCode: string | null;
+  message: string;
+}> {
+  const cleanUser = String(authUser || '').trim();
+  const cleanPwd = String(authPassword || '').trim();
+  const cleanProto = String(protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const pref = String(authMethod || 'AUTO').toUpperCase();
+
+  if (!cleanUser || !cleanPwd) {
+    return {
+      ok: false,
+      methodUsed: null,
+      headers: {},
+      errorCode: 'MISSING_CREDENTIALS',
+      message: 'Falta usuario o contraseña de acceso para BioTime PRO.',
+    };
+  }
+
+  const order = pref === 'AUTO' ? ['JWT', 'DRF_TOKEN', 'DJANGO_SESSION'] : [pref];
+  let lastStatus = 0;
+  let lastErrorMsg = '';
+
+  for (const m of order) {
+    if (m === 'JWT') {
+      try {
+        const res = await requestBioTimeHttpServer({
+          protocol: cleanProto,
+          host,
+          port,
+          path: '/jwt-api-token-auth/',
+          method: 'POST',
+          body: JSON.stringify({ username: cleanUser, password: cleanPwd }),
+          headers: { 'Content-Type': 'application/json' },
+          timeoutMs,
+        });
+        lastStatus = res.status;
+        if (res?.json?.token) {
+          return {
+            ok: true,
+            methodUsed: 'JWT',
+            headers: { Authorization: `JWT ${res.json.token}` },
+            errorCode: null,
+            message: 'Autenticación JWT exitosa.',
+          };
+        }
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          lastErrorMsg = res?.json?.non_field_errors?.[0] || res?.json?.detail || `HTTP ${res.status} en JWT`;
+        }
+      } catch (e: any) {
+        lastErrorMsg = e?.message || String(e);
+      }
+    }
+
+    if (m === 'DRF_TOKEN') {
+      try {
+        const res = await requestBioTimeHttpServer({
+          protocol: cleanProto,
+          host,
+          port,
+          path: '/api-token-auth/',
+          method: 'POST',
+          body: JSON.stringify({ username: cleanUser, password: cleanPwd }),
+          headers: { 'Content-Type': 'application/json' },
+          timeoutMs,
+        });
+        lastStatus = res.status;
+        if (res?.json?.token) {
+          return {
+            ok: true,
+            methodUsed: 'DRF_TOKEN',
+            headers: { Authorization: `Token ${res.json.token}` },
+            errorCode: null,
+            message: 'Autenticación DRF Token exitosa.',
+          };
+        }
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          lastErrorMsg = res?.json?.non_field_errors?.[0] || res?.json?.detail || `HTTP ${res.status} en DRF Token`;
+        }
+      } catch (e: any) {
+        lastErrorMsg = e?.message || String(e);
+      }
+    }
+
+    if (m === 'DJANGO_SESSION') {
+      try {
+        const loginPage = await requestBioTimeHttpServer({ protocol: cleanProto, host, port, path: '/login/', method: 'GET', timeoutMs });
+        const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
+        const cookieMap = new Map<string, string>();
+        const absorb = (arr: string[]) => {
+          for (const c of arr || []) {
+            const kv = String(c).split(';')[0];
+            const eq = kv.indexOf('=');
+            if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
+          }
+        };
+        absorb(setCookies);
+
+        let csrfToken = cookieMap.get('csrftoken') || '';
+        const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
+        if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
+
+        const formParams = new URLSearchParams({ username: cleanUser, password: cleanPwd });
+        if (csrfToken) formParams.set('csrfmiddlewaretoken', csrfToken);
+
+        const cookieHeader = Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+        const postLogin = await requestBioTimeHttpServer({
+          protocol: cleanProto,
+          host,
+          port,
+          path: '/login/?next=/',
+          method: 'POST',
+          body: formParams.toString(),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Referer: `${cleanProto}://${host}:${port}/login/`,
+            Origin: `${cleanProto}://${host}:${port}`,
+            ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+            ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+          },
+          timeoutMs,
+        });
+        absorb(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
+        lastStatus = postLogin.status;
+
+        if (cookieMap.has('sessionid') || postLogin.status === 302) {
+          const authH: Record<string, string> = {
+            Cookie: Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; '),
+          };
+          const finalCsrf = cookieMap.get('csrftoken');
+          if (finalCsrf) authH['X-CSRFToken'] = finalCsrf;
+          return {
+            ok: true,
+            methodUsed: 'DJANGO_SESSION',
+            headers: authH,
+            errorCode: null,
+            message: 'Sesión web Django autenticada.',
+          };
+        }
+      } catch (e: any) {
+        lastErrorMsg = e?.message || String(e);
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    methodUsed: null,
+    headers: {},
+    errorCode: 'ERROR_AUTENTICACION',
+    message: `Credenciales rechazadas por BioTime PRO (${cleanProto}://${host}:${port}) para "${cleanUser}"${lastErrorMsg ? ` — ${lastErrorMsg}` : lastStatus ? ` (HTTP ${lastStatus})` : ''}.`,
+  };
+}
+
+async function detectBioTimePortsServer({
+  host = '192.168.1.29',
+  protocol = 'http',
+  configuredPort = 8088,
+  ports,
+  timeoutMs = 2500,
+}: {
+  host?: string;
+  protocol?: string;
+  configuredPort?: number;
+  ports?: number[];
+  timeoutMs?: number;
+}) {
+  const cleanHost = String(host || '192.168.1.29').trim();
+  const cleanProto = String(protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const defaultList = [Number(configuredPort) || 8088, 8088, 89, 8000, 8080, 80, 443, 8090, 8888];
+  const candidatePorts = [...new Set((Array.isArray(ports) && ports.length > 0 ? ports : defaultList).map((p) => Number(p)).filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535))];
+
+  const results = await Promise.all(
+    candidatePorts.map(async (port) => {
+      const t0 = Date.now();
+      const tcp = await probeTcpPortServer(cleanHost, port, Math.min(timeoutMs, 2500));
+      if (!tcp.ok) {
+        return {
+          port,
+          tcp_open: false,
+          http_responded: false,
+          biotime_detected: false,
+          status_code: null as number | null,
+          latency_ms: tcp.latencyMs,
+          server_header: null as string | null,
+          detail: tcp.code === 'ECONNREFUSED' ? 'Puerto cerrado (ECONNREFUSED)' : tcp.code === 'ETIMEDOUT' ? 'Sin respuesta (ETIMEDOUT)' : (tcp.code || tcp.error || 'Inaccesible'),
+        };
+      }
+
+      const probeProto = port === 443 ? 'https' : cleanProto;
+      for (const probePath of ['/login/', '/jwt-api-token-auth/', '/']) {
+        try {
+          const res = await requestBioTimeHttpServer({ protocol: probeProto, host: cleanHost, port, path: probePath, method: 'GET', timeoutMs: Math.min(timeoutMs, 3000) });
+          const rawLower = String(res.raw || '').toLowerCase();
+          const serverHdr = String(res.headers?.server || '');
+          const isBioTime =
+            rawLower.includes('biotime') ||
+            rawLower.includes('zkteco') ||
+            rawLower.includes('iclock') ||
+            (probePath === '/jwt-api-token-auth/' && (res.status === 400 || res.status === 405 || res.status === 401)) ||
+            (probePath === '/login/' && res.status === 200 && rawLower.includes('csrfmiddlewaretoken'));
+          return {
+            port,
+            tcp_open: true,
+            http_responded: res.status > 0,
+            biotime_detected: isBioTime,
+            status_code: res.status,
+            latency_ms: Date.now() - t0,
+            server_header: serverHdr || null,
+            detail: isBioTime ? `Servicio web BioTime PRO confirmado (${probeProto.toUpperCase()} ${res.status})` : `Servicio ${probeProto.toUpperCase()} activo (HTTP ${res.status})`,
+          };
+        } catch (_) {}
+      }
+
+      return {
+        port,
+        tcp_open: true,
+        http_responded: false,
+        biotime_detected: false,
+        status_code: null as number | null,
+        latency_ms: Date.now() - t0,
+        server_header: null as string | null,
+        detail: `Puerto TCP abierto pero sin respuesta ${probeProto.toUpperCase()}`,
+      };
+    })
+  );
+
+  const recommended =
+    results.find((r) => r.biotime_detected)?.port ??
+    results.find((r) => r.http_responded)?.port ??
+    null;
+
+  return {
+    success: Boolean(recommended),
+    host: cleanHost,
+    protocol: cleanProto,
+    recommendedPort: recommended,
+    results,
+    message: recommended
+      ? `Puerto recomendado detectado: ${recommended} (${results.find((r) => r.port === recommended)?.detail}).`
+      : `Ninguno de los puertos evaluados (${candidatePorts.join(', ')}) respondió servicio HTTP/BioTime en ${cleanHost}.`,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function testBioTimeConnectionServer(config: any = {}) {
+  const startAll = Date.now();
+  const cleanHost = String(config.host || '').trim();
+  const httpPort = Number(config.httpPort ?? config.webPort ?? 0);
+  const protocol = String(config.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const authUser = String(config.authUser || config.webUser || '').trim();
+  const authPassword = String(config.authPassword || config.webPassword || '').trim();
+  const authMethod = String(config.authMethod || 'AUTO').toUpperCase();
+  const pgPort = Number(config.pgPort ?? config.dbPort ?? 7496);
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(config.timeoutMs) || 5000));
+
+  const stages: any[] = [];
+  const failReport = (
+    status: string,
+    connectivity_status: string,
+    auth_status: string,
+    api_status: string,
+    message: string,
+    error_detail: string | null = null,
+    extra: Record<string, any> = {}
+  ) => ({
+    success: false,
+    status,
+    host: cleanHost,
+    httpPort,
+    protocol,
+    pgPort,
+    connectivity_status,
+    auth_status,
+    api_status,
+    pg_tcp_open: extra.pg_tcp_open ?? false,
+    total_transactions: extra.total_transactions ?? 0,
+    total_terminals: extra.total_terminals ?? 0,
+    total_employees: extra.total_employees ?? 0,
+    latency_ms: Date.now() - startAll,
+    stages,
+    message,
+    error_detail,
+    timestamp: new Date().toISOString(),
+  });
+
+  const ipValid = /^(\d{1,3}\.){3}\d{1,3}$/.test(cleanHost) && cleanHost.split('.').every((o) => Number(o) >= 0 && Number(o) <= 255);
+  stages.push({
+    stage: 1,
+    key: 'validate_host',
+    name: '1. Validación de IP del servidor',
+    status: ipValid ? 'PASSED' : 'FAILED',
+    message: ipValid ? `IPv4 válida: ${cleanHost}` : `IP inválida o vacía: "${cleanHost}"`,
+    latency_ms: 1,
+  });
+  if (!ipValid) {
+    return failReport('CONFIGURACION_INCOMPLETA', 'FAILED', 'SKIPPED', 'SKIPPED', 'Debe ingresar una dirección IPv4 válida para el servidor BioTime PRO.');
+  }
+
+  const portValid = Number.isInteger(httpPort) && httpPort >= 1 && httpPort <= 65535;
+  stages.push({
+    stage: 2,
+    key: 'validate_port',
+    name: '2. Validación de puerto HTTP',
+    status: portValid ? 'PASSED' : 'FAILED',
+    message: portValid ? `Puerto HTTP válido: ${httpPort}` : `Puerto HTTP inválido: "${config.httpPort}" (rango permitido 1–65535)`,
+    latency_ms: 1,
+  });
+  if (!portValid) {
+    return failReport('CONFIGURACION_INCOMPLETA', 'FAILED', 'SKIPPED', 'SKIPPED', 'El puerto HTTP de BioTime PRO debe estar entre 1 y 65535.');
+  }
+
+  const t3 = Date.now();
+  const tcpRes = await probeTcpPortServer(cleanHost, httpPort, Math.min(timeoutMs, 4000));
+  stages.push({
+    stage: 3,
+    key: 'tcp_reachability',
+    name: `3. Alcance TCP al puerto ${httpPort}`,
+    status: tcpRes.ok ? 'PASSED' : 'FAILED',
+    message: tcpRes.ok
+      ? `Socket TCP conectado hacia ${cleanHost}:${httpPort} (${tcpRes.latencyMs} ms)`
+      : `Puerto ${httpPort} inaccesible en ${cleanHost} (${tcpRes.code || tcpRes.error})`,
+    latency_ms: Date.now() - t3,
+  });
+  if (!tcpRes.ok) {
+    const isTimeout = tcpRes.code === 'ETIMEDOUT';
+    return failReport(
+      isTimeout ? 'TIMEOUT' : 'PUERTO_INACCESIBLE',
+      isTimeout ? 'TIMEOUT' : 'FAILED',
+      'SKIPPED',
+      'SKIPPED',
+      `No se pudo abrir conexión TCP hacia ${cleanHost}:${httpPort} (${tcpRes.code || tcpRes.error}). Verifique IP, puerto web en BioTime Service Console y firewall.`,
+      tcpRes.code || tcpRes.error || null
+    );
+  }
+
+  const t4 = Date.now();
+  let httpBanner = '';
+  let httpResponded = false;
+  let httpErrDetail: string | null = null;
+  for (const probePath of ['/login/', '/jwt-api-token-auth/', '/']) {
+    try {
+      const probeRes = await requestBioTimeHttpServer({ protocol, host: cleanHost, port: httpPort, path: probePath, method: 'GET', timeoutMs });
+      if (probeRes.status > 0) {
+        httpResponded = true;
+        httpBanner = `HTTP ${probeRes.status} en ${probePath} (${probeRes.headers?.server || 'BioTime Web'})`;
+        break;
+      }
+    } catch (err: any) {
+      httpErrDetail = err.code || err.message;
+    }
+  }
+  stages.push({
+    stage: 4,
+    key: 'http_service',
+    name: `4. Respuesta real del servicio ${protocol.toUpperCase()}`,
+    status: httpResponded ? 'PASSED' : 'FAILED',
+    message: httpResponded
+      ? httpBanner
+      : `El puerto TCP ${httpPort} abrió pero NO respondió como servidor ${protocol.toUpperCase()} (${httpErrDetail || 'protocolo incompatible'}).`,
+    latency_ms: Date.now() - t4,
+  });
+  if (!httpResponded) {
+    const isTimeout = String(httpErrDetail || '').includes('ETIMEDOUT') || String(httpErrDetail || '').includes('Timeout');
+    return failReport(
+      isTimeout ? 'TIMEOUT' : 'NO_CONECTADO',
+      isTimeout ? 'TIMEOUT' : 'FAILED',
+      'SKIPPED',
+      'SKIPPED',
+      `El puerto ${httpPort} no respondió protocolo ${protocol.toUpperCase()} de BioTime PRO (${httpErrDetail || 'sin respuesta HTTP'}).`,
+      httpErrDetail
+    );
+  }
+
+  if (!authUser || !authPassword) {
+    stages.push({
+      stage: 5,
+      key: 'authentication',
+      name: '5. Autenticación BioTime PRO',
+      status: 'FAILED',
+      message: 'Falta usuario o contraseña de acceso a BioTime PRO.',
+    });
+    return failReport(
+      'CONFIGURACION_INCOMPLETA',
+      'OK',
+      'MISSING',
+      'SKIPPED',
+      `Servidor ${protocol.toUpperCase()} en ${cleanHost}:${httpPort} alcanzó respuesta web, pero faltan credenciales (usuario/contraseña) para completar la autenticación.`
+    );
+  }
+
+  const t5 = Date.now();
+  const authRes = await authenticateBioTimeServer({ protocol, host: cleanHost, port: httpPort, authMethod, authUser, authPassword, timeoutMs });
+  stages.push({
+    stage: 5,
+    key: 'authentication',
+    name: `5. Autenticación (${authMethod})`,
+    status: authRes.ok ? 'PASSED' : 'FAILED',
+    message: authRes.ok ? `${authRes.message} (Método: ${authRes.methodUsed})` : authRes.message,
+    latency_ms: Date.now() - t5,
+  });
+  if (!authRes.ok) {
+    return failReport('ERROR_AUTENTICACION', 'OK', 'FAILED', 'SKIPPED', authRes.message, authRes.errorCode);
+  }
+
+  const t6 = Date.now();
+  let txCount = 0;
+  let termCount = 0;
+  let empCount = 0;
+  let apiOk = false;
+  let apiError: string | null = null;
+  try {
+    const [txRes, termRes, empRes] = await Promise.all([
+      requestBioTimeHttpServer({ protocol, host: cleanHost, port: httpPort, path: '/iclock/api/transactions/?page=1&page_size=5', method: 'GET', headers: authRes.headers, timeoutMs }),
+      requestBioTimeHttpServer({ protocol, host: cleanHost, port: httpPort, path: '/iclock/api/terminals/?page=1&page_size=20', method: 'GET', headers: authRes.headers, timeoutMs }).catch(() => null),
+      requestBioTimeHttpServer({ protocol, host: cleanHost, port: httpPort, path: '/personnel/api/employees/?page=1&page_size=5', method: 'GET', headers: authRes.headers, timeoutMs }).catch(() => null),
+    ]);
+    if (txRes.status === 200 && txRes.json && Array.isArray(txRes.json.data)) {
+      apiOk = true;
+      txCount = Number(txRes.json.count ?? txRes.json.data.length ?? 0);
+    } else {
+      const altTx = await requestBioTimeHttpServer({ protocol, host: cleanHost, port: httpPort, path: '/att/api/transactionReport/?page=1&page_size=5', method: 'GET', headers: authRes.headers, timeoutMs }).catch(() => null);
+      if (altTx && altTx.status === 200 && altTx.json && Array.isArray(altTx.json.data)) {
+        apiOk = true;
+        txCount = Number(altTx.json.count ?? altTx.json.data.length ?? 0);
+      } else {
+        apiError = `HTTP ${txRes.status} en /iclock/api/transactions/`;
+      }
+    }
+    if (termRes?.status === 200 && termRes.json && Array.isArray(termRes.json.data)) {
+      termCount = Number(termRes.json.count ?? termRes.json.data.length ?? 0);
+    }
+    if (empRes?.status === 200 && empRes.json && Array.isArray(empRes.json.data)) {
+      empCount = Number(empRes.json.count ?? empRes.json.data.length ?? 0);
+    }
+  } catch (err: any) {
+    apiError = err.code || err.message;
+  }
+  stages.push({
+    stage: 6,
+    key: 'api_endpoints',
+    name: '6. Verificación de API solo lectura',
+    status: apiOk ? 'PASSED' : 'FAILED',
+    message: apiOk
+      ? `API operativa: ${termCount} terminales, ${empCount} empleados, ${txCount} marcaciones disponibles.`
+      : `Autenticación válida, pero endpoints API no disponibles (${apiError || 'sin JSON válido'}).`,
+    latency_ms: Date.now() - t6,
+  });
+
+  const t7 = Date.now();
+  let pgTcpOpen = false;
+  if (Number.isInteger(pgPort) && pgPort >= 1 && pgPort <= 65535) {
+    const pgProbe = await probeTcpPortServer(cleanHost, pgPort, 1800);
+    pgTcpOpen = pgProbe.ok;
+    stages.push({
+      stage: 7,
+      key: 'pg_port_check',
+      name: `7. Puerto PostgreSQL independiente (${pgPort})`,
+      status: pgProbe.ok ? 'PASSED' : 'WARNING',
+      message: pgProbe.ok
+        ? `PostgreSQL TCP :${pgPort} accesible en ${cleanHost}.`
+        : `PostgreSQL TCP :${pgPort} no expuesto en red (normal si BioTime solo permite BD local; HTTP API sigue operativa).`,
+      latency_ms: Date.now() - t7,
+    });
+  } else {
+    stages.push({
+      stage: 7,
+      key: 'pg_port_check',
+      name: '7. Puerto PostgreSQL independiente',
+      status: 'SKIPPED',
+      message: 'Puerto PostgreSQL no configurado.',
+    });
+  }
+
+  if (!apiOk) {
+    return failReport(
+      'API_NO_DISPONIBLE',
+      'OK',
+      'OK',
+      'FAILED',
+      `Se conectó y autenticó en ${protocol}://${cleanHost}:${httpPort}, pero la API de marcaciones no respondió datos válidos (${apiError}).`,
+      apiError,
+      { pg_tcp_open: pgTcpOpen }
+    );
+  }
+
+  return {
+    success: true,
+    status: 'CONECTADO',
+    host: cleanHost,
+    httpPort,
+    protocol,
+    pgPort,
+    authMethodUsed: authRes.methodUsed,
+    connectivity_status: 'OK',
+    auth_status: 'OK',
+    api_status: 'OK',
+    pg_tcp_open: pgTcpOpen,
+    total_transactions: txCount,
+    total_terminals: termCount,
+    total_employees: empCount,
+    latency_ms: Date.now() - startAll,
+    stages,
+    message: `Conectado a BioTime PRO (${protocol}://${cleanHost}:${httpPort}) vía ${authRes.methodUsed}. ${termCount} terminales, ${empCount} empleados, ${txCount} marcaciones.`,
+    error_detail: null,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function fetchBioTimeTerminalsServer(params: any = {}) {
+  const cleanHost = String(params.host || '192.168.1.29').trim();
+  const cleanProto = String(params.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const port = Number(params.httpPort ?? params.webPort ?? 8088);
+  const authMethod = String(params.authMethod || 'AUTO').toUpperCase();
+  const user = String(params.authUser ?? params.webUser ?? '').trim();
+  const pwd = String(params.authPassword ?? params.webPassword ?? '').trim();
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(params.timeoutMs) || 5000));
+
+  const auth = await authenticateBioTimeServer({ protocol: cleanProto, host: cleanHost, port, authMethod, authUser: user, authPassword: pwd, timeoutMs });
+  if (!auth.ok) {
+    return {
+      success: false,
+      status: auth.errorCode === 'MISSING_CREDENTIALS' ? 'CONFIGURACION_INCOMPLETA' : 'ERROR_AUTENTICACION',
+      devices: [],
+      error: auth.errorCode,
+      message: auth.message,
+    };
+  }
+
+  try {
+    const res = await requestBioTimeHttpServer({ protocol: cleanProto, host: cleanHost, port, path: '/iclock/api/terminals/?page=1&page_size=100', method: 'GET', headers: auth.headers, timeoutMs });
+    if (res.status !== 200 || !res.json || !Array.isArray(res.json.data)) {
+      return {
+        success: false,
+        status: 'API_NO_DISPONIBLE',
+        devices: [],
+        error: 'API_NO_DISPONIBLE',
+        message: `BioTime PRO respondió HTTP ${res.status} al consultar terminales (/iclock/api/terminals/).`,
+      };
+    }
+
+    const devices = res.json.data.map((t: any) => ({
+      id: t.id,
+      sn: String(t.sn || '').trim().toUpperCase(),
+      alias: String(t.alias || t.terminal_name || t.sn || 'Terminal BioTime').trim(),
+      ip_address: String(t.ip_address || '').trim(),
+      area_name: typeof t.area === 'object' ? (t.area?.area_name || t.area?.name || null) : (t.area_name || null),
+      state: t.state ?? null,
+      last_activity: t.last_activity || null,
+      user_count: t.user_count ?? null,
+      transaction_count: t.transaction_count ?? null,
+      fw_ver: t.fw_ver || null,
+    }));
+
+    return {
+      success: true,
+      status: 'CONECTADO',
+      devices,
+      message: `${devices.length} dispositivo(s) encontrado(s) en BioTime PRO (${cleanProto}://${cleanHost}:${port}).`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      status: err.code === 'ETIMEDOUT' ? 'TIMEOUT' : 'NO_CONECTADO',
+      devices: [],
+      error: err.code || err.message,
+      message: `Error consultando terminales BioTime PRO: ${err.message}`,
+    };
+  }
+}
+
+// Cliente HTTP/HTTPS de SOLO LECTURA para BioTime PRO (puerto manual, HTTP o HTTPS)
 // Soporta JWT (/jwt-api-token-auth/), DRF Token (/api-token-auth/) y Sesión Web Django (/login/).
 async function fetchBioTimeHttpApiServer(options: {
+  protocol?: string;
   host?: string;
+  httpPort?: number;
   webPort?: number;
+  authMethod?: string;
   serial?: string;
+  authUser?: string;
   webUser?: string;
+  authPassword?: string;
   webPassword?: string;
+  startDate?: string;
+  endDate?: string;
+  timeoutMs?: number;
   inspectOnly?: boolean;
 }): Promise<{
   success: boolean;
   needsWebCredentials?: boolean;
   error?: string;
   endpoint?: string;
+  pagesFetched?: number;
   totalCount?: number;
   deviceCount?: number;
   punches: any[];
   message: string;
 }> {
   const cleanHost = String(options?.host || '192.168.1.29').trim();
-  const port = Number(options?.webPort) || 8088;
+  const cleanProto = String(options?.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const port = Number(options?.httpPort ?? options?.webPort) || 8088;
+  const authMethod = String(options?.authMethod || 'AUTO').toUpperCase();
   const cleanSerial = String(options?.serial || '').trim().toUpperCase();
-  const webUser = String(options?.webUser || '').trim();
-  const webPassword = String(options?.webPassword || '').trim();
+  const webUser = String(options?.authUser ?? options?.webUser ?? '').trim();
+  const webPassword = String(options?.authPassword ?? options?.webPassword ?? '').trim();
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(options?.timeoutMs) || 6000));
   const inspectOnly = !!options?.inspectOnly;
-
-  const requestHttp = (
-    urlPath: string,
-    method: string = 'GET',
-    bodyStr: string = '',
-    extraHeaders: Record<string, string> = {}
-  ) =>
-    new Promise<{ status: number; headers: http.IncomingHttpHeaders; json: any; raw: string }>((resolve, reject) => {
-      const req = http.request(
-        {
-          hostname: cleanHost,
-          port,
-          path: urlPath,
-          method,
-          headers: {
-            Accept: 'application/json, text/html;q=0.9',
-            ...(bodyStr ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) } : {}),
-            ...extraHeaders,
-          },
-          timeout: 6000,
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => {
-            data += c;
-          });
-          res.on('end', () => {
-            let json: any = null;
-            try {
-              json = JSON.parse(data);
-            } catch (_) {}
-            resolve({
-              status: res.statusCode || 0,
-              headers: res.headers || {},
-              json,
-              raw: data,
-            });
-          });
-        }
-      );
-      req.on('error', reject);
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new Error(`Timeout conectando a BioTime PRO HTTP ${cleanHost}:${port}`));
-      });
-      if (bodyStr) req.write(bodyStr);
-      req.end();
-    });
 
   if (!webUser || !webPassword) {
     return {
       success: false,
       needsWebCredentials: true,
       error: 'MISSING_WEB_CREDENTIALS',
-      message: `BioTime PRO está activo en http://${cleanHost}:${port}. Ingrese su usuario y contraseña de BioTime PRO para leer las marcaciones.`,
+      message: `BioTime PRO (${cleanProto}://${cleanHost}:${port}) requiere usuario y contraseña de acceso para leer las marcaciones.`,
       punches: [],
     };
   }
 
-  let authHeaders: Record<string, string> | null = null;
-
-  // 1. JWT oficial BioTime PRO
+  let auth;
   try {
-    const jwtRes = await requestHttp(
-      '/jwt-api-token-auth/',
-      'POST',
-      JSON.stringify({ username: webUser, password: webPassword }),
-      { 'Content-Type': 'application/json' }
-    );
-    if (jwtRes?.json?.token) {
-      authHeaders = { Authorization: `JWT ${jwtRes.json.token}` };
-    }
-  } catch (_) {}
-
-  // 2. DRF Token Auth
-  if (!authHeaders) {
-    try {
-      const tokRes = await requestHttp(
-        '/api-token-auth/',
-        'POST',
-        JSON.stringify({ username: webUser, password: webPassword }),
-        { 'Content-Type': 'application/json' }
-      );
-      if (tokRes?.json?.token) {
-        authHeaders = { Authorization: `Token ${tokRes.json.token}` };
-      }
-    } catch (_) {}
+    auth = await authenticateBioTimeServer({ protocol: cleanProto, host: cleanHost, port, authMethod, authUser: webUser, authPassword: webPassword, timeoutMs });
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.code || 'BIOTIME_UNREACHABLE',
+      message: `No se pudo conectar a BioTime PRO (${cleanProto}://${cleanHost}:${port}): ${err?.message || String(err)}`,
+      punches: [],
+    };
   }
 
-  // 3. Sesión Web Django (/login/) por cookie + CSRF
-  if (!authHeaders) {
-    try {
-      const loginPage = await requestHttp('/login/', 'GET');
-      const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
-      const cookieMap = new Map<string, string>();
-      const absorbCookies = (arr: string[]) => {
-        for (const c of arr || []) {
-          const kv = String(c).split(';')[0];
-          const eq = kv.indexOf('=');
-          if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
-        }
-      };
-      absorbCookies(setCookies);
-
-      let csrfToken = cookieMap.get('csrftoken') || '';
-      const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
-      if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
-
-      const formParams = new URLSearchParams({
-        username: webUser,
-        password: webPassword,
-      });
-      if (csrfToken) formParams.set('csrfmiddlewaretoken', csrfToken);
-
-      const cookieHeader = Array.from(cookieMap.entries())
-        .map(([k, v]) => `${k}=${v}`)
-        .join('; ');
-
-      const postHeaders: Record<string, string> = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Referer: `http://${cleanHost}:${port}/login/`,
-        Origin: `http://${cleanHost}:${port}`,
-      };
-      if (cookieHeader) postHeaders.Cookie = cookieHeader;
-      if (csrfToken) postHeaders['X-CSRFToken'] = csrfToken;
-
-      const postLogin = await requestHttp('/login/?next=/', 'POST', formParams.toString(), postHeaders);
-      absorbCookies(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
-
-      if (cookieMap.has('sessionid') || postLogin.status === 302) {
-        const finalCookie = Array.from(cookieMap.entries())
-          .map(([k, v]) => `${k}=${v}`)
-          .join('; ');
-        authHeaders = { Cookie: finalCookie };
-        const finalCsrf = cookieMap.get('csrftoken');
-        if (finalCsrf) authHeaders['X-CSRFToken'] = finalCsrf;
-      }
-    } catch (_) {}
-  }
-
-  if (!authHeaders) {
+  if (!auth.ok) {
     return {
       success: false,
       needsWebCredentials: true,
       error: 'BIOTIME_AUTH_FAILED',
-      message: `No se pudo iniciar sesión en BioTime PRO (http://${cleanHost}:${port}) con el usuario "${webUser}". Verifique el usuario y contraseña.`,
+      message: auth.message,
       punches: [],
     };
   }
 
+  const authHeaders = auth.headers;
   const pageSize = inspectOnly ? 20 : 200;
-  const maxPages = inspectOnly ? 1 : 10;
+  const maxPages = inspectOnly ? 1 : 50;
   const collectedRows: any[] = [];
   let totalCount = 0;
+  let pagesFetched = 0;
+
+  const cleanStart = String(options?.startDate || '').trim();
+  const cleanEnd = String(options?.endDate || '').trim();
+  const dateParams =
+    (cleanStart ? `&start_time=${encodeURIComponent(cleanStart.length === 10 ? `${cleanStart} 00:00:00` : cleanStart)}` : '') +
+    (cleanEnd ? `&end_time=${encodeURIComponent(cleanEnd.length === 10 ? `${cleanEnd} 23:59:59` : cleanEnd)}` : '');
 
   const endpoints = ['/iclock/api/transactions/', '/att/api/transactionReport/'];
   let activeEndpoint = endpoints[0];
 
   for (const ep of endpoints) {
     const snParam = cleanSerial && ep.includes('iclock') ? `&terminal_sn=${encodeURIComponent(cleanSerial)}` : '';
-    const testRes = await requestHttp(`${ep}?page=1&page_size=${pageSize}${snParam}`, 'GET', '', authHeaders);
+    const testRes = await requestBioTimeHttpServer({ protocol: cleanProto, host: cleanHost, port, path: `${ep}?page=1&page_size=${pageSize}${snParam}${dateParams}`, method: 'GET', headers: authHeaders, timeoutMs });
     if (testRes.status === 200 && testRes.json && Array.isArray(testRes.json.data)) {
       activeEndpoint = ep;
-      totalCount = Number(testRes.json.count || testRes.json.data.length || 0);
-      collectedRows.push(...testRes.json.data);
+      pagesFetched = 1;
+      let pageData = testRes.json;
+      totalCount = Number(pageData.count || pageData.data.length || 0);
+      collectedRows.push(...pageData.data);
 
       if (collectedRows.length === 0 && snParam) {
-        const broadRes = await requestHttp(`${ep}?page=1&page_size=${pageSize}`, 'GET', '', authHeaders);
+        const broadRes = await requestBioTimeHttpServer({ protocol: cleanProto, host: cleanHost, port, path: `${ep}?page=1&page_size=${pageSize}${dateParams}`, method: 'GET', headers: authHeaders, timeoutMs });
         if (broadRes.status === 200 && broadRes.json && Array.isArray(broadRes.json.data)) {
+          pageData = broadRes.json;
           totalCount = Number(broadRes.json.count || broadRes.json.data.length || 0);
           collectedRows.push(...broadRes.json.data);
         }
       }
 
       if (!inspectOnly) {
+        let nextPath = normalizeHttpPathServer(pageData.next);
         let nextPage = 2;
-        while (nextPage <= maxPages && testRes.json.next && collectedRows.length < totalCount) {
-          const pRes = await requestHttp(`${ep}?page=${nextPage}&page_size=${pageSize}${snParam}`, 'GET', '', authHeaders);
+        while (nextPage <= maxPages && (nextPath || (totalCount > 0 && collectedRows.length < totalCount))) {
+          const pathToFetch = nextPath || `${ep}?page=${nextPage}&page_size=${pageSize}${snParam}${dateParams}`;
+          const pRes = await requestBioTimeHttpServer({ protocol: cleanProto, host: cleanHost, port, path: pathToFetch, method: 'GET', headers: authHeaders, timeoutMs });
           const rows = Array.isArray(pRes?.json?.data) ? pRes.json.data : [];
           if (rows.length === 0) break;
+          pagesFetched++;
           collectedRows.push(...rows);
-          if (!pRes.json.next) break;
+          nextPath = normalizeHttpPathServer(pRes?.json?.next);
+          if (!nextPath && collectedRows.length >= totalCount) break;
           nextPage++;
         }
       }
@@ -2627,12 +3410,17 @@ async function fetchBioTimeHttpApiServer(options: {
     return s.replace('T', ' ').substring(0, 19);
   };
 
+  const startCutoff = cleanStart ? cleanStart.substring(0, 10) : '';
+  const endCutoff = cleanEnd ? cleanEnd.substring(0, 10) : '';
   const syncedAt = new Date().toISOString();
   const punches = effectiveRows
     .map((r, idx) => {
       const code = String(r.emp_code || r.emp || r.pin || '').trim();
       const ts = formatTs(r.punch_time || r.check_time || r.att_time);
       if (!code || !ts || ts.length < 16) return null;
+      const datePart = ts.split(' ')[0] || '';
+      if (startCutoff && datePart < startCutoff) return null;
+      if (endCutoff && datePart > endCutoff) return null;
       const snVal = String(r.terminal_sn || cleanSerial || 'AEH2223460040').trim().toUpperCase();
       const pState = Number(r.punch_state ?? 0);
       const verifyDisp = String(r.verify_type_display || r.verify_type || '').toUpperCase();
@@ -2650,7 +3438,7 @@ async function fetchBioTimeHttpApiServer(options: {
         device_ip: cleanHost,
         employee_dni: code,
         employee_code: code,
-        fecha: ts.split(' ')[0] || '',
+        fecha: datePart,
         hora: ts.split(' ')[1] || '',
         timestamp: ts,
         verify_mode: verifyMode,
@@ -2664,31 +3452,41 @@ async function fetchBioTimeHttpApiServer(options: {
   return {
     success: true,
     endpoint: activeEndpoint,
+    pagesFetched,
     totalCount: totalCount || effectiveRows.length,
     deviceCount: punches.length,
     punches,
     message:
       punches.length > 0
-        ? `${punches.length} marcaciones reales recuperadas vía BioTime PRO HTTP (${cleanHost}:${port}).`
-        : `Conectado a BioTime PRO (${cleanHost}:${port}), sin marcaciones encontradas para ${cleanSerial || 'el reloj'}.`,
+        ? `${punches.length} marcaciones reales recuperadas vía BioTime PRO ${cleanProto.toUpperCase()} (${cleanHost}:${port}).`
+        : `Conectado a BioTime PRO (${cleanHost}:${port}), sin marcaciones encontradas en el criterio consultado.`,
   };
 }
 
-// Inspección read-only de esquema BioTime vía information_schema + verificación HTTP 8088
+// Inspección read-only de esquema BioTime vía information_schema + verificación HTTP/HTTPS manual
 async function inspectBioTimeDb(options?: {
+  protocol?: string;
   host?: string;
+  httpPort?: number;
   webPort?: number;
   port?: number;
   dbName?: string;
   user?: string;
   password?: string;
+  authMethod?: string;
+  authUser?: string;
   webUser?: string;
+  authPassword?: string;
   webPassword?: string;
   serial?: string;
+  timeoutMs?: number;
+  strictPort?: boolean;
 }): Promise<{
   success: boolean;
   host: string;
+  protocol?: string;
   webPort: number;
+  httpPort?: number;
   dbPort: number;
   dbName: string;
   webReachable: boolean;
@@ -2707,60 +3505,40 @@ async function inspectBioTimeDb(options?: {
 }> {
   const start = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
-  const rawWebPort = Number(options?.webPort);
+  const protocol = String(options?.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const rawWebPort = Number(options?.httpPort ?? options?.webPort);
   let webPort = rawWebPort || 8088;
   const dbPort = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
   const serial = String(options?.serial || '').trim().toUpperCase();
+  const effectiveWebUser = String(options?.authUser ?? options?.webUser ?? '').trim();
+  const effectiveWebPwd = String(options?.authPassword ?? options?.webPassword ?? '').trim();
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(options?.timeoutMs) || 5000));
 
-  const probePort = (h: string, p: number, ms = 1800) =>
-    new Promise<{ ok: boolean; code?: string; message?: string }>((resolve) => {
-      const s = new net.Socket();
-      let done = false;
-      s.setTimeout(ms);
-      s.on('connect', () => {
-        if (done) return;
-        done = true;
-        s.destroy();
-        resolve({ ok: true });
-      });
-      s.on('timeout', () => {
-        if (done) return;
-        done = true;
-        s.destroy();
-        resolve({ ok: false, code: 'ETIMEDOUT', message: 'Timeout' });
-      });
-      s.on('error', (err: any) => {
-        if (done) return;
-        done = true;
-        s.destroy();
-        resolve({ ok: false, code: err?.code, message: err?.message });
-      });
-      s.connect(p, h);
-    });
-
-  let webProbe = await probePort(host, webPort, 2500);
-  if (!webProbe.ok && (webPort === 8088 || webPort === 89)) {
+  let webProbe = await probeTcpPortServer(host, webPort, Math.min(timeoutMs, 3000));
+  if (!webProbe.ok && !options?.strictPort && (webPort === 8088 || webPort === 89)) {
     const altPort = webPort === 8088 ? 89 : 8088;
-    const altProbe = await probePort(host, altPort, 2000);
+    const altProbe = await probeTcpPortServer(host, altPort, 2000);
     if (altProbe.ok) {
       webProbe = altProbe;
       webPort = altPort;
     }
   }
-  const dbProbe = await probePort(host, dbPort, 2500);
+  const dbProbe = await probeTcpPortServer(host, dbPort, 2500);
 
   const report = {
     success: false,
     host,
+    protocol,
     webPort,
+    httpPort: webPort,
     dbPort,
     dbName,
     webReachable: webProbe.ok,
     dbReachable: dbProbe.ok,
-    webError: webProbe.code || webProbe.message || null,
-    dbError: dbProbe.code || dbProbe.message || null,
+    webError: webProbe.code || webProbe.error || null,
+    dbError: dbProbe.code || dbProbe.error || null,
     needsWebCredentials: false,
     tablesFound: [] as string[],
     attendanceTable: null as string | null,
@@ -2774,28 +3552,31 @@ async function inspectBioTimeDb(options?: {
     latency: Date.now() - start,
   };
 
-  // Si PostgreSQL :7496 no responde en red pero BioTime PRO HTTP :8088 sí responde, inspeccionar por HTTP API
   if (!dbProbe.ok && webProbe.ok) {
-    if (!options?.webUser || !options?.webPassword) {
+    if (!effectiveWebUser || !effectiveWebPwd) {
       report.needsWebCredentials = true;
       report.error = 'NEEDS_WEB_CREDENTIALS';
-      report.message = `BioTime PRO HTTP en ${host}:${webPort} está ACTIVO (PostgreSQL :${dbPort} es solo local). Ingrese Usuario Web y Contraseña de BioTime PRO para inspeccionar y extraer marcaciones.`;
+      report.message = `BioTime PRO ${protocol.toUpperCase()} en ${host}:${webPort} está ACTIVO (PostgreSQL :${dbPort} es solo local). Ingrese Usuario Web y Contraseña de BioTime PRO para inspeccionar y extraer marcaciones.`;
       report.latency = Date.now() - start;
       return report;
     }
 
     const apiCheck = await fetchBioTimeHttpApiServer({
+      protocol,
       host,
+      httpPort: webPort,
       webPort,
+      authMethod: options?.authMethod || 'AUTO',
       serial,
-      webUser: options.webUser,
-      webPassword: options.webPassword,
+      authUser: effectiveWebUser,
+      authPassword: effectiveWebPwd,
+      timeoutMs,
       inspectOnly: true,
     });
 
     if (apiCheck.success) {
       report.success = true;
-      report.attendanceTable = `API HTTP BioTime PRO (${apiCheck.endpoint})`;
+      report.attendanceTable = `API ${protocol.toUpperCase()} BioTime PRO (${apiCheck.endpoint})`;
       report.totalTransactions = apiCheck.totalCount || 0;
       report.deviceTransactions = apiCheck.deviceCount || 0;
       report.receivesClockPunches = report.deviceTransactions > 0 || report.totalTransactions > 0;
@@ -2900,15 +3681,24 @@ async function inspectBioTimeDb(options?: {
 }
 
 async function syncPunchesFromBioTimeDb(options?: {
+  protocol?: string;
   host?: string;
+  httpPort?: number;
   webPort?: number;
   port?: number;
   dbName?: string;
   user?: string;
   password?: string;
+  authMethod?: string;
+  authUser?: string;
   webUser?: string;
+  authPassword?: string;
   webPassword?: string;
   serial?: string;
+  startDate?: string;
+  endDate?: string;
+  timeoutMs?: number;
+  strictPort?: boolean;
 }): Promise<{
   success: boolean;
   needsWebCredentials?: boolean;
@@ -2920,36 +3710,49 @@ async function syncPunchesFromBioTimeDb(options?: {
 }> {
   const startTime = Date.now();
   const host = String(options?.host || '192.168.1.29').trim();
-  const rawWebPort = Number(options?.webPort);
+  const protocol = String(options?.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const rawWebPort = Number(options?.httpPort ?? options?.webPort);
   const webPort = rawWebPort || 8088;
   const port = Number(options?.port) || 7496;
   const dbName = String(options?.dbName || 'biotime').trim();
   const user = String(options?.user || 'postgres').trim();
   const serial = String(options?.serial || '').trim().toUpperCase();
+  const effectiveWebUser = String(options?.authUser ?? options?.webUser ?? '').trim();
+  const effectiveWebPwd = String(options?.authPassword ?? options?.webPassword ?? '').trim();
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(options?.timeoutMs) || 6000));
 
-  // 1. Inspección obligatoria de solo lectura (HTTP 8088 / 89 y PostgreSQL 7496)
   const inspection = await inspectBioTimeDb({
+    protocol,
     host,
+    httpPort: webPort,
     webPort,
     port,
     dbName,
     user,
     password: options?.password,
-    webUser: options?.webUser,
-    webPassword: options?.webPassword,
+    authMethod: options?.authMethod,
+    authUser: effectiveWebUser,
+    authPassword: effectiveWebPwd,
     serial,
+    timeoutMs,
+    strictPort: options?.strictPort,
   });
 
-  const effectiveWebPort = Number(inspection.webPort || webPort);
+  const effectiveWebPort = Number(inspection.httpPort || inspection.webPort || webPort);
 
-  // 2. Si HTTP BioTime PRO está disponible y PG no está accesible o se enviaron credenciales web
-  if (inspection.webReachable && (!inspection.dbReachable || (options?.webUser && options?.webPassword))) {
+  if (inspection.webReachable && (!inspection.dbReachable || (effectiveWebUser && effectiveWebPwd))) {
     const apiRes = await fetchBioTimeHttpApiServer({
+      protocol,
       host,
+      httpPort: effectiveWebPort,
       webPort: effectiveWebPort,
+      authMethod: options?.authMethod || 'AUTO',
       serial,
-      webUser: options?.webUser,
-      webPassword: options?.webPassword,
+      authUser: effectiveWebUser,
+      authPassword: effectiveWebPwd,
+      startDate: options?.startDate,
+      endDate: options?.endDate,
+      timeoutMs,
       inspectOnly: false,
     });
     if (apiRes.success) {
@@ -3465,55 +4268,204 @@ app.post('/api/zkteco/upload-attlog', async (req, res) => {
   });
 });
 
-// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL (:7496) + HTTP PRO (:8088 / :89)
-app.post('/api/zkteco/biotime/inspect', async (req, res) => {
-  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
+// GET /api/zkteco/biotime/config - Devuelve configuración BioTime PRO (NUNCA contraseñas en claro)
+app.get('/api/zkteco/biotime/config', (_req, res) => {
+  return res.json({ success: true, config: getPublicBioTimeConfigServer() });
+});
+
+// POST /api/zkteco/biotime/config - Persiste configuración manual de BioTime PRO
+app.post('/api/zkteco/biotime/config', (req, res) => {
+  try {
+    const config = saveStoredBioTimeConfigServer(req.body || {});
+    return res.json({
+      success: true,
+      config,
+      message: `Configuración BioTime PRO guardada (${config.protocol.toUpperCase()} ${config.host}:${config.httpPort} / PG :${config.pgPort}).`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: `Error guardando configuración BioTime PRO: ${err?.message}` });
+  }
+});
+
+// POST /api/zkteco/biotime/detect-ports - Sondea puertos reales HTTP/HTTPS de BioTime PRO
+app.post('/api/zkteco/biotime/detect-ports', async (req, res) => {
+  const effective = resolveBioTimeEffectiveParamsServer(req.body || {});
+  const report = await detectBioTimePortsServer({
+    host: effective.host,
+    protocol: effective.protocol,
+    configuredPort: effective.httpPort,
+    ports: Array.isArray(req.body?.ports) ? req.body.ports : undefined,
+    timeoutMs: Math.min(3500, effective.timeoutMs),
+  });
+  return res.json(report);
+});
+
+// POST /api/zkteco/biotime/test-connection - Prueba diagnóstica real en 7 etapas sin simulación
+app.post('/api/zkteco/biotime/test-connection', async (req, res) => {
+  const body = req.body || {};
+  const effective = resolveBioTimeEffectiveParamsServer(body);
+  const report = await testBioTimeConnectionServer({
+    host: body.host !== undefined ? String(body.host).trim() : effective.host,
+    httpPort: body.httpPort ?? body.webPort ?? effective.httpPort,
+    protocol: effective.protocol,
+    pgPort: effective.pgPort,
+    authMethod: effective.authMethod,
+    authUser: effective.authUser,
+    authPassword: effective.authPassword,
+    timeoutMs: effective.timeoutMs,
+  });
+  try {
+    saveStoredBioTimeConfigServer({
+      ...body,
+      lastStatus: report.status,
+      lastTestedAt: report.timestamp,
+      lastMessage: report.message,
+    });
+  } catch (_) {}
+  return res.json(report);
+});
+
+// GET/POST /api/zkteco/biotime/devices - Consulta terminales registrados en BioTime PRO (Solo lectura)
+app.get('/api/zkteco/biotime/devices', async (_req, res) => {
+  const effective = resolveBioTimeEffectiveParamsServer({});
+  const result = await fetchBioTimeTerminalsServer(effective);
+  return res.status(result.success ? 200 : 200).json(result);
+});
+
+app.post('/api/zkteco/biotime/devices', async (req, res) => {
+  const effective = resolveBioTimeEffectiveParamsServer(req.body || {});
+  const result = await fetchBioTimeTerminalsServer(effective);
+  return res.json(result);
+});
+
+// POST /api/zkteco/biotime/download-punches - Descarga paginada real de marcaciones BioTime PRO (Solo lectura)
+app.post('/api/zkteco/biotime/download-punches', async (req, res) => {
+  const body = req.body || {};
+  const effective = resolveBioTimeEffectiveParamsServer(body);
   const devices = await getLatestDeviceConfig();
   const dev = devices[0] || {};
-  const rawWp = Number(webPort || dev?.biotime_config?.web_port);
+  const targetSerial = String(body.serial || '').trim().toUpperCase();
+
+  const apiRes = await fetchBioTimeHttpApiServer({
+    protocol: effective.protocol,
+    host: effective.host,
+    httpPort: effective.httpPort,
+    webPort: effective.httpPort,
+    authMethod: effective.authMethod,
+    serial: targetSerial,
+    authUser: effective.authUser,
+    authPassword: effective.authPassword,
+    startDate: body.startDate ? String(body.startDate).trim() : '',
+    endDate: body.endDate ? String(body.endDate).trim() : '',
+    timeoutMs: effective.timeoutMs,
+    inspectOnly: false,
+  });
+
+  if (!apiRes.success) {
+    return res.json({
+      success: false,
+      needsWebCredentials: !!apiRes.needsWebCredentials,
+      status: apiRes.error === 'BIOTIME_AUTH_FAILED' ? 'ERROR_AUTENTICACION' : apiRes.error === 'MISSING_WEB_CREDENTIALS' ? 'CONFIGURACION_INCOMPLETA' : 'NO_CONECTADO',
+      read_count: 0,
+      new_count: 0,
+      duplicate_count: 0,
+      pending_count: 0,
+      pages_fetched: 0,
+      punches: [],
+      message: apiRes.message,
+    });
+  }
+
+  const integration = await integrateRealPunchesIntoSystem(apiRes.punches, 'BIOTIME_API', {
+    id: dev?.id || 'dev-01',
+    serial: targetSerial || dev?.serial_number || 'AEH2223460040',
+    name: dev?.name || 'ZKTeco (vía BioTime PRO)',
+    ip: effective.host,
+  });
+
+  return res.json({
+    success: true,
+    status: 'CONECTADO',
+    source: 'BIOTIME_API',
+    read_count: apiRes.punches.length,
+    new_count: integration.newlyAdded,
+    duplicate_count: integration.duplicatesSkipped,
+    pending_count: integration.unidentifiedCount,
+    pages_fetched: apiRes.pagesFetched || 1,
+    punches_count: integration.totalStored,
+    db_saved: integration.dbSaved,
+    db_error: integration.dbError,
+    punches: integration.enrichedPunches,
+    message: `Descarga BioTime PRO completada: ${apiRes.punches.length} leídas, ${integration.newlyAdded} nuevas, ${integration.duplicatesSkipped} duplicadas omitidas${integration.unidentifiedCount > 0 ? `, ${integration.unidentifiedCount} pendientes de identificación` : ''}.`,
+  });
+});
+
+// POST /api/zkteco/biotime/inspect - Inspección read-only de esquema BioTime PostgreSQL + HTTP/HTTPS PRO
+app.post('/api/zkteco/biotime/inspect', async (req, res) => {
+  const body = req.body || {};
+  const devices = await getLatestDeviceConfig();
+  const dev = devices[0] || {};
+  const effective = resolveBioTimeEffectiveParamsServer({
+    ...body,
+    host: body.host || dev?.biotime_config?.db_host,
+    httpPort: body.httpPort || body.webPort || dev?.biotime_config?.web_port,
+    pgPort: body.port || body.pgPort || dev?.biotime_config?.db_port,
+    pgDbName: body.dbName || dev?.biotime_config?.db_name,
+    pgUser: body.user || dev?.biotime_config?.db_user,
+  });
 
   const report = await inspectBioTimeDb({
-    host: String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim(),
-    webPort: rawWp || 8088,
-    port: Number(port || dev?.biotime_config?.db_port || 7496),
-    dbName: String(dbName || dev?.biotime_config?.db_name || 'biotime').trim(),
-    user: String(user || dev?.biotime_config?.db_user || 'postgres').trim(),
-    password: password ? String(password) : undefined,
-    webUser: webUser ? String(webUser) : undefined,
-    webPassword: webPassword ? String(webPassword) : undefined,
-    serial: String(serial || dev?.serial_number || '').trim(),
+    protocol: effective.protocol,
+    host: effective.host,
+    httpPort: effective.httpPort,
+    webPort: effective.httpPort,
+    port: effective.pgPort,
+    dbName: effective.pgDbName,
+    user: effective.pgUser,
+    password: effective.pgPassword || undefined,
+    authMethod: effective.authMethod,
+    authUser: effective.authUser || undefined,
+    authPassword: effective.authPassword || undefined,
+    serial: String(body.serial || dev?.serial_number || '').trim(),
+    timeoutMs: effective.timeoutMs,
+    strictPort: Boolean(body.httpPort || body.webPort),
   });
 
   return res.status(report.success ? 200 : 503).json(report);
 });
 
-// POST /api/zkteco/biotime/sync - Sincronización desde BioTime PRO (:8088/:89 HTTP API o :7496 PostgreSQL)
+// POST /api/zkteco/biotime/sync - Sincronización desde BioTime PRO (HTTP/HTTPS API o PostgreSQL)
 app.post('/api/zkteco/biotime/sync', async (req, res) => {
-  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
+  const body = req.body || {};
   const devices = await getLatestDeviceConfig();
   const dev = devices[0] || {};
-
-  const targetHost = String(host || dev?.biotime_config?.db_host || '192.168.1.29').trim();
-  const rawWp = Number(webPort || dev?.biotime_config?.web_port);
-  const targetWebPort = rawWp || 8088;
-  const targetPort = Number(port || dev?.biotime_config?.db_port || 7496);
-  const targetDb = String(dbName || dev?.biotime_config?.db_name || 'biotime').trim();
-  const targetUser = String(user || dev?.biotime_config?.db_user || 'postgres').trim();
-  const targetPass = password !== undefined ? String(password).trim() : undefined;
-  const targetWebUser = webUser !== undefined ? String(webUser).trim() : undefined;
-  const targetWebPass = webPassword !== undefined ? String(webPassword).trim() : undefined;
-  const targetSerial = String(serial || dev?.serial_number || 'AEH2223460040').trim();
+  const effective = resolveBioTimeEffectiveParamsServer({
+    ...body,
+    host: body.host || dev?.biotime_config?.db_host,
+    httpPort: body.httpPort || body.webPort || dev?.biotime_config?.web_port,
+    pgPort: body.port || body.pgPort || dev?.biotime_config?.db_port,
+    pgDbName: body.dbName || dev?.biotime_config?.db_name,
+    pgUser: body.user || dev?.biotime_config?.db_user,
+  });
+  const targetSerial = String(body.serial || dev?.serial_number || 'AEH2223460040').trim();
 
   const result = await syncPunchesFromBioTimeDb({
-    host: targetHost,
-    webPort: targetWebPort,
-    port: targetPort,
-    dbName: targetDb,
-    user: targetUser,
-    password: targetPass,
-    webUser: targetWebUser,
-    webPassword: targetWebPass,
+    protocol: effective.protocol,
+    host: effective.host,
+    httpPort: effective.httpPort,
+    webPort: effective.httpPort,
+    port: effective.pgPort,
+    dbName: effective.pgDbName,
+    user: effective.pgUser,
+    password: effective.pgPassword || undefined,
+    authMethod: effective.authMethod,
+    authUser: effective.authUser || undefined,
+    authPassword: effective.authPassword || undefined,
     serial: targetSerial,
+    startDate: body.startDate ? String(body.startDate).trim() : '',
+    endDate: body.endDate ? String(body.endDate).trim() : '',
+    timeoutMs: effective.timeoutMs,
+    strictPort: Boolean(body.httpPort || body.webPort),
   });
 
   if (!result.success) {
@@ -3523,10 +4475,10 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
       status_code: 'OFFLINE',
       message: result.message,
       inspection: result.inspection,
-      host: targetHost,
-      webPort: Number(result.inspection?.webPort || targetWebPort),
-      port: targetPort,
-      dbName: targetDb,
+      host: effective.host,
+      webPort: Number(result.inspection?.webPort || effective.httpPort),
+      port: effective.pgPort,
+      dbName: effective.pgDbName,
     });
   }
 
@@ -3534,7 +4486,7 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
     id: dev?.id,
     serial: targetSerial,
     name: dev?.name || 'ZKTeco G3 (vía BioTime)',
-    ip: targetHost,
+    ip: effective.host,
   });
 
   return res.json({
@@ -3564,18 +4516,23 @@ app.post('/api/zkteco/biotime/sync', async (req, res) => {
 
 // POST /api/zkteco/biotime/test - Probar enlace e inspección a BioTime
 app.post('/api/zkteco/biotime/test', async (req, res) => {
-  const { host, webPort, port, dbName, user, password, webUser, webPassword, serial } = req.body || {};
-  const rawWp = Number(webPort);
+  const body = req.body || {};
+  const effective = resolveBioTimeEffectiveParamsServer(body);
   const report = await inspectBioTimeDb({
-    host: String(host || '192.168.1.29').trim(),
-    webPort: rawWp || 8088,
-    port: Number(port || 7496),
-    dbName: String(dbName || 'biotime').trim(),
-    user: String(user || 'postgres').trim(),
-    password: password ? String(password) : undefined,
-    webUser: webUser ? String(webUser) : undefined,
-    webPassword: webPassword ? String(webPassword) : undefined,
-    serial: serial ? String(serial) : undefined,
+    protocol: effective.protocol,
+    host: effective.host,
+    httpPort: effective.httpPort,
+    webPort: effective.httpPort,
+    port: effective.pgPort,
+    dbName: effective.pgDbName,
+    user: effective.pgUser,
+    password: effective.pgPassword || undefined,
+    authMethod: effective.authMethod,
+    authUser: effective.authUser || undefined,
+    authPassword: effective.authPassword || undefined,
+    serial: body.serial ? String(body.serial) : undefined,
+    timeoutMs: effective.timeoutMs,
+    strictPort: Boolean(body.httpPort || body.webPort),
   });
 
   return res.status(report.success ? 200 : 500).json({
@@ -3886,15 +4843,21 @@ async function persistDeviceUsersToSupabase(
 }
 
 async function queryDeviceUsersFromBioTimeServer(options: {
+  protocol?: string;
   host?: string;
+  httpPort?: number;
   webPort?: number;
   dbPort?: number;
   dbName?: string;
   dbUser?: string;
   password?: string;
+  authMethod?: string;
+  authUser?: string;
   webUser?: string;
+  authPassword?: string;
   webPassword?: string;
   serial?: string;
+  timeoutMs?: number;
 }): Promise<{
   success: boolean;
   needsWebCredentials?: boolean;
@@ -3905,13 +4868,18 @@ async function queryDeviceUsersFromBioTimeServer(options: {
   error?: string;
 }> {
   const cleanHost = String(options.host || '192.168.1.29').trim();
-  const baseWebPort = Number(options.webPort) || 8088;
+  const cleanProto = String(options.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http';
+  const baseWebPort = Number(options.httpPort ?? options.webPort) || 8088;
   const dbPort = Number(options.dbPort) || 7496;
   const cleanSerial = String(options.serial || '').trim().toUpperCase();
-  const webUser = String(options.webUser || '').trim();
-  const webPassword = String(options.webPassword || '').trim();
+  const webUser = String(options.authUser ?? options.webUser ?? '').trim();
+  const webPassword = String(options.authPassword ?? options.webPassword ?? '').trim();
+  const authMethod = String(options.authMethod || 'AUTO').toUpperCase();
+  const timeoutMs = Math.min(20000, Math.max(1500, Number(options.timeoutMs) || 5500));
 
-  const candidatePorts = [baseWebPort, baseWebPort === 89 ? 8088 : 89].filter((p, i, a) => p > 0 && a.indexOf(p) === i);
+  const candidatePorts = options.httpPort || options.webPort
+    ? [baseWebPort]
+    : [baseWebPort, baseWebPort === 89 ? 8088 : 89].filter((p, i, a) => p > 0 && a.indexOf(p) === i);
   const probeTcp = (h: string, p: number) =>
     new Promise<boolean>((resolve) => {
       const s = new net.Socket();
@@ -3933,82 +4901,13 @@ async function queryDeviceUsersFromBioTimeServer(options: {
 
   if (activeWebPort && webUser && webPassword) {
     const requestHttp = (urlPath: string, method = 'GET', bodyStr = '', extraHeaders: Record<string, string> = {}) =>
-      new Promise<{ status: number; headers: http.IncomingHttpHeaders; json: any; raw: string }>((resolve, reject) => {
-        const req = http.request(
-          {
-            hostname: cleanHost,
-            port: activeWebPort!,
-            path: urlPath,
-            method,
-            headers: {
-              Accept: 'application/json, text/html;q=0.9',
-              ...(bodyStr ? { 'Content-Length': String(Buffer.byteLength(bodyStr)) } : {}),
-              ...extraHeaders,
-            },
-            timeout: 5500,
-          },
-          (resp) => {
-            let data = '';
-            resp.on('data', (c) => { data += c; });
-            resp.on('end', () => {
-              let json: any = null;
-              try { json = JSON.parse(data); } catch (_) {}
-              resolve({ status: resp.statusCode || 0, headers: resp.headers || {}, json, raw: data });
-            });
-          }
-        );
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error(`Timeout BioTime HTTP ${cleanHost}:${activeWebPort}`)); });
-        if (bodyStr) req.write(bodyStr);
-        req.end();
-      });
+      requestBioTimeHttpServer({ protocol: cleanProto, host: cleanHost, port: activeWebPort!, path: urlPath, method, body: bodyStr, headers: extraHeaders, timeoutMs });
 
     let authHeaders: Record<string, string> | null = null;
     try {
-      const jwtRes = await requestHttp('/jwt-api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
-      if (jwtRes?.json?.token) authHeaders = { Authorization: `JWT ${jwtRes.json.token}` };
+      const auth = await authenticateBioTimeServer({ protocol: cleanProto, host: cleanHost, port: activeWebPort!, authMethod, authUser: webUser, authPassword: webPassword, timeoutMs });
+      if (auth.ok) authHeaders = auth.headers;
     } catch (_) {}
-    if (!authHeaders) {
-      try {
-        const tokRes = await requestHttp('/api-token-auth/', 'POST', JSON.stringify({ username: webUser, password: webPassword }), { 'Content-Type': 'application/json' });
-        if (tokRes?.json?.token) authHeaders = { Authorization: `Token ${tokRes.json.token}` };
-      } catch (_) {}
-    }
-    if (!authHeaders) {
-      try {
-        const loginPage = await requestHttp('/login/', 'GET');
-        const setCookies = Array.isArray(loginPage.headers['set-cookie']) ? loginPage.headers['set-cookie'] : [];
-        const cookieMap = new Map<string, string>();
-        const absorb = (arr: string[]) => {
-          for (const c of arr || []) {
-            const kv = String(c).split(';')[0];
-            const eq = kv.indexOf('=');
-            if (eq > 0) cookieMap.set(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
-          }
-        };
-        absorb(setCookies);
-        let csrfToken = cookieMap.get('csrftoken') || '';
-        const hiddenMatch = String(loginPage.raw || '').match(/name=['"]csrfmiddlewaretoken['"][^>]*value=['"]([^'"]+)['"]/i);
-        if (hiddenMatch && hiddenMatch[1]) csrfToken = hiddenMatch[1];
-        const formParams = new URLSearchParams({ username: webUser, password: webPassword });
-        if (csrfToken) formParams.set('csrfmiddlewaretoken', csrfToken);
-        const cookieHeader = Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
-        const postLogin = await requestHttp('/login/?next=/', 'POST', formParams.toString(), {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Referer: `http://${cleanHost}:${activeWebPort}/login/`,
-          Origin: `http://${cleanHost}:${activeWebPort}`,
-          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-          ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
-        });
-        absorb(Array.isArray(postLogin.headers['set-cookie']) ? postLogin.headers['set-cookie'] : []);
-        if (cookieMap.has('sessionid') || postLogin.status === 302) {
-          authHeaders = {
-            Cookie: Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join('; '),
-            ...(cookieMap.get('csrftoken') ? { 'X-CSRFToken': cookieMap.get('csrftoken')! } : {}),
-          };
-        }
-      } catch (_) {}
-    }
 
     if (authHeaders) {
       const terminalAreaIds = new Set<string>();
@@ -4389,16 +5288,28 @@ app.post('/api/zkteco/device-users/query', async (req, res) => {
     }
 
     if (mode !== 'TCP_DIRECT' && (biotime?.host || dev.biotime_config?.enabled || dev.push_enabled)) {
+      const effectiveBt = resolveBioTimeEffectiveParamsServer({
+        ...biotime,
+        host: biotime?.host || dev.push_server_address,
+        httpPort: biotime?.httpPort ?? biotime?.webPort ?? dev.biotime_config?.web_port,
+        pgPort: biotime?.pgPort ?? biotime?.dbPort ?? dev.biotime_config?.db_port,
+        pgDbName: biotime?.dbName ?? dev.biotime_config?.db_name,
+        pgUser: biotime?.dbUser ?? dev.biotime_config?.db_user,
+      });
       const btRes = await queryDeviceUsersFromBioTimeServer({
-        host: biotime?.host || dev.push_server_address || '192.168.1.29',
-        webPort: biotime?.webPort || dev.biotime_config?.web_port || 8088,
-        dbPort: biotime?.dbPort || dev.biotime_config?.db_port || 7496,
-        dbName: biotime?.dbName || dev.biotime_config?.db_name || 'biotime',
-        dbUser: biotime?.dbUser || dev.biotime_config?.db_user || 'postgres',
-        password: biotime?.password,
-        webUser: biotime?.webUser,
-        webPassword: biotime?.webPassword,
+        protocol: effectiveBt.protocol,
+        host: effectiveBt.host,
+        httpPort: effectiveBt.httpPort,
+        webPort: effectiveBt.httpPort,
+        dbPort: effectiveBt.pgPort,
+        dbName: effectiveBt.pgDbName,
+        dbUser: effectiveBt.pgUser,
+        password: effectiveBt.pgPassword || undefined,
+        authMethod: effectiveBt.authMethod,
+        authUser: effectiveBt.authUser || undefined,
+        authPassword: effectiveBt.authPassword || undefined,
         serial: devSn,
+        timeoutMs: effectiveBt.timeoutMs,
       });
 
       if (btRes.success) {

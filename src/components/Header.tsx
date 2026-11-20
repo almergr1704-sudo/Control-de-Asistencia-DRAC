@@ -15,13 +15,14 @@ import {
   Minus,
   Square,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { Employee, RoleType } from '../types';
 import { getEmployeeAssignedRoles } from '../utils/userAuthUtils';
 import { getAppOrigin } from '../lib/supabaseClient';
 
 interface HeaderProps {
-
   activeRole: RoleType;
   setActiveRole: (role: RoleType) => void;
   currentUser?: Employee | null;
@@ -29,6 +30,8 @@ interface HeaderProps {
   onLogout: () => void;
   onResetData: () => void;
   onToggleSidebarMobile: () => void;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebarDesktop?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +42,8 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onResetData,
   onToggleSidebarMobile,
+  isSidebarCollapsed = false,
+  onToggleSidebarDesktop,
 }) => {
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
@@ -80,35 +85,50 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-[#090A0D] border-b border-slate-800 text-slate-300 sticky top-0 z-30 shadow-md">
-      <div className="px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-4">
-        {/* Left Side: Mobile Hamburger + Institution Title */}
-        <div className="flex items-center gap-3">
+    <header
+      className={`bg-[#090A0D] border-b border-slate-800 text-slate-300 sticky top-0 z-30 shadow-md transition-all duration-200 ${
+        isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-64'
+      }`}
+    >
+      <div className="px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-3 min-w-0">
+        {/* Left Side: Mobile Hamburger / Desktop Collapse + Institution Title */}
+        <div className="flex items-center gap-3 min-w-0">
           <button
+            type="button"
             onClick={onToggleSidebarMobile}
-            className="md:hidden p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors cursor-pointer"
+            className="md:hidden p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors cursor-pointer shrink-0"
             title="Abrir Menú Principal"
           >
             <Menu className="w-5 h-5" />
           </button>
 
-          <div>
-            <h1 className="font-bold text-white text-xs sm:text-sm tracking-tight uppercase flex items-center gap-2 flex-wrap">
-              <span>DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA</span>
-              <span className="hidden xl:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono normal-case">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <Database className="w-3 h-3 text-emerald-400" />
-                <span>Supabase PostgreSQL [{getAppOrigin()}]</span>
+          {onToggleSidebarDesktop && (
+            <button
+              type="button"
+              onClick={onToggleSidebarDesktop}
+              className="hidden md:inline-flex p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+              title={isSidebarCollapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            </button>
+          )}
+
+          <div className="min-w-0">
+            <h1 className="font-bold text-white text-xs sm:text-sm tracking-tight uppercase flex items-center gap-2 min-w-0">
+              <span className="truncate">DIRECCIÓN REGIONAL DE AGRICULTURA CAJAMARCA</span>
+              <span className="hidden xl:inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-[10px] font-mono normal-case shrink-0">
+                <Database className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>Supabase [{getAppOrigin()}]</span>
               </span>
             </h1>
-            <p className="text-[11px] text-slate-400 hidden sm:block">
+            <p className="text-[11px] text-slate-400 hidden sm:block truncate">
               Sistema Institucional de Control de Asistencia y Gestión de Personal
             </p>
           </div>
         </div>
 
         {/* Right Side: Logged In User Info & Controls */}
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           {/* Active User Pill & Role Switcher */}
           {currentUser ? (
             <div className="flex items-center gap-2">

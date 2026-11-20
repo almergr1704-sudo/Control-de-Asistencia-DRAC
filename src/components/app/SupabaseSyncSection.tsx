@@ -194,9 +194,9 @@ export const SupabaseSyncSection: React.FC = () => {
               <Database className="w-6 h-6 text-indigo-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 uppercase flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                   Única Fuente de Verdad Centralizada
                 </span>
                 <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 text-[10px] font-bold border border-indigo-500/30">

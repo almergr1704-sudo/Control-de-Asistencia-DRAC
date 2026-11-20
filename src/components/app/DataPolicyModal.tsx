@@ -49,10 +49,10 @@ export const DataPolicyConfirmModal: React.FC<DataPolicyConfirmModalProps> = (pr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-[#0F1115] rounded-xl shadow-2xl border border-slate-800 max-w-lg w-full overflow-hidden text-slate-200">
+      <div className="bg-[#0F1115] rounded-xl shadow-2xl border border-slate-800 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden text-slate-200">
         {/* Header */}
         <div
-          className={`px-6 py-4 flex items-center justify-between border-b ${
+          className={`px-6 py-4 flex items-center justify-between border-b shrink-0 ${
             isDestructive
               ? 'bg-rose-950/40 border-rose-900/60 text-rose-300'
               : 'bg-emerald-950/40 border-emerald-900/60 text-emerald-300'
@@ -82,7 +82,7 @@ export const DataPolicyConfirmModal: React.FC<DataPolicyConfirmModalProps> = (pr
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4 text-xs">
+        <div className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
           <p className="text-slate-300 leading-relaxed font-sans text-xs">{message}</p>
 
           {/* Principle Reminder Banner */}
@@ -115,7 +115,7 @@ export const DataPolicyConfirmModal: React.FC<DataPolicyConfirmModalProps> = (pr
         </div>
 
         {/* Footer Buttons */}
-        <div className="px-6 py-3.5 bg-[#090A0D] border-t border-slate-800 flex items-center justify-end gap-2.5">
+        <div className="px-6 py-3.5 bg-[#090A0D] border-t border-slate-800 flex items-center justify-end gap-2.5 shrink-0">
           <button
             onClick={onCancel}
             className="px-4 py-1.5 text-xs font-semibold text-slate-400 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"

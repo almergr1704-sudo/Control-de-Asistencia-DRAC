@@ -278,8 +278,8 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
   const currentEntityConfig = entityConfig[selectedEntity];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-[#0D0E12] border border-slate-800 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm">
+      <div className="bg-[#0D0E12] border border-slate-800 rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
         {/* MODAL TOP HEADER */}
         <div className="px-6 py-4 bg-[#13151C] border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -614,8 +614,8 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-800">
-                    <table className="w-full text-left text-xs text-slate-300">
+                  <div className="max-h-56 overflow-auto divide-y divide-slate-800">
+                    <table className="w-full min-w-[680px] text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
                           <th className="px-3 py-2 text-center w-16">Fila</th>
@@ -673,9 +673,9 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   </div>
                 </div>
 
-                <div className="max-h-64 overflow-y-auto">
+                <div className="max-h-64 overflow-auto">
                   {selectedEntity === 'DIRECCIONES' && (
-                    <table className="w-full text-left text-xs text-slate-300">
+                    <table className="w-full min-w-[680px] text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
                           <th className="px-3 py-2">Código</th>
@@ -720,7 +720,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   )}
 
                   {selectedEntity === 'AREAS' && (
-                    <table className="w-full text-left text-xs text-slate-300">
+                    <table className="w-full min-w-[680px] text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
                           <th className="px-3 py-2">Código Área</th>
@@ -767,7 +767,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   )}
 
                   {selectedEntity === 'TRABAJADORES' && (
-                    <table className="w-full text-left text-xs text-slate-300">
+                    <table className="w-full min-w-[820px] text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
                           <th className="px-3 py-2">Cód. DRAC</th>
@@ -818,7 +818,7 @@ export const BulkUploadModal: React.FC<BulkUploadModalProps> = ({
                   )}
 
                   {selectedEntity === 'ENCARGATURAS' && (
-                    <table className="w-full text-left text-xs text-slate-300">
+                    <table className="w-full min-w-[680px] text-left text-xs text-slate-300">
                       <thead className="bg-[#0D0E12] text-[10px] text-slate-400 uppercase font-bold sticky top-0">
                         <tr>
                           <th className="px-3 py-2">Titular</th>

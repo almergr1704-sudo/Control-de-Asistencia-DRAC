@@ -204,7 +204,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
     <div className="space-y-6">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-lg shadow-lg font-mono text-xs flex items-center gap-2 animate-bounce">
+        <div className="fixed bottom-5 right-5 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-lg shadow-lg font-mono text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-300" />
           <span>{toastMessage}</span>
         </div>
@@ -215,7 +215,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="p-2 bg-indigo-950/80 text-indigo-400 rounded-lg border border-indigo-800/50">
-              <Radio className="w-5 h-5 animate-pulse" />
+              <Radio className="w-5 h-5" />
             </span>
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -543,7 +543,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
             </div>
             <div className="pt-2 flex items-center justify-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono bg-emerald-950/60 border border-emerald-800/60 text-emerald-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
                 Socket & Servidor en escucha activa
               </span>
             </div>
@@ -551,7 +551,7 @@ export const AdmsPushSection: React.FC<AdmsPushSectionProps> = ({
         ) : (
           <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0F1115]">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full min-w-[780px] text-left text-xs border-collapse">
                 <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                   <tr>
                     <th className="py-2.5 px-3">Dispositivo / Serial</th>

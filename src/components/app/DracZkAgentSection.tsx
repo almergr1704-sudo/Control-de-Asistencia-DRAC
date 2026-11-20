@@ -111,6 +111,37 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
       return s.webPassword || '';
     } catch { return ''; }
   });
+  const [btDbPortInput, setBtDbPortInput] = useState<number>(7496);
+
+  React.useEffect(() => {
+    const applyBt = (cfg: any) => {
+      if (!cfg) return;
+      if (cfg.host) setBtHostInput(cfg.host);
+      if (cfg.httpPort) setBtWebPortInput(Number(cfg.httpPort));
+      if (cfg.pgPort) setBtDbPortInput(Number(cfg.pgPort));
+      if (cfg.authUser) setBtWebUserInput(cfg.authUser);
+    };
+    const loadBt = async () => {
+      try {
+        const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+        if (electronAPI?.isDesktop && typeof electronAPI.getBioTimeConfig === 'function') {
+          const res = await electronAPI.getBioTimeConfig();
+          applyBt(res?.config || res);
+        } else {
+          const res = await fetch(getApiUrl('/api/zkteco/biotime/config'));
+          const data = await res.json();
+          if (data?.config) applyBt(data.config);
+        }
+      } catch (_) {}
+    };
+    loadBt();
+    const handler = (e: any) => {
+      if (e?.detail) applyBt(e.detail);
+      else loadBt();
+    };
+    window.addEventListener('drac:biotime-config-changed', handler);
+    return () => window.removeEventListener('drac:biotime-config-changed', handler);
+  }, []);
 
   const getSavedBioTimeConfig = (targetDev?: DispositivoZkTeco) => {
     let saved: any = {};
@@ -121,7 +152,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
     return {
       host: String(btHostInput || saved.host || targetDev?.biotime_config?.db_host || '192.168.1.29').trim(),
       webPort: rawWp || 8088,
-      dbPort: Number(saved.dbPort || targetDev?.biotime_config?.db_port || 7496),
+      dbPort: Number(btDbPortInput || saved.dbPort || targetDev?.biotime_config?.db_port || 7496),
       dbName: String(saved.dbName || targetDev?.biotime_config?.db_name || 'biotime'),
       dbUser: String(saved.dbUser || targetDev?.biotime_config?.db_user || 'postgres'),
       password: saved.password || undefined,
@@ -1205,10 +1236,10 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
 
           <div className="bg-[#090A0D] p-4 rounded-lg border border-slate-800 space-y-2">
             <div className="font-bold text-amber-300 flex items-center gap-1.5">
-              <span>Opción 2: BioTime PRO HTTP (:8088) / PostgreSQL (:7496)</span>
+              <span>Opción 2: BioTime PRO HTTP (:{btWebPortInput}) / PostgreSQL (:{btDbPortInput})</span>
             </div>
             <p className="text-[11px] text-slate-300 leading-relaxed">
-              Si el reloj ya transmite marcaciones a BioTime PRO (<span className="font-mono text-amber-300">192.168.1.29:8088</span>), el aplicativo puede extraerlas vía API HTTP oficial (:8088) o PostgreSQL (:7496, tabla <code className="text-slate-200">iclock_transaction</code>) sin duplicados.
+              Si el reloj ya transmite marcaciones a BioTime PRO (<span className="font-mono text-amber-300">{btHostInput}:{btWebPortInput}</span>), el aplicativo puede extraerlas vía API HTTP oficial (:{btWebPortInput}) o PostgreSQL (:{btDbPortInput}, tabla <code className="text-slate-200">iclock_transaction</code>) sin duplicados.
             </p>
           </div>
 
@@ -1229,8 +1260,8 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
       {/* MODAL IMPORTACIÓN USB (1_attlog.dat) */}
       {showUsbModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D] shrink-0">
               <div className="flex items-center gap-2">
                 <Upload className="w-4 h-4 text-emerald-400" />
                 <h3 className="text-sm font-bold text-white">Importar Archivo del Reloj (1_attlog.dat / CSV)</h3>
@@ -1240,7 +1271,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
               <input
                 ref={usbInputRef}
                 type="file"
@@ -1266,7 +1297,7 @@ export const DracZkAgentSection: React.FC<DracZkAgentSectionProps> = ({
               />
             </div>
 
-            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex justify-end gap-2">
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowUsbModal(false)}

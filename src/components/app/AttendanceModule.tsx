@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AttendanceRecord, MarcacionRaw, Employee, DispositivoZkTeco, BiometricDeviceUser } from '../../types';
 import {
   Clock,
@@ -179,6 +179,38 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
   const [rememberBtCreds, setRememberBtCreds] = useState(true);
   const [btInspecting, setBtInspecting] = useState(false);
   const [btInspectReport, setBtInspectReport] = useState<any | null>(null);
+
+  useEffect(() => {
+    const applyBt = (cfg: any) => {
+      if (!cfg) return;
+      if (cfg.host) setBtHost(cfg.host);
+      if (cfg.httpPort) setBtWebPort(Number(cfg.httpPort));
+      if (cfg.pgPort) setBtDbPort(Number(cfg.pgPort));
+      if (cfg.pgDbName) setBtDbName(cfg.pgDbName);
+      if (cfg.pgUser) setBtDbUser(cfg.pgUser);
+      if (cfg.authUser) setBtWebUser(cfg.authUser);
+    };
+    const loadBt = async () => {
+      try {
+        const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+        if (electronAPI?.isDesktop && typeof electronAPI.getBioTimeConfig === 'function') {
+          const res = await electronAPI.getBioTimeConfig();
+          applyBt(res?.config || res);
+        } else {
+          const res = await fetch(getApiUrl('/api/zkteco/biotime/config'));
+          const data = await res.json();
+          if (data?.config) applyBt(data.config);
+        }
+      } catch (_) {}
+    };
+    loadBt();
+    const handler = (e: any) => {
+      if (e?.detail) applyBt(e.detail);
+      else loadBt();
+    };
+    window.addEventListener('drac:biotime-config-changed', handler);
+    return () => window.removeEventListener('drac:biotime-config-changed', handler);
+  }, []);
 
   // Worker linking modal state
   const [linkingPunch, setLinkingPunch] = useState<MarcacionRaw | null>(null);
@@ -1475,7 +1507,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         ) : (
           <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0F1115]">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full min-w-[820px] text-left text-xs border-collapse">
                 <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                   <tr>
                     <th className="py-2.5 px-3">Código Reloj / DNI</th>
@@ -1588,7 +1620,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       ) : (
         <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0F1115]">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full min-w-[820px] text-left text-xs border-collapse">
               <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="py-2.5 px-3">Fecha</th>
@@ -1851,31 +1883,33 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                     <span>Vista previa de marcaciones reales ({usbPreviewRows.length} total)</span>
                     <span className="text-slate-400 font-normal">Mostrando primeros 8 registros</span>
                   </div>
-                  <table className="w-full text-left text-[11px]">
-                    <thead className="text-slate-500 border-b border-slate-800/80">
-                      <tr>
-                        <th className="py-1.5 px-3">PIN / Código</th>
-                        <th className="py-1.5 px-3">Trabajador</th>
-                        <th className="py-1.5 px-3">Fecha y Hora</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/40">
-                      {usbPreviewRows.slice(0, 8).map((r, i) => (
-                        <tr key={i}>
-                          <td className="py-1.5 px-3 font-mono text-indigo-300 font-bold">{r.pin}</td>
-                          <td className="py-1.5 px-3 text-slate-200">
-                            {r.name} {!r.matched && <span className="text-amber-400 text-[10px]">(Pasará a Pendientes)</span>}
-                          </td>
-                          <td className="py-1.5 px-3 font-mono text-amber-300">{r.timestamp}</td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[540px] text-left text-[11px]">
+                      <thead className="text-slate-500 border-b border-slate-800/80">
+                        <tr>
+                          <th className="py-1.5 px-3">PIN / Código</th>
+                          <th className="py-1.5 px-3">Trabajador</th>
+                          <th className="py-1.5 px-3">Fecha y Hora</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/40">
+                        {usbPreviewRows.slice(0, 8).map((r, i) => (
+                          <tr key={i}>
+                            <td className="py-1.5 px-3 font-mono text-indigo-300 font-bold">{r.pin}</td>
+                            <td className="py-1.5 px-3 text-slate-200">
+                              {r.name} {!r.matched && <span className="text-amber-400 text-[10px]">(Pasará a Pendientes)</span>}
+                            </td>
+                            <td className="py-1.5 px-3 font-mono text-amber-300">{r.timestamp}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
 
-            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex items-center justify-end gap-2">
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setShowUsbModal(false)}
@@ -1983,11 +2017,11 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         </div>
       )}
 
-      {/* Modal Configuración e Inspección BioTime (192.168.1.29) */}
+      {/* Modal Configuración e Inspección BioTime */}
       {showBioTimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
           <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D] shrink-0">
               <div className="flex items-center gap-2.5">
                 <span className="p-2 bg-amber-950 text-amber-400 rounded-lg border border-amber-800/50">
                   <Database className="w-4 h-4" />
@@ -1995,7 +2029,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 <div>
                   <h3 className="text-sm font-bold text-white">Fuente Intermediaria BioTime PRO (Solo Lectura)</h3>
                   <p className="text-[11px] text-slate-400">
-                    Canal principal HTTP BioTime PRO (puerto 8088) y respaldo PostgreSQL local (puerto 7496).
+                    Canal principal HTTP/HTTPS BioTime PRO (puerto {btWebPort}) y respaldo PostgreSQL (puerto {btDbPort}).
                   </p>
                 </div>
               </div>
@@ -2004,12 +2038,12 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
               <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-lg space-y-3">
                 <div className="font-bold text-amber-300 text-[11px] uppercase tracking-wider">
-                  1. BioTime PRO HTTP (Puerto 8088) — Canal Principal Recomendado
+                  1. BioTime PRO HTTP (Puerto {btWebPort}) — Canal Principal Recomendado
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-slate-400 block mb-1">Servidor BioTime PRO</label>
                     <input value={btHost} onChange={(e) => setBtHost(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
@@ -2020,7 +2054,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Usuario Web BioTime PRO</label>
-                    <input value={btWebUser} onChange={(e) => setBtWebUser(e.target.value)} placeholder="Ej. admin (con el que inicia en :8088)" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                    <input value={btWebUser} onChange={(e) => setBtWebUser(e.target.value)} placeholder="Ej. admin" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Contraseña Web BioTime PRO</label>
@@ -2031,9 +2065,9 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
 
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg space-y-3">
                 <div className="font-bold text-slate-400 text-[11px] uppercase tracking-wider">
-                  2. Respaldo PostgreSQL BioTime (Opcional — Puerto 7496)
+                  2. Respaldo PostgreSQL BioTime (Opcional — Puerto {btDbPort})
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-slate-400 block mb-1">Base de Datos PostgreSQL</label>
                     <input value={btDbName} onChange={(e) => setBtDbName(e.target.value)} className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
@@ -2048,7 +2082,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Contraseña PostgreSQL</label>
-                    <input type="password" value={btDbPassword} onChange={(e) => setBtDbPassword(e.target.value)} placeholder="Opcional (si :7496 es remoto)" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
+                    <input type="password" value={btDbPassword} onChange={(e) => setBtDbPassword(e.target.value)} placeholder="Opcional" className="w-full px-3 py-1.5 bg-[#090A0D] border border-slate-800 rounded-lg text-white font-mono" />
                   </div>
                 </div>
               </div>
@@ -2075,7 +2109,7 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
               )}
             </div>
 
-            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex items-center justify-between gap-2">
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex flex-wrap items-center justify-between gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleInspectBioTime}

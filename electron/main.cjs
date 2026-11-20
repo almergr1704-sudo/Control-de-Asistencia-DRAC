@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const http = require('http');
+const crypto = require('crypto');
 
 let firewallManager;
 try {
@@ -92,6 +93,198 @@ function getStorageFilePath(filename) {
     log(`Error resolviendo getStorageFilePath para ${filename}: ${err.message}`);
     return path.join(__dirname, '..', 'data', filename);
   }
+}
+
+// =========================================================================
+// PERSISTENCIA SEGURA DE CONFIGURACIÓN BIOTIME PRO (biotime-config.json)
+// =========================================================================
+const DEFAULT_BIOTIME_CONFIG = {
+  host: '192.168.1.29',
+  httpPort: 8088,
+  protocol: 'http',
+  authMethod: 'AUTO',
+  authUser: '',
+  authPasswordEnc: '',
+  pgPort: 7496,
+  pgDbName: 'biotime',
+  pgUser: 'postgres',
+  pgPasswordEnc: '',
+  timeoutMs: 5000,
+  lastStatus: 'NO_CONECTADO',
+  lastTestedAt: null,
+  lastMessage: '',
+  updatedAt: null,
+};
+
+function getBioTimeMachineKey() {
+  return crypto.createHash('sha256').update(`DRAC-BIOTIME-${os.hostname()}-${process.platform}`).digest();
+}
+
+function encryptSecretValue(plain) {
+  const val = String(plain || '');
+  if (!val) return '';
+  try {
+    if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
+      return `safe:${safeStorage.encryptString(val).toString('base64')}`;
+    }
+  } catch (_) {}
+  try {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', getBioTimeMachineKey(), iv);
+    const enc = Buffer.concat([cipher.update(val, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `aes:${iv.toString('hex')}:${tag.toString('hex')}:${enc.toString('hex')}`;
+  } catch (_) {
+    return '';
+  }
+}
+
+function decryptSecretValue(stored) {
+  const s = String(stored || '');
+  if (!s) return '';
+  if (s.startsWith('safe:')) {
+    try {
+      if (safeStorage && typeof safeStorage.decryptString === 'function') {
+        return safeStorage.decryptString(Buffer.from(s.slice(5), 'base64'));
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+  if (s.startsWith('aes:')) {
+    try {
+      const parts = s.split(':');
+      if (parts.length === 4) {
+        const iv = Buffer.from(parts[1], 'hex');
+        const tag = Buffer.from(parts[2], 'hex');
+        const data = Buffer.from(parts[3], 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', getBioTimeMachineKey(), iv);
+        decipher.setAuthTag(tag);
+        return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+  return s;
+}
+
+function loadStoredBioTimeConfig() {
+  try {
+    const cfgPath = getStorageFilePath('biotime-config.json');
+    if (fs.existsSync(cfgPath)) {
+      const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      if (raw && typeof raw === 'object') {
+        return {
+          ...DEFAULT_BIOTIME_CONFIG,
+          ...raw,
+          authPasswordPlain: decryptSecretValue(raw.authPasswordEnc),
+          pgPasswordPlain: decryptSecretValue(raw.pgPasswordEnc),
+        };
+      }
+    }
+  } catch (err) {
+    log(`Aviso al leer biotime-config.json: ${err.message}`);
+  }
+  return { ...DEFAULT_BIOTIME_CONFIG, authPasswordPlain: '', pgPasswordPlain: '' };
+}
+
+function getPublicBioTimeConfig(cfg = loadStoredBioTimeConfig()) {
+  const hasAuthPwd = Boolean(cfg.authPasswordPlain || cfg.authPasswordEnc);
+  const hasPgPwd = Boolean(cfg.pgPasswordPlain || cfg.pgPasswordEnc);
+  return {
+    host: String(cfg.host || '192.168.1.29').trim(),
+    httpPort: Number(cfg.httpPort) || 8088,
+    protocol: String(cfg.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http',
+    authMethod: String(cfg.authMethod || 'AUTO').toUpperCase(),
+    authUser: String(cfg.authUser || '').trim(),
+    has_auth_password: hasAuthPwd,
+    auth_password_masked: hasAuthPwd ? '********' : '',
+    pgPort: Number(cfg.pgPort) || 7496,
+    pgDbName: String(cfg.pgDbName || 'biotime').trim(),
+    pgUser: String(cfg.pgUser || 'postgres').trim(),
+    has_pg_password: hasPgPwd,
+    pg_password_masked: hasPgPwd ? '********' : '',
+    timeoutMs: Number(cfg.timeoutMs) || 5000,
+    lastStatus: cfg.lastStatus || 'NO_CONECTADO',
+    lastTestedAt: cfg.lastTestedAt || null,
+    lastMessage: cfg.lastMessage || '',
+    updatedAt: cfg.updatedAt || null,
+  };
+}
+
+function saveStoredBioTimeConfig(payload = {}) {
+  const prev = loadStoredBioTimeConfig();
+  const nextHttpPort = Number(payload.httpPort ?? payload.webPort ?? prev.httpPort ?? 8088);
+  const nextPgPort = Number(payload.pgPort ?? payload.dbPort ?? prev.pgPort ?? 7496);
+  const rawAuthPwd = payload.authPassword ?? payload.webPassword;
+  const rawPgPwd = payload.pgPassword ?? payload.password;
+
+  let nextAuthEnc = prev.authPasswordEnc || '';
+  if (payload.clear_auth_password) {
+    nextAuthEnc = '';
+  } else if (rawAuthPwd !== undefined && rawAuthPwd !== '' && rawAuthPwd !== '********') {
+    nextAuthEnc = encryptSecretValue(String(rawAuthPwd));
+  }
+
+  let nextPgEnc = prev.pgPasswordEnc || '';
+  if (payload.clear_pg_password) {
+    nextPgEnc = '';
+  } else if (rawPgPwd !== undefined && rawPgPwd !== '' && rawPgPwd !== '********') {
+    nextPgEnc = encryptSecretValue(String(rawPgPwd));
+  }
+
+  const stored = {
+    host: String(payload.host ?? prev.host ?? '192.168.1.29').trim(),
+    httpPort: Number.isInteger(nextHttpPort) && nextHttpPort >= 1 && nextHttpPort <= 65535 ? nextHttpPort : prev.httpPort,
+    protocol: String(payload.protocol ?? prev.protocol ?? 'http').toLowerCase() === 'https' ? 'https' : 'http',
+    authMethod: String(payload.authMethod ?? prev.authMethod ?? 'AUTO').toUpperCase(),
+    authUser: String(payload.authUser ?? payload.webUser ?? prev.authUser ?? '').trim(),
+    authPasswordEnc: nextAuthEnc,
+    pgPort: Number.isInteger(nextPgPort) && nextPgPort >= 1 && nextPgPort <= 65535 ? nextPgPort : prev.pgPort,
+    pgDbName: String(payload.pgDbName ?? payload.dbName ?? prev.pgDbName ?? 'biotime').trim(),
+    pgUser: String(payload.pgUser ?? payload.dbUser ?? prev.pgUser ?? 'postgres').trim(),
+    pgPasswordEnc: nextPgEnc,
+    timeoutMs: Math.min(20000, Math.max(1500, Number(payload.timeoutMs ?? prev.timeoutMs) || 5000)),
+    lastStatus: payload.lastStatus ?? prev.lastStatus ?? 'NO_CONECTADO',
+    lastTestedAt: payload.lastTestedAt ?? prev.lastTestedAt ?? null,
+    lastMessage: payload.lastMessage ?? prev.lastMessage ?? '',
+    updatedAt: new Date().toISOString(),
+  };
+
+  const cfgPath = getStorageFilePath('biotime-config.json');
+  fs.writeFileSync(cfgPath, JSON.stringify(stored, null, 2), 'utf8');
+  return getPublicBioTimeConfig({
+    ...stored,
+    authPasswordPlain: decryptSecretValue(stored.authPasswordEnc),
+    pgPasswordPlain: decryptSecretValue(stored.pgPasswordEnc),
+  });
+}
+
+function resolveBioTimeEffectiveParams(params = {}) {
+  const stored = loadStoredBioTimeConfig();
+  const rawAuthPwd = params.authPassword ?? params.webPassword;
+  const rawPgPwd = params.pgPassword ?? params.password;
+  return {
+    host: String(params.host || stored.host || '192.168.1.29').trim(),
+    protocol: String(params.protocol || stored.protocol || 'http').toLowerCase() === 'https' ? 'https' : 'http',
+    httpPort: Number(params.httpPort ?? params.webPort ?? stored.httpPort) || 8088,
+    webPort: Number(params.httpPort ?? params.webPort ?? stored.httpPort) || 8088,
+    pgPort: Number(params.pgPort ?? params.dbPort ?? stored.pgPort) || 7496,
+    dbPort: Number(params.pgPort ?? params.dbPort ?? stored.pgPort) || 7496,
+    pgDbName: String(params.pgDbName || params.dbName || stored.pgDbName || 'biotime').trim(),
+    dbName: String(params.pgDbName || params.dbName || stored.pgDbName || 'biotime').trim(),
+    pgUser: String(params.pgUser || params.dbUser || stored.pgUser || 'postgres').trim(),
+    dbUser: String(params.pgUser || params.dbUser || stored.pgUser || 'postgres').trim(),
+    authMethod: String(params.authMethod || stored.authMethod || 'AUTO').toUpperCase(),
+    authUser: String(params.authUser ?? params.webUser ?? stored.authUser ?? '').trim(),
+    webUser: String(params.authUser ?? params.webUser ?? stored.authUser ?? '').trim(),
+    authPassword: rawAuthPwd && rawAuthPwd !== '********' ? String(rawAuthPwd) : (stored.authPasswordPlain || ''),
+    webPassword: rawAuthPwd && rawAuthPwd !== '********' ? String(rawAuthPwd) : (stored.authPasswordPlain || ''),
+    pgPassword: rawPgPwd && rawPgPwd !== '********' ? String(rawPgPwd) : (stored.pgPasswordPlain || ''),
+    password: rawPgPwd && rawPgPwd !== '********' ? String(rawPgPwd) : (stored.pgPasswordPlain || ''),
+    timeoutMs: Math.min(20000, Math.max(1500, Number(params.timeoutMs ?? stored.timeoutMs) || 5000)),
+  };
 }
 
 async function createWindow() {
@@ -490,12 +683,231 @@ ipcMain.handle('zk:ping-device', async (_event, { ip, port = 7496, timeoutMs = 3
 // IPC HANDLERS - INTEGRACIÓN BIOTIME PLATFORM SERVICE CONSOLE (C:\BioTime)
 // =========================================================================
 
+ipcMain.handle('biotime:get-config', async () => {
+  return { success: true, config: getPublicBioTimeConfig() };
+});
+
+ipcMain.handle('biotime:save-config', async (_event, payload = {}) => {
+  try {
+    const publicConfig = saveStoredBioTimeConfig(payload);
+    log(`IPC biotime:save-config guardado (${publicConfig.protocol}://${publicConfig.host}:${publicConfig.httpPort}, PG :${publicConfig.pgPort})`);
+    return {
+      success: true,
+      config: publicConfig,
+      message: `Configuración BioTime PRO guardada (${publicConfig.protocol.toUpperCase()} ${publicConfig.host}:${publicConfig.httpPort} / PG :${publicConfig.pgPort}).`,
+    };
+  } catch (err) {
+    return { success: false, message: `Error guardando configuración BioTime PRO: ${err.message}` };
+  }
+});
+
+ipcMain.handle('biotime:detect-ports', async (_event, params = {}) => {
+  const effective = resolveBioTimeEffectiveParams(params);
+  log(`IPC biotime:detect-ports -> ${effective.host} (${effective.protocol}, puerto actual: ${effective.httpPort})`);
+  try {
+    if (typeof zktecoDriver.detectBioTimePorts === 'function') {
+      return await zktecoDriver.detectBioTimePorts({
+        host: effective.host,
+        protocol: effective.protocol,
+        configuredPort: effective.httpPort,
+        ports: Array.isArray(params.ports) ? params.ports : undefined,
+        timeoutMs: Math.min(3500, effective.timeoutMs),
+      });
+    }
+    return { success: false, results: [], recommendedPort: null, message: 'detectBioTimePorts no disponible en driver.' };
+  } catch (err) {
+    return { success: false, results: [], recommendedPort: null, message: err.message };
+  }
+});
+
+ipcMain.handle('biotime:test-connection', async (_event, params = {}) => {
+  const effective = resolveBioTimeEffectiveParams(params);
+  log(`IPC biotime:test-connection -> ${effective.protocol}://${effective.host}:${effective.httpPort} (PG :${effective.pgPort})`);
+  try {
+    if (typeof zktecoDriver.testBioTimeConnection === 'function') {
+      const report = await zktecoDriver.testBioTimeConnection({
+        ...effective,
+      });
+      try {
+        saveStoredBioTimeConfig({
+          ...params,
+          lastStatus: report.status,
+          lastTestedAt: report.timestamp || new Date().toISOString(),
+          lastMessage: report.message,
+        });
+      } catch (_) {}
+      return report;
+    }
+    return { success: false, status: 'NO_CONECTADO', message: 'testBioTimeConnection no disponible en driver.', stages: [] };
+  } catch (err) {
+    return { success: false, status: 'NO_CONECTADO', message: err.message, stages: [] };
+  }
+});
+
+ipcMain.handle('biotime:query-devices', async (_event, params = {}) => {
+  const effective = resolveBioTimeEffectiveParams(params);
+  log(`IPC biotime:query-devices -> ${effective.protocol}://${effective.host}:${effective.httpPort}`);
+  try {
+    if (typeof zktecoDriver.fetchBioTimeTerminals === 'function') {
+      return await zktecoDriver.fetchBioTimeTerminals(effective);
+    }
+    return { success: false, devices: [], message: 'fetchBioTimeTerminals no disponible en driver.' };
+  } catch (err) {
+    return { success: false, devices: [], message: err.message };
+  }
+});
+
+ipcMain.handle('biotime:download-punches', async (_event, params = {}) => {
+  const effective = resolveBioTimeEffectiveParams(params);
+  const cleanSerial = String(params.serial || '').trim().toUpperCase();
+  const startDate = String(params.startDate || '').trim();
+  const endDate = String(params.endDate || '').trim();
+  log(`IPC biotime:download-punches -> ${effective.protocol}://${effective.host}:${effective.httpPort} SN=${cleanSerial || 'TODOS'} (${startDate || 'sin inicio'} -> ${endDate || 'hoy'})`);
+
+  try {
+    if (typeof zktecoDriver.fetchBioTimeHttpApi !== 'function') {
+      return { success: false, message: 'fetchBioTimeHttpApi no disponible en driver.', punches: [] };
+    }
+
+    const apiRes = await zktecoDriver.fetchBioTimeHttpApi({
+      protocol: effective.protocol,
+      host: effective.host,
+      httpPort: effective.httpPort,
+      webPort: effective.httpPort,
+      authMethod: effective.authMethod,
+      serial: cleanSerial,
+      authUser: effective.authUser,
+      authPassword: effective.authPassword,
+      startDate,
+      endDate,
+      timeoutMs: effective.timeoutMs,
+      inspectOnly: false,
+    });
+
+    if (!apiRes.success) {
+      return {
+        success: false,
+        needsWebCredentials: !!apiRes.needsWebCredentials,
+        status: apiRes.error === 'BIOTIME_AUTH_FAILED' ? 'ERROR_AUTENTICACION' : apiRes.error === 'MISSING_WEB_CREDENTIALS' ? 'CONFIGURACION_INCOMPLETA' : 'NO_CONECTADO',
+        read_count: 0,
+        new_count: 0,
+        duplicate_count: 0,
+        pending_count: 0,
+        pages_fetched: 0,
+        punches: [],
+        message: apiRes.message,
+      };
+    }
+
+    const punchesPath = getStorageFilePath('raw-punches.json');
+    const employeesPath = getStorageFilePath('employees.json');
+    const deviceUsersPath = getStorageFilePath('device-users.json');
+
+    let loadedPunches = [];
+    let localEmployees = [];
+    let deviceUsers = [];
+    try { if (fs.existsSync(punchesPath)) loadedPunches = JSON.parse(fs.readFileSync(punchesPath, 'utf8')); } catch (_) {}
+    try { if (fs.existsSync(employeesPath)) localEmployees = JSON.parse(fs.readFileSync(employeesPath, 'utf8')); } catch (_) {}
+    try { if (fs.existsSync(deviceUsersPath)) deviceUsers = JSON.parse(fs.readFileSync(deviceUsersPath, 'utf8')); } catch (_) {}
+    if (!Array.isArray(loadedPunches)) loadedPunches = [];
+
+    const findLocalEmployee = (snVal, code) => {
+      if (!code || !Array.isArray(localEmployees)) return null;
+      const clean = String(code).trim();
+      const snUpper = String(snVal || cleanSerial || '').trim().toUpperCase();
+      const binding = (Array.isArray(deviceUsers) ? deviceUsers : []).find(
+        (u) => String(u.device_sn || '').trim().toUpperCase() === snUpper && String(u.pin || '').trim() === clean
+      );
+      if (binding) {
+        if (binding.employee_id) {
+          const boundEmp = localEmployees.find((e) => e.id === binding.employee_id);
+          if (boundEmp) return boundEmp;
+        }
+        if (binding.unlinked_at || binding.link_status === 'REVISAR') return null;
+      }
+      const matches = localEmployees.filter(
+        (e) =>
+          (e.zkteco_pin && String(e.zkteco_pin).trim() === clean) ||
+          (e.biometric_user_id && String(e.biometric_user_id).trim() === clean) ||
+          (e.codigo_trabajador && String(e.codigo_trabajador).trim() === clean) ||
+          (e.dni && String(e.dni).trim() === clean)
+      );
+      return matches.length === 1 ? matches[0] : null;
+    };
+
+    const existingKeys = new Set(
+      loadedPunches.map((p) => `${p.device_sn || ''}_${p.employee_code || p.employee_dni || p.pin}_${p.timestamp}`)
+    );
+
+    const newlyAdded = [];
+    let duplicateCount = 0;
+    let pendingCount = 0;
+    const readPunches = Array.isArray(apiRes.punches) ? apiRes.punches : [];
+
+    for (const p of readPunches) {
+      const code = String(p.employee_code || p.employee_dni || p.pin || '').trim();
+      const snVal = String(p.device_sn || cleanSerial || '').trim().toUpperCase();
+      const key = `${snVal}_${code}_${p.timestamp}`;
+      if (existingKeys.has(key)) {
+        duplicateCount++;
+        continue;
+      }
+      existingKeys.add(key);
+      const emp = findLocalEmployee(snVal, code);
+      if (!emp) pendingCount++;
+      newlyAdded.push({
+        ...p,
+        device_sn: snVal,
+        employee_id: emp ? emp.id : null,
+        employee_dni: emp ? emp.dni : code,
+        employee_code: code,
+        employee_name: emp ? `${emp.first_name || ''} ${emp.last_name || ''}`.trim() : 'Pendiente de Identificación',
+        validation_status: emp ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
+        processed: !!emp,
+      });
+    }
+
+    const mergedPunches = [...newlyAdded, ...loadedPunches];
+    if (newlyAdded.length > 0) {
+      fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
+    }
+
+    return {
+      success: true,
+      status: 'CONECTADO',
+      source: 'BIOTIME_API',
+      read_count: readPunches.length,
+      new_count: newlyAdded.length,
+      duplicate_count: duplicateCount,
+      pending_count: pendingCount,
+      pages_fetched: apiRes.pagesFetched || 1,
+      punches_count: mergedPunches.length,
+      punches: newlyAdded,
+      all_punches: mergedPunches,
+      message: `Descarga BioTime PRO completada: ${readPunches.length} leídas, ${newlyAdded.length} nuevas, ${duplicateCount} duplicadas omitidas${pendingCount > 0 ? `, ${pendingCount} pendientes de identificación` : ''}.`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      status: 'NO_CONECTADO',
+      read_count: 0,
+      new_count: 0,
+      duplicate_count: 0,
+      pending_count: 0,
+      pages_fetched: 0,
+      punches: [],
+      message: `Error descargando marcaciones desde BioTime PRO: ${err.message}`,
+    };
+  }
+});
+
 ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
-  const { host = '192.168.1.29', webPort = 8088, dbPort = 7496, serial = 'AEH2223460040' } = params;
-  log(`IPC biotime:check-status -> ${host} (Web: ${webPort}, DB: ${dbPort}, SN: ${serial})`);
+  const effective = resolveBioTimeEffectiveParams(params);
+  const serial = params.serial || 'AEH2223460040';
+  log(`IPC biotime:check-status -> ${effective.host} (Web: ${effective.httpPort}, DB: ${effective.pgPort}, SN: ${serial})`);
   try {
     if (typeof zktecoDriver.checkBioTimeService === 'function') {
-      return await zktecoDriver.checkBioTimeService(host, webPort, dbPort, serial);
+      return await zktecoDriver.checkBioTimeService(effective.host, effective.httpPort, effective.pgPort, serial);
     }
     return {
       success: false,
@@ -515,7 +927,12 @@ ipcMain.handle('biotime:check-status', async (_event, params = {}) => {
 ipcMain.handle('biotime:inspect-database', async (_event, params = {}) => {
   try {
     if (typeof zktecoDriver.inspectBioTimeDatabase === 'function') {
-      return await zktecoDriver.inspectBioTimeDatabase(params);
+      const effective = resolveBioTimeEffectiveParams(params);
+      return await zktecoDriver.inspectBioTimeDatabase({
+        ...params,
+        ...effective,
+        strictPort: Boolean(params.httpPort || params.webPort),
+      });
     }
     return { success: false, message: 'inspectBioTimeDatabase no disponible en driver.' };
   } catch (err) {
@@ -533,22 +950,27 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     }
   } catch (_) {}
 
+  const effective = resolveBioTimeEffectiveParams(params);
   const {
-    host = '192.168.1.29',
-    webPort: rawWebPort = 8088,
-    dbPort = 7496,
-    dbName = 'biotime',
-    dbUser = 'postgres',
-    password,
-    webUser,
-    webPassword,
-    serial = 'AEH2223460040',
-    deviceId = 'dev-01',
-    deviceIp = fallbackIp,
-    devicePort = 7496,
-  } = params;
-  const webPort = Number(rawWebPort) || 8088;
-  log(`IPC biotime:sync-punches -> ${serial} (Host: ${host}, Web: ${webPort}, DB: ${dbPort})`);
+    host,
+    protocol,
+    httpPort: webPort,
+    pgPort: dbPort,
+    pgDbName: dbName,
+    pgUser: dbUser,
+    pgPassword: password,
+    authMethod,
+    authUser: webUser,
+    authPassword: webPassword,
+    timeoutMs,
+  } = effective;
+  const serial = params.serial || 'AEH2223460040';
+  const deviceId = params.deviceId || 'dev-01';
+  const deviceIp = params.deviceIp || fallbackIp;
+  const devicePort = params.devicePort || 7496;
+  const startDate = params.startDate || '';
+  const endDate = params.endDate || '';
+  log(`IPC biotime:sync-punches -> ${serial} (${protocol}://${host}:${webPort}, DB: ${dbPort})`);
   try {
     const nowStr = new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' });
     const status = typeof zktecoDriver.checkBioTimeService === 'function'
@@ -567,16 +989,25 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
     if (typeof zktecoDriver.syncBioTimeRecords === 'function') {
       syncResult = await zktecoDriver.syncBioTimeRecords({
         host,
+        protocol,
+        httpPort: webPort,
         webPort,
         dbPort,
         dbName,
         dbUser,
         password,
+        authMethod,
+        authUser: webUser,
         webUser,
+        authPassword: webPassword,
         webPassword,
         serial,
         deviceIp,
         devicePort,
+        startDate,
+        endDate,
+        timeoutMs,
+        strictPort: Boolean(params.httpPort || params.webPort),
       });
     }
 
@@ -707,7 +1138,11 @@ ipcMain.handle('zk:query-device-users', async (_event, params = {}) => {
   log(`IPC zk:query-device-users -> ${params.ip || 'BioTime'}:${params.port || 7496} (Modo: ${params.mode || 'AUTO'})`);
   try {
     if (typeof zktecoDriver.queryZkDeviceUsers === 'function') {
-      return await zktecoDriver.queryZkDeviceUsers(params);
+      const mergedBt = resolveBioTimeEffectiveParams(params.biotime || {});
+      return await zktecoDriver.queryZkDeviceUsers({
+        ...params,
+        biotime: mergedBt,
+      });
     }
     return { success: false, message: 'Función queryZkDeviceUsers no disponible en el driver.', users: [] };
   } catch (err) {

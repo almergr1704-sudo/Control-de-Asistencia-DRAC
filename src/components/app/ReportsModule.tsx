@@ -64,12 +64,28 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
     EXITS: 'Reporte de Control de Garita — Salidas y Retornos Reales',
   };
 
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+
   const handleExportCSV = () => {
-    alert(`Exportando ${reportTitles[activeReport]} en formato CSV / Excel...`);
+    setExportNotice(`Preparando exportación de "${reportTitles[activeReport]}" (${dateStart} a ${dateEnd}) en formato CSV/Excel.`);
+    setTimeout(() => setExportNotice(null), 4000);
   };
 
   return (
     <div className="space-y-6">
+      {exportNotice && (
+        <div className="p-3 bg-indigo-950/40 border border-indigo-500/40 rounded-xl text-xs text-indigo-200 flex items-center justify-between gap-2">
+          <span>{exportNotice}</span>
+          <button
+            type="button"
+            onClick={() => setExportNotice(null)}
+            className="text-slate-400 hover:text-white font-bold px-1.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Sub menu tabs for report types */}
       <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-1.5 flex space-x-1 overflow-x-auto">
         {[
@@ -86,8 +102,8 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
             onClick={() => setActiveReport(rep.id as any)}
             className={`px-3 py-1.5 text-xs font-semibold rounded whitespace-nowrap transition-all ${
               activeReport === rep.id
-                ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-600'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
             }`}
           >
             {rep.label}
@@ -147,7 +163,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[760px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <th className="p-3">Fecha</th>
@@ -214,7 +230,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[760px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <th className="p-3">Fecha</th>
@@ -255,7 +271,7 @@ export const ReportsModule: React.FC<ReportsModuleProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[760px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <th className="p-3">Código</th>

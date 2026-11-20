@@ -801,6 +801,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   const [isMassSyncModalOpen, setIsMassSyncModalOpen] = useState(false);
   const [isMassSyncing, setIsMassSyncing] = useState(false);
   const [massSyncProgress, setMassSyncProgress] = useState<{ total: number; done: number; success: number; failed: number } | null>(null);
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
+  const [orgActionFeedback, setOrgActionFeedback] = useState<string | null>(null);
 
   const todayDateStr = new Date().toISOString().split('T')[0];
 
@@ -1920,8 +1922,20 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
           {/* Table */}
           <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            {orgActionFeedback && (
+              <div className="mx-4 mt-3 p-3 rounded-lg bg-emerald-950/30 border border-emerald-500/40 text-xs text-emerald-200 flex items-center justify-between gap-2">
+                <span>{orgActionFeedback}</span>
+                <button
+                  type="button"
+                  onClick={() => setOrgActionFeedback(null)}
+                  className="text-emerald-300 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs table-fixed">
+              <table className="w-full min-w-[1050px] text-left text-xs">
                 <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                   <tr>
                     <th className="w-[125px] px-3.5 py-3">
@@ -3062,7 +3076,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
           {/* Responsive Table */}
           <div className="bg-slate-900/30 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs table-fixed">
+              <table className="w-full min-w-[1000px] text-left text-xs">
                 <thead className="bg-slate-800/40 text-slate-400 font-medium border-b border-slate-800">
                   <tr>
                     <th className="w-[110px] px-3.5 py-3">
@@ -3507,8 +3521,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT DEPENDENCIA */}
       {showDepModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-base text-white">
                 {editingDep ? 'Editar Dependencia DRAC' : 'Nueva Dependencia DRAC'}
               </h3>
@@ -3517,7 +3531,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitDependencia} className="p-5 space-y-4">
+            <form onSubmit={handleSubmitDependencia} className="p-5 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Código Dependencia</label>
                 <input
@@ -3591,8 +3605,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT DIRECCIÓN ÓRGANO */}
       {showDirModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-base text-white">
                 {editingDir ? 'Editar Dirección / Órgano' : 'Nueva Dirección / Órgano DRAC'}
               </h3>
@@ -3601,7 +3615,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitDireccionOrgano} className="p-5 space-y-4">
+            <form onSubmit={handleSubmitDireccionOrgano} className="p-5 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Dependencia Perteneciente</label>
                 <select
@@ -3683,8 +3697,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT AREA */}
       {showAreaModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
                   <Building2 className="w-5 h-5" />
@@ -3703,7 +3717,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitArea} className="p-5 space-y-4">
+            <form onSubmit={handleSubmitArea} className="p-5 space-y-4 overflow-y-auto flex-1">
               {/* ALERTA DE DEPENDENCIA JERÁRQUICA OBLIGATORIA */}
               <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 flex items-start gap-2.5">
                 <Layers className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
@@ -3868,8 +3882,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: ADD / EDIT CARGO */}
       {showCargoModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-base text-white">
                 {editingCargo ? 'Editar Cargo' : 'Nuevo Cargo Institucional DRAC'}
               </h3>
@@ -3878,7 +3892,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitCargo} className="p-5 space-y-4">
+            <form onSubmit={handleSubmitCargo} className="p-5 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Código Cargo</label>
                 <input
@@ -3941,8 +3955,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: DESIGNAR JEFE/DIRECTOR */}
       {showRespModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
                 <Crown className="w-4 h-4 text-amber-400" />
                 <span>Designar Jefe / Director Responsable</span>
@@ -3952,7 +3966,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitResponsable} className="p-5 space-y-4">
+            <form onSubmit={handleSubmitResponsable} className="p-5 space-y-4 overflow-y-auto flex-1">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">Seleccionar Trabajador</label>
                 <select
@@ -4055,9 +4069,9 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
       {/* MODAL: ADD / EDIT EMPLOYEE DRAC */}
       {showEmpModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl my-8">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/20">
                   <UserPlus className="w-5 h-5" />
@@ -4076,7 +4090,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmitEmployee} className="p-6 space-y-6 max-h-[78vh] overflow-y-auto">
+            <form onSubmit={handleSubmitEmployee} className="p-6 space-y-6 overflow-y-auto flex-1">
               
               {/* ================================================================= */}
               {/* SECCIÓN 1: DATOS LABORALES & ESTRUCTURA INSTITUCIONAL DRAC        */}
@@ -5034,9 +5048,9 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: VER PERFIL DE ACCESO & BITÁCORA DE AUDITORÍA DE ROLES      */}
       {/* ================================================================= */}
       {selectedEmpForRoleModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl my-8">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-cyan-600/20 text-cyan-400 rounded-lg border border-cyan-500/20">
                   <ShieldCheck className="w-5 h-5" />
@@ -5056,7 +5070,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="p-5 space-y-5 overflow-y-auto flex-1">
               {/* RESUMEN DEL COLABORADOR */}
               <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -5203,7 +5217,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex justify-end">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex justify-end shrink-0">
               <button
                 onClick={() => setSelectedEmpForRoleModal(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg"
@@ -5218,8 +5232,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: HISTORIAL DE ASIGNACIONES DEL PERSONAL */}
       {selectedEmpForHistory && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/40 shrink-0">
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-amber-400" />
                 <div>
@@ -5234,7 +5248,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
               {(() => {
                 const historyList = assignmentHistory.filter((h) => h.employee_id === selectedEmpForHistory.id);
                 if (historyList.length === 0) {
@@ -5276,7 +5290,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               })()}
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 text-right">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 text-right shrink-0">
               <button
                 onClick={() => setSelectedEmpForHistory(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg"
@@ -5291,8 +5305,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: RESUMEN DE POLÍTICA DE INTEGRIDAD Y TRAZABILIDAD DE DATOS */}
       {showPolicyModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50 shrink-0">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-base text-white">Política Institucional de Clasificación de Datos</h3>
@@ -5302,7 +5316,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 max-h-[65vh] overflow-y-auto text-xs text-slate-300">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs text-slate-300">
               <p className="leading-relaxed text-slate-400">
                 Para garantizar la integridad estricta del historial institucional y evitar alteraciones retrospectivas en papeletas, asistencias o vacaciones, cada dato del sistema se rige por las siguientes cuatro categorías de protección:
               </p>
@@ -5350,7 +5364,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 text-right">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 text-right shrink-0">
               <button
                 onClick={() => setShowPolicyModal(false)}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-lg"
@@ -5550,7 +5564,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
                           selectedEmpForDetail.biometric_sync_status === 'SINCRONIZADO'
-                            ? 'bg-emerald-400 animate-pulse'
+                            ? 'bg-emerald-400'
                             : selectedEmpForDetail.biometric_sync_status === 'ERROR'
                             ? 'bg-rose-400'
                             : 'bg-amber-400'
@@ -5981,8 +5995,8 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: RESTABLECER CONTRASEÑA TEMPORAL (ADMIN / RRHH) */}
       {showResetPasswordModal && selectedEmpForPasswordReset && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
                   <Key className="w-5 h-5" />
@@ -5996,6 +6010,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 onClick={() => {
                   setShowResetPasswordModal(false);
                   setSelectedEmpForPasswordReset(null);
+                  setResetPasswordError(null);
                 }}
                 className="text-slate-400 hover:text-white"
               >
@@ -6003,7 +6018,7 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {/* Employee Summary Card */}
               <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
@@ -6042,7 +6057,10 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   <input
                     type={showResetPasswordEye ? 'text' : 'password'}
                     value={resetNewPassword}
-                    onChange={(e) => setResetNewPassword(e.target.value)}
+                    onChange={(e) => {
+                      setResetNewPassword(e.target.value);
+                      if (resetPasswordError) setResetPasswordError(null);
+                    }}
                     placeholder="Ej: 123456"
                     className="w-full bg-[#060709] border border-slate-800 rounded-lg pl-3 pr-10 py-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
                   />
@@ -6058,14 +6076,22 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   Puede utilizar un valor sencillo temporal; la complejidad se validará en el primer acceso del usuario.
                 </p>
               </div>
+
+              {resetPasswordError && (
+                <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{resetPasswordError}</span>
+                </div>
+              )}
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setShowResetPasswordModal(false);
                   setSelectedEmpForPasswordReset(null);
+                  setResetPasswordError(null);
                 }}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
               >
@@ -6075,12 +6101,13 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                 type="button"
                 onClick={async () => {
                   if (!resetNewPassword.trim()) {
-                    alert('Por favor ingrese una contraseña temporal válida.');
+                    setResetPasswordError('Por favor ingrese una contraseña temporal válida.');
                     return;
                   }
+                  const targetEmp = selectedEmpForPasswordReset;
                   const { hash, salt } = await hashPassword(resetNewPassword.trim());
                   onEditEmployee({
-                    ...selectedEmpForPasswordReset,
+                    ...targetEmp,
                     password_hash: hash,
                     password_salt: salt,
                     password_change_required: true,
@@ -6089,7 +6116,10 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                   });
                   setShowResetPasswordModal(false);
                   setSelectedEmpForPasswordReset(null);
-                  alert(`✅ Contraseña temporal restablecida con éxito para @${selectedEmpForPasswordReset.username || selectedEmpForPasswordReset.dni}.\nSe solicitará cambio obligatorio en su próximo inicio de sesión.`);
+                  setResetPasswordError(null);
+                  setOrgActionFeedback(
+                    `Contraseña temporal restablecida con éxito para @${targetEmp.username || targetEmp.dni}. Se solicitará cambio obligatorio en su próximo inicio de sesión.`
+                  );
                 }}
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
               >

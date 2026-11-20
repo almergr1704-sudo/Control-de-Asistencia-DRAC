@@ -17,6 +17,8 @@ import {
   Menu,
   X,
   UserCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { RoleType } from '../types';
 import { VIEW_TO_GROUP, isViewAllowedForRole } from '../utils/router';
@@ -41,6 +43,8 @@ interface SidebarProps {
   activeRole: RoleType;
   isOpenMobile: boolean;
   setIsOpenMobile: (open: boolean) => void;
+  isCollapsedDesktop?: boolean;
+  onToggleCollapseDesktop?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -49,6 +53,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeRole,
   isOpenMobile,
   setIsOpenMobile,
+  isCollapsedDesktop = false,
+  onToggleCollapseDesktop,
 }) => {
   // State for expanded accordion categories
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -215,6 +221,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       allowedRoles: ['ADMIN_GENERAL', 'HR_ADMIN', 'CONTROL_ASISTENCIA'],
       subItems: [
         { id: 'devices_list', label: 'Marcador ZKTeco G3' },
+        { id: 'devices_biotime', label: 'Conexión BioTime PRO' },
         { id: 'devices_users', label: 'Usuarios Registrados en Relojes' },
         { id: 'devices_sync', label: 'Servidor ADMS Push (HTTP)' },
         { id: 'devices_agent', label: 'Agente Local LAN (ZK Agent)' },
@@ -338,29 +345,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#090A0D] border-r border-slate-800 text-slate-300 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 ${
+          isCollapsedDesktop ? 'md:w-[72px]' : 'md:w-64'
+        } bg-[#090A0D] border-r border-slate-800 text-slate-300 flex flex-col transition-all duration-200 ease-out md:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Header Branding */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0 bg-[#060709]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-lg flex items-center justify-center text-white font-black text-lg shadow-md shadow-indigo-600/30">
-              🌾
+        <div className={`p-3.5 border-b border-slate-800 flex items-center ${isCollapsedDesktop ? 'md:justify-center' : 'justify-between'} shrink-0 bg-[#060709] min-h-[61px]`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 shrink-0 bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-lg flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/20">
+              DR
             </div>
-            <div>
-              <h1 className="font-extrabold text-white text-xs tracking-wider uppercase">
+            <div className={`min-w-0 ${isCollapsedDesktop ? 'md:hidden' : ''}`}>
+              <h1 className="font-extrabold text-white text-xs tracking-wider uppercase truncate">
                 DRAC CAJAMARCA
               </h1>
-              <p className="text-[10px] text-indigo-400 font-medium">Control de Asistencia</p>
+              <p className="text-[10px] text-indigo-400 font-medium truncate">Control de Asistencia</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setIsOpenMobile(false)}
-            className="md:hidden text-slate-400 hover:text-white p-1 rounded"
+            className="md:hidden text-slate-400 hover:text-white p-1 rounded shrink-0"
+            title="Cerrar menú"
           >
             <X className="w-5 h-5" />
           </button>
+          {onToggleCollapseDesktop && !isCollapsedDesktop && (
+            <button
+              type="button"
+              onClick={onToggleCollapseDesktop}
+              className="hidden md:inline-flex text-slate-400 hover:text-white hover:bg-slate-800 p-1.5 rounded-lg transition-colors shrink-0"
+              title="Contraer menú lateral"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation Content (Scrollable) */}
@@ -369,7 +390,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const GroupIcon = group.icon;
             const isExpanded = expandedGroups[group.id] ?? false;
 
-            // Filter subItems by role
             const validSubItems = group.subItems?.filter((sub) => {
               if (sub.allowedRoles && !sub.allowedRoles.includes(activeRole)) return false;
               return isViewAllowedForRole(sub.id, activeRole);
@@ -380,46 +400,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             return (
               <div key={group.id} className="space-y-0.5">
-                {/* Group Header Button */}
                 <button
+                  type="button"
+                  title={isCollapsedDesktop ? group.label : undefined}
                   onClick={() => handleGroupHeaderClick(group)}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+                  className={`w-full flex items-center ${isCollapsedDesktop ? 'md:justify-center md:px-2' : 'justify-between px-3'} py-2 text-xs font-semibold rounded-lg transition-colors ${
                     isGroupActive
-                      ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500 font-bold'
+                      ? 'bg-indigo-600/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/30 font-bold'
                       : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5">
-                    <GroupIcon className={`w-4 h-4 ${isGroupActive ? 'text-indigo-400' : 'text-slate-400'}`} />
-                    <span>{group.label}</span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <GroupIcon className={`w-4 h-4 shrink-0 ${isGroupActive ? 'text-indigo-400' : 'text-slate-400'}`} />
+                    <span className={`truncate ${isCollapsedDesktop ? 'md:hidden' : ''}`}>{group.label}</span>
                   </div>
                   {hasSubItems && (
-                    <div className="text-slate-500">
+                    <div className={`text-slate-500 shrink-0 ${isCollapsedDesktop ? 'md:hidden' : ''}`}>
                       {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     </div>
                   )}
                 </button>
 
-                {/* SubMenu Items */}
                 {hasSubItems && isExpanded && (
-                  <div className="pl-7 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4 my-1">
+                  <div className={`pl-4 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4 my-1 ${isCollapsedDesktop ? 'md:hidden' : ''}`}>
                     {validSubItems.map((sub) => {
                       const isSubActive = activeView === sub.id;
                       return (
                         <button
                           key={sub.id}
+                          type="button"
                           onClick={() => handleSelectView(sub.id)}
-                          className={`w-full text-left px-2.5 py-1.5 text-[11px] rounded transition-all flex items-center justify-between ${
+                          className={`w-full text-left px-2.5 py-1.5 text-[11px] rounded-md transition-colors flex items-center justify-between gap-2 ${
                             isSubActive
-                              ? 'bg-indigo-600/25 text-indigo-300 font-bold border-l-2 border-indigo-400 pl-2'
+                              ? 'bg-indigo-600/20 text-indigo-200 font-semibold ring-1 ring-inset ring-indigo-500/30'
                               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                           }`}
                         >
-                          <div className="flex items-center gap-1.5">
-                            {isSubActive && <span className="text-indigo-400 font-bold">▸</span>}
-                            <span>{sub.label}</span>
-                          </div>
-                          {isSubActive && <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-400" />}
+                          <span className="truncate">{sub.label}</span>
                         </button>
                       );
                     })}
@@ -432,9 +449,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Footer Role Badge */}
         <div className="p-3 border-t border-slate-800/80 bg-[#060709] shrink-0">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+          {isCollapsedDesktop && onToggleCollapseDesktop && (
+            <button
+              type="button"
+              onClick={onToggleCollapseDesktop}
+              className="hidden md:flex w-full items-center justify-center p-2 mb-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Expandir menú lateral"
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+          )}
+          <div className={`flex items-center gap-2 text-[11px] text-slate-400 ${isCollapsedDesktop ? 'md:justify-center' : ''}`} title={`Rol activo: ${activeRole}`}>
             <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span className="truncate">
+            <span className={`truncate ${isCollapsedDesktop ? 'md:hidden' : ''}`}>
               Rol: <strong className="text-white font-medium">{activeRole}</strong>
             </span>
           </div>

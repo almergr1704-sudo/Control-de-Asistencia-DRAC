@@ -1185,6 +1185,137 @@ export interface SecurityConfig {
   password_policy: PasswordPolicy;
 }
 
+// =========================================================================
+// BIOTIME PRO CONNECTION & DIAGNOSTICS TYPES
+// =========================================================================
+
+export type BioTimeProtocol = 'http' | 'https';
+export type BioTimeAuthMethod = 'AUTO' | 'JWT' | 'DRF_TOKEN' | 'DJANGO_SESSION';
+export type BioTimeConnectionStatus =
+  | 'CONECTADO'
+  | 'NO_CONECTADO'
+  | 'PUERTO_INACCESIBLE'
+  | 'ERROR_AUTENTICACION'
+  | 'API_NO_DISPONIBLE'
+  | 'TIMEOUT'
+  | 'CONFIGURACION_INCOMPLETA';
+
+export interface BioTimeServerConfig {
+  host: string;
+  httpPort: number;
+  protocol: BioTimeProtocol;
+  authMethod: BioTimeAuthMethod;
+  authUser: string;
+  authPassword?: string;
+  pgPort: number;
+  pgDbName: string;
+  pgUser: string;
+  pgPassword?: string;
+  timeoutMs: number;
+  updated_at?: string;
+}
+
+export interface BioTimePublicConfig {
+  host: string;
+  httpPort: number;
+  protocol: BioTimeProtocol;
+  authMethod: BioTimeAuthMethod;
+  authUser: string;
+  has_auth_password: boolean;
+  auth_password_masked: string;
+  pgPort: number;
+  pgDbName: string;
+  pgUser: string;
+  has_pg_password: boolean;
+  pg_password_masked: string;
+  timeoutMs: number;
+  updated_at?: string;
+  storage_mode?: string;
+  lastStatus?: BioTimeConnectionStatus | null;
+  lastTestedAt?: string | null;
+  lastMessage?: string | null;
+}
+
+export interface BioTimePortProbeResult {
+  port: number;
+  tcp_open: boolean;
+  http_responded?: boolean;
+  http_responds?: boolean;
+  status_code?: number | null;
+  http_status?: number | null;
+  biotime_detected?: boolean;
+  is_biotime?: boolean;
+  latency_ms: number | null;
+  server_header?: string | null;
+  detail: string;
+}
+
+export interface BioTimeStageResult {
+  stage: number;
+  key: string;
+  name: string;
+  status: 'PASSED' | 'FAILED' | 'WARNING' | 'SKIPPED';
+  message: string;
+  latency_ms?: number;
+}
+
+export interface BioTimeTestReport {
+  success: boolean;
+  status: BioTimeConnectionStatus;
+  host: string;
+  httpPort: number;
+  protocol: BioTimeProtocol;
+  pgPort: number;
+  authMethodUsed?: string | null;
+  connectivity_status: 'OK' | 'FAILED' | 'TIMEOUT';
+  auth_status: 'OK' | 'FAILED' | 'MISSING' | 'SKIPPED';
+  api_status: 'OK' | 'FAILED' | 'SKIPPED';
+  pg_tcp_open?: boolean;
+  total_transactions?: number;
+  total_terminals?: number;
+  total_employees?: number;
+  latency_ms: number;
+  stages: BioTimeStageResult[];
+  message: string;
+  error_detail?: string | null;
+  timestamp: string;
+}
+
+export interface BioTimeDeviceSummary {
+  id: string | number;
+  sn: string;
+  alias: string;
+  ip_address: string;
+  area_name?: string | null;
+  state?: number | string | null;
+  last_activity?: string | null;
+  user_count?: number | null;
+  transaction_count?: number | null;
+  fw_ver?: string | null;
+}
+
+export interface BioTimeDownloadResult {
+  success: boolean;
+  status?: BioTimeConnectionStatus;
+  source?: string;
+  endpoint?: string;
+  needsWebCredentials?: boolean;
+  read_count: number;
+  new_count: number;
+  duplicates_skipped?: number;
+  duplicate_count?: number;
+  unidentified_count?: number;
+  pending_count?: number;
+  punches_count?: number;
+  total_stored?: number;
+  db_saved?: boolean;
+  db_error?: string | null;
+  pages_fetched?: number;
+  message: string;
+  punches?: MarcacionRaw[];
+  timestamp?: string;
+}
+
 // Aliases for unified Supabase PostgreSQL schema
 export type Papeleta = PapeletaSalida;
 export type RawPunch = MarcacionRaw;
@@ -1264,6 +1395,12 @@ declare global {
       }>;
       inspectBioTimeDatabase?: (config?: any) => Promise<any>;
       syncBioTimePunches?: (config?: any) => Promise<any>;
+      getBioTimeConfig?: () => Promise<{ success?: boolean; config?: BioTimePublicConfig } | BioTimePublicConfig>;
+      saveBioTimeConfig?: (config: Partial<BioTimeServerConfig> & { clear_auth_password?: boolean; clear_pg_password?: boolean }) => Promise<{ success: boolean; config?: BioTimePublicConfig; message?: string }>;
+      detectBioTimePorts?: (params: { host: string; protocol?: BioTimeProtocol; configuredPort?: number; httpPort?: number; ports?: number[]; candidatePorts?: number[]; timeoutMs?: number }) => Promise<{ success: boolean; host: string; protocol: BioTimeProtocol; results?: BioTimePortProbeResult[]; ports?: BioTimePortProbeResult[]; recommendedPort?: number | null; recommended_port?: number | null; message: string; timestamp: string }>;
+      testBioTimeConnection?: (config?: Partial<BioTimeServerConfig>) => Promise<BioTimeTestReport>;
+      queryBioTimeDevices?: (config?: Partial<BioTimeServerConfig>) => Promise<{ success: boolean; status?: BioTimeConnectionStatus; devices: BioTimeDeviceSummary[]; message: string; error?: string }>;
+      downloadBioTimePunches?: (params?: Partial<BioTimeServerConfig> & { startDate?: string; endDate?: string; serial?: string }) => Promise<BioTimeDownloadResult>;
       queryZkDeviceUsers?: (config: {
         deviceId?: string;
         deviceName?: string;

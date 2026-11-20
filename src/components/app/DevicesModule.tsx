@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { DispositivoZkTeco, MarcacionRaw, Employee } from '../../types';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { DispositivoZkTeco, MarcacionRaw, Employee, BioTimePublicConfig } from '../../types';
 import { getApiUrl } from '../../utils/apiConfig';
 import { AdmsPushSection } from './AdmsPushSection';
 import { DracZkAgentSection } from './DracZkAgentSection';
 import { DeviceUsersSection } from './DeviceUsersSection';
+import { BioTimeProPanel } from './BioTimeProPanel';
 import { ZkTecoSpec } from '../ZkTecoSpec';
 import {
   Server,
@@ -48,6 +49,7 @@ interface DevicesModuleProps {
   employees: Employee[];
   activeRole: string;
   activeSubView?: string;
+  onSelectView?: (viewId: string) => void;
   onRefreshDevices?: () => void;
   onRefreshPunches?: () => void;
 }
@@ -58,21 +60,81 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
   employees,
   activeRole,
   activeSubView,
+  onSelectView,
   onRefreshDevices,
   onRefreshPunches,
 }) => {
   // Navigation tabs within Biometrics Module
-  const [activeTab, setActiveTab] = useState<'terminal' | 'users' | 'adms' | 'agent' | 'diag' | 'spec'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'users' | 'biotime' | 'adms' | 'agent' | 'diag' | 'spec'>('terminal');
+
+  // Dynamic BioTime PRO public config hydrated from Electron IPC / Server API
+  const [bioTimeSummary, setBioTimeSummary] = useState<BioTimePublicConfig>({
+    host: '192.168.1.29',
+    httpPort: 8088,
+    protocol: 'http',
+    authMethod: 'AUTO',
+    authUser: 'admin',
+    has_auth_password: false,
+    auth_password_masked: '',
+    pgPort: 7496,
+    pgDbName: 'biotime',
+    pgUser: 'postgres',
+    has_pg_password: false,
+    pg_password_masked: '',
+    timeoutMs: 8000,
+  });
+
+  const loadBioTimeSummary = useCallback(async () => {
+    try {
+      const electronAPI = typeof window !== 'undefined' ? window.electronAPI : undefined;
+      if (electronAPI?.isDesktop && typeof electronAPI.getBioTimeConfig === 'function') {
+        const res = await electronAPI.getBioTimeConfig();
+        const cfg = (res as any)?.config ? (res as any).config : (res as BioTimePublicConfig);
+        if (cfg?.host) setBioTimeSummary(cfg);
+      } else {
+        const res = await fetch(getApiUrl('/api/zkteco/biotime/config'));
+        const data = await res.json();
+        if (data?.config?.host) setBioTimeSummary(data.config);
+      }
+    } catch (_) {}
+  }, []);
+
+  useEffect(() => {
+    loadBioTimeSummary();
+    const handler = (e: any) => {
+      if (e?.detail?.host) setBioTimeSummary(e.detail);
+      else loadBioTimeSummary();
+    };
+    window.addEventListener('drac:biotime-config-changed', handler);
+    return () => window.removeEventListener('drac:biotime-config-changed', handler);
+  }, [loadBioTimeSummary]);
 
   // Sync with activeSubView from Sidebar if provided
   useEffect(() => {
     if (activeSubView === 'devices_users') setActiveTab('users');
+    else if (activeSubView === 'devices_biotime') setActiveTab('biotime');
     else if (activeSubView === 'devices_sync') setActiveTab('adms');
     else if (activeSubView === 'devices_agent') setActiveTab('agent');
     else if (activeSubView === 'devices_diag') setActiveTab('diag');
     else if (activeSubView === 'devices_spec') setActiveTab('spec');
     else if (activeSubView === 'devices_list') setActiveTab('terminal');
   }, [activeSubView]);
+
+  const handleSelectTab = (tab: 'terminal' | 'users' | 'biotime' | 'adms' | 'agent' | 'diag' | 'spec') => {
+    setActiveTab(tab);
+    if (onSelectView) {
+      const viewMap: Record<typeof tab, string> = {
+        terminal: 'devices_list',
+        users: 'devices_users',
+        biotime: 'devices_biotime',
+        diag: 'devices_diag',
+        adms: 'devices_sync',
+        agent: 'devices_agent',
+        spec: 'devices_spec',
+      };
+      onSelectView(viewMap[tab]);
+    }
+  };
 
   // Selected device state
   const [selectedDevice, setSelectedDevice] = useState<DispositivoZkTeco | null>(devices[0] || null);
@@ -868,7 +930,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
   const [isBioTimeBusy, setIsBioTimeBusy] = useState(false);
 
-  // Extracción de marcaciones desde Servidor BioTime Platform (192.168.1.29:8088 / PostgreSQL :7496)
+  // Extracción de marcaciones desde Servidor BioTime Platform
   const handleBioTimeSync = async () => {
     setIsBioTimeBusy(true);
     setSyncStatusMsg(null);
@@ -876,22 +938,25 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
     try {
       savedBt = JSON.parse(localStorage.getItem('drac_biotime_settings') || '{}') || {};
     } catch (_) {}
-    const resolvedHost = savedBt.host || selectedDevice?.biotime_config?.db_host || '192.168.1.29';
-    const rawWebPort = savedBt.webPort || selectedDevice?.biotime_config?.web_port;
+    const resolvedHost = bioTimeSummary.host || savedBt.host || selectedDevice?.biotime_config?.db_host || '192.168.1.29';
+    const rawWebPort = bioTimeSummary.httpPort || savedBt.webPort || selectedDevice?.biotime_config?.web_port;
     const resolvedWebPort = Number(rawWebPort) || 8088;
-    const resolvedDbPort = Number(savedBt.dbPort || selectedDevice?.biotime_config?.db_port || 7496);
+    const resolvedDbPort = Number(bioTimeSummary.pgPort || savedBt.dbPort || selectedDevice?.biotime_config?.db_port || 7496);
 
     const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
     if (electronAPI?.isDesktop && typeof electronAPI.syncBioTimePunches === 'function') {
       try {
         const res = await electronAPI.syncBioTimePunches({
+          protocol: bioTimeSummary.protocol || 'http',
+          authMethod: bioTimeSummary.authMethod || 'AUTO',
           host: resolvedHost,
           webPort: resolvedWebPort,
+          httpPort: resolvedWebPort,
           dbPort: resolvedDbPort,
-          dbName: savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
-          dbUser: savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
+          dbName: bioTimeSummary.pgDbName || savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
+          dbUser: bioTimeSummary.pgUser || savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
           password: savedBt.password || undefined,
-          webUser: savedBt.webUser || undefined,
+          webUser: bioTimeSummary.authUser || savedBt.webUser || undefined,
           webPassword: savedBt.webPassword || undefined,
           serial: selectedDevice?.serial_number || 'AEH2223460040',
           deviceIp: selectedDevice?.ip_address || devices[0]?.ip_address || '',
@@ -914,13 +979,16 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            protocol: bioTimeSummary.protocol || 'http',
+            authMethod: bioTimeSummary.authMethod || 'AUTO',
             host: resolvedHost,
             webPort: resolvedWebPort,
+            httpPort: resolvedWebPort,
             port: resolvedDbPort,
-            dbName: savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
-            user: savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
+            dbName: bioTimeSummary.pgDbName || savedBt.dbName || selectedDevice?.biotime_config?.db_name || 'biotime',
+            user: bioTimeSummary.pgUser || savedBt.dbUser || selectedDevice?.biotime_config?.db_user || 'postgres',
             password: savedBt.password || undefined,
-            webUser: savedBt.webUser || undefined,
+            webUser: bioTimeSummary.authUser || savedBt.webUser || undefined,
             webPassword: savedBt.webPassword || undefined,
             serial: selectedDevice?.serial_number || devices[0]?.serial_number || 'AEH2223460040',
           }),
@@ -1059,13 +1127,13 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                 <h2 className="text-xl font-extrabold text-white tracking-tight">
                   Infraestructura y Marcadores Biométricos ZKTeco
                 </h2>
-                <span className="px-2.5 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono rounded-full font-bold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="px-2.5 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-mono rounded-full font-bold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                   ZKTeco G3 ({selectedDevice?.ip_address || devices[0]?.ip_address || '192.168.1.198'}:{activePort}) ONLINE
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Supervisión por Socket TCP puerto {activePort} (configurable 7496 / 4370), ingesta ADMS PUSH y PostgreSQL BioTime (192.168.1.29:7496) diferenciado.
+                Supervisión por Socket TCP puerto {activePort} (configurable 7496 / 4370), ingesta ADMS PUSH y BioTime PRO ({bioTimeSummary.host}:{bioTimeSummary.httpPort} / PG :{bioTimeSummary.pgPort}) diferenciado.
               </p>
             </div>
           </div>
@@ -1115,7 +1183,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         {/* Sub-Tabs Selector */}
         <div className="flex space-x-1 border-t border-slate-800/80 pt-3 overflow-x-auto scrollbar-none">
           <button
-            onClick={() => setActiveTab('terminal')}
+            onClick={() => handleSelectTab('terminal')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'terminal'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1127,7 +1195,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('users')}
+            onClick={() => handleSelectTab('users')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'users'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1139,7 +1207,19 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('diag')}
+            onClick={() => handleSelectTab('biotime')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
+              activeTab === 'biotime'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Server className="w-4 h-4 text-amber-400" />
+            <span>Conexión BioTime PRO (:{bioTimeSummary.httpPort})</span>
+          </button>
+
+          <button
+            onClick={() => handleSelectTab('diag')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'diag'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1151,7 +1231,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('adms')}
+            onClick={() => handleSelectTab('adms')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'adms'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1163,7 +1243,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('agent')}
+            onClick={() => handleSelectTab('agent')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'agent'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1175,7 +1255,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('spec')}
+            onClick={() => handleSelectTab('spec')}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all shrink-0 ${
               activeTab === 'spec'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/30 font-bold'
@@ -1233,17 +1313,26 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
 
               {/* Servidor BioTime */}
               <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-lg space-y-1.5">
-                <div className="flex items-center gap-1.5 font-bold text-amber-300 font-mono text-[11px]">
-                  <Server className="w-3.5 h-3.5 text-amber-400" />
-                  <span>SERVIDOR BIOTIME</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300 font-mono text-[11px]">
+                    <Server className="w-3.5 h-3.5 text-amber-400" />
+                    <span>SERVIDOR BIOTIME PRO</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab('biotime')}
+                    className="text-[10px] font-semibold text-indigo-300 hover:text-indigo-200 underline"
+                  >
+                    Configurar puerto
+                  </button>
                 </div>
                 <div className="text-[11px] text-slate-400 space-y-0.5 font-mono">
-                  <div>IP Servidor: <strong className="text-slate-200">192.168.1.29</strong></div>
-                  <div>Servicio Web HTTP (BioTime PRO): <strong className="text-slate-200">Puerto 8088</strong></div>
+                  <div>IP Servidor: <strong className="text-slate-200">{bioTimeSummary.host}</strong></div>
+                  <div>Servicio Web {bioTimeSummary.protocol.toUpperCase()} (BioTime PRO): <strong className="text-amber-300">Puerto {bioTimeSummary.httpPort}</strong></div>
                   <div>Endpoint ADMS: <strong className="text-indigo-300">/iclock/cdata</strong></div>
-                  <div>PostgreSQL BioTime: <strong className="text-emerald-300">Puerto 7496</strong></div>
+                  <div>PostgreSQL BioTime: <strong className="text-emerald-300">Puerto {bioTimeSummary.pgPort}</strong></div>
                   <div className="text-[10px] text-amber-400/90 pt-1 border-t border-slate-800">
-                    ⚠ Nota: El puerto 7496 de BioTime es el servicio PostgreSQL interno de dicho servidor, distinto del socket TCP del marcador.
+                    Nota: El puerto {bioTimeSummary.pgPort} de PostgreSQL BioTime es distinto al puerto Web ({bioTimeSummary.httpPort}) y al socket TCP del marcador.
                   </div>
                 </div>
               </div>
@@ -1337,8 +1426,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                         <h4 className="font-bold text-white text-xs">{dev.name}</h4>
                         <span className="font-mono text-[11px] text-indigo-300 font-semibold">{dev.serial_number}</span>
                       </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                         ONLINE
                       </span>
                     </div>
@@ -1421,7 +1510,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                           className={`w-1.5 h-1.5 rounded-full ${
                             String(isEditing ? formData.status : selectedDevice.status) === 'ONLINE' ||
                             String(isEditing ? formData.status : selectedDevice.status) === 'Activo'
-                              ? 'bg-emerald-400 animate-pulse'
+                              ? 'bg-emerald-400'
                               : 'bg-rose-400'
                           }`}
                         />
@@ -2188,8 +2277,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                       </p>
                     </div>
                   ) : (
-                    <div className="border border-slate-800 rounded-lg overflow-hidden bg-[#090A0D]">
-                      <table className="w-full text-left text-xs">
+                    <div className="border border-slate-800 rounded-lg overflow-x-auto bg-[#090A0D]">
+                      <table className="w-full min-w-[600px] text-left text-xs">
                         <thead className="bg-[#060709] text-slate-400 text-[10px] uppercase font-bold border-b border-slate-800">
                           <tr>
                             <th className="p-2.5">DNI</th>
@@ -2405,7 +2494,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
                         <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg space-y-2">
                           <span className="font-bold text-slate-200 block text-[11px]">3. Sincronizar Vía BioTime</span>
                           <p className="text-[10px] text-slate-400">
-                            Si el G3 tiene activo el Servidor Cloud (ADMS), envía marcaciones a BioTime PRO (192.168.1.29:8088).
+                            Si el G3 tiene activo el Servidor Cloud (ADMS), envía marcaciones a BioTime PRO ({bioTimeSummary.host}:{bioTimeSummary.httpPort}).
                           </p>
                           <button
                             type="button"
@@ -2503,15 +2592,26 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
         />
       )}
 
+      {/* TAB: CONEXIÓN BIOTIME PRO */}
+      {activeTab === 'biotime' && (
+        <BioTimeProPanel
+          activeRole={activeRole}
+          onRefreshDevices={onRefreshDevices}
+          onRefreshPunches={onRefreshPunches}
+          onNavigateToUsers={() => handleSelectTab('users')}
+          onConfigSaved={(cfg) => setBioTimeSummary(cfg)}
+        />
+      )}
+
       {/* TAB 5: ZKTECO SPECIFICATION */}
       {activeTab === 'spec' && <ZkTecoSpec />}
 
       {/* MODAL: REGISTRAR NUEVO MARCADOR BIOMÉTRICO */}
       {isAddingDevice && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/60">
+            <div className="flex items-center justify-between p-5 border-b border-slate-800 bg-slate-900/60 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30">
                   <Plus className="w-5 h-5 text-indigo-400" />
@@ -2535,7 +2635,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </div>
 
             {/* Modal Body Form */}
-            <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+            <div className="p-6 space-y-6 flex-1 overflow-y-auto">
               {/* Sección 1: Identificación y Ubicación */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 pb-1 border-b border-slate-800">
@@ -2802,7 +2902,7 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-slate-900/80 border-t border-slate-800 flex items-center justify-end gap-3">
+            <div className="p-4 bg-slate-900/80 border-t border-slate-800 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsAddingDevice(false)}
@@ -2829,8 +2929,8 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
       {/* MODAL: CONFIRMAR ELIMINACIÓN DE MARCADOR */}
       {deviceToDelete && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 shrink-0">
               <div className="p-3 bg-rose-600/20 text-rose-400 rounded-xl border border-rose-500/30">
                 <Trash2 className="w-6 h-6 text-rose-400" />
               </div>
@@ -2840,11 +2940,11 @@ export const DevicesModule: React.FC<DevicesModuleProps> = ({
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs text-slate-300 leading-relaxed overflow-y-auto flex-1">
               ¿Está seguro de que desea eliminar el marcador <strong className="text-white">{deviceToDelete.name}</strong> ({deviceToDelete.ip_address})? El equipo será retirado de la supervisión activa.
             </p>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-3 pt-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setDeviceToDelete(null)}

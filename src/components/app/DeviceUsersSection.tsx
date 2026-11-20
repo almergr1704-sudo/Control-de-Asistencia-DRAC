@@ -198,6 +198,36 @@ export const DeviceUsersSection: React.FC<DeviceUsersSectionProps> = ({
     }
   });
 
+  useEffect(() => {
+    const applyBt = (cfg: any) => {
+      if (!cfg) return;
+      if (cfg.host) setBtHost(cfg.host);
+      if (cfg.httpPort) setBtWebPort(Number(cfg.httpPort));
+      if (cfg.pgPort) setBtDbPort(Number(cfg.pgPort));
+      if (cfg.authUser) setBtWebUser(cfg.authUser);
+    };
+    const loadBt = async () => {
+      try {
+        const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : null;
+        if (electronAPI?.isDesktop && typeof electronAPI.getBioTimeConfig === 'function') {
+          const res = await electronAPI.getBioTimeConfig();
+          applyBt(res?.config || res);
+        } else {
+          const res = await fetch(getApiUrl('/api/zkteco/biotime/config'));
+          const data = await res.json();
+          if (data?.config) applyBt(data.config);
+        }
+      } catch (_) {}
+    };
+    loadBt();
+    const handler = (e: any) => {
+      if (e?.detail) applyBt(e.detail);
+      else loadBt();
+    };
+    window.addEventListener('drac:biotime-config-changed', handler);
+    return () => window.removeEventListener('drac:biotime-config-changed', handler);
+  }, []);
+
   // Table Filters & Pagination
   const [filterDeviceSn, setFilterDeviceSn] = useState<string>('ALL');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -1344,7 +1374,7 @@ export const DeviceUsersSection: React.FC<DeviceUsersSectionProps> = ({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full min-w-[1050px] text-left text-xs">
                 <thead className="bg-[#060709] border-b border-slate-800 text-[11px] text-slate-400 font-semibold">
                   <tr>
                     <th className="py-3 px-3.5 whitespace-nowrap">PIN / Cód. Biométrico</th>
@@ -1933,8 +1963,8 @@ export const DeviceUsersSection: React.FC<DeviceUsersSectionProps> = ({
       {/* MODAL: EDICIÓN OPCIONAL E INDEPENDIENTE DEL NOMBRE EN EL RELOJ FÍSICO (SOLO ADMIN) */}
       {clockNameUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#090A0D] shrink-0">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-amber-400" />
                 <h3 className="text-sm font-bold text-white">Actualizar Nombre en Reloj Físico</h3>
@@ -1943,7 +1973,7 @@ export const DeviceUsersSection: React.FC<DeviceUsersSectionProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-5 space-y-3 text-xs">
+            <div className="p-5 space-y-3 text-xs overflow-y-auto flex-1">
               <div className="p-3 bg-amber-950/35 border border-amber-800/60 rounded-lg text-amber-200 leading-relaxed">
                 Operación independiente y exclusiva de administrador: envía el nombre al reloj ZKTeco ({clockNameUser.device_sn}) para el PIN <strong className="font-mono">{clockNameUser.pin}</strong>. <strong>No modifica el nombre del trabajador en el padrón institucional.</strong>
               </div>
@@ -1969,7 +1999,7 @@ export const DeviceUsersSection: React.FC<DeviceUsersSectionProps> = ({
                 />
               </div>
             </div>
-            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex justify-end gap-2">
+            <div className="px-5 py-3.5 border-t border-slate-800 bg-[#090A0D] flex justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setClockNameUser(null)}

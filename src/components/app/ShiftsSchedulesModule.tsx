@@ -1377,9 +1377,9 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* MODAL: CREAR / EDITAR TURNO */}
       {/* ==================================================== */}
       {isTurnoModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-indigo-400" />
                 <h3 className="font-bold text-sm text-white">
@@ -1395,8 +1395,8 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveTurno} className="p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-3 gap-3">
+            <form onSubmit={handleSaveTurno} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-slate-400 font-bold block mb-1">Código:</label>
                   <input
@@ -1558,9 +1558,9 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* MODAL: CREAR / EDITAR HORARIO */}
       {/* ==================================================== */}
       {isHorarioModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-indigo-400" />
                 <h3 className="font-bold text-sm text-white">
@@ -1576,7 +1576,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveHorario} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveHorario} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {turnos.length === 0 && (
                 <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs flex items-start gap-3">
                   <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -1599,7 +1599,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-slate-400 font-bold block mb-1">Código:</label>
                   <input
@@ -1692,7 +1692,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
 
               <div>
                 <label className="text-slate-400 font-bold block mb-1.5">Días Laborables:</label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {[
                     { key: 'MON', label: 'Lun' },
                     { key: 'TUE', label: 'Mar' },
@@ -1772,9 +1772,9 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* MODAL: ASIGNAR HORARIO (PERMANENTE O TEMPORAL) */}
       {/* ==================================================== */}
       {isAsignacionModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <UserCheck className="w-4 h-4 text-emerald-400" />
                 <h3 className="font-bold text-sm text-white">
@@ -1792,7 +1792,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveAsignacion} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSaveAsignacion} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {horarios.length === 0 && (
                 <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs flex items-start gap-3">
                   <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -2004,7 +2004,7 @@ export const ShiftsSchedulesModule: React.FC<ShiftsSchedulesModuleProps> = ({
       {/* ==================================================== */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-rose-800/60 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-[#0F1115] border border-rose-800/60 rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center gap-2.5 text-rose-400">
               <AlertTriangle className="w-5 h-5" />
               <h4 className="font-bold text-sm text-white">Confirmar Eliminación</h4>

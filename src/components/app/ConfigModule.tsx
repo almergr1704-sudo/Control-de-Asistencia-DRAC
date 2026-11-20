@@ -98,8 +98,8 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
           onClick={() => setActiveTab('SUPABASE_DATABASE')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
             activeTab === 'SUPABASE_DATABASE'
-              ? 'bg-indigo-600/20 text-indigo-300 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           <Database className="w-3.5 h-3.5 text-indigo-400" />
@@ -109,8 +109,8 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
           onClick={() => setActiveTab('SECURITY')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
             activeTab === 'SECURITY'
-              ? 'bg-indigo-600/20 text-indigo-300 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
@@ -120,8 +120,8 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
           onClick={() => setActiveTab('INSTITUTIONAL')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
             activeTab === 'INSTITUTIONAL'
-              ? 'bg-indigo-600/20 text-indigo-300 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           <Building className="w-3.5 h-3.5 text-indigo-400" />
@@ -347,7 +347,7 @@ export const ConfigModule: React.FC<ConfigModuleProps> = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Tolerancia por Defecto (Minutos)</label>
                 <input

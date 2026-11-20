@@ -167,10 +167,10 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
   const minLength = policy.min_length || 8;
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl my-6 animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         {/* Modal Header */}
-        <div className="p-6 border-b border-slate-800 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 flex items-start justify-between gap-4">
+        <div className="p-6 border-b border-slate-800 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 flex items-start justify-between gap-4 shrink-0">
           <div className="flex items-start gap-3.5">
             <div className="p-2.5 bg-indigo-600/20 text-indigo-400 rounded-xl border border-indigo-500/30 shrink-0">
               <KeyRound className="w-6 h-6" />
@@ -194,7 +194,7 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
         </div>
 
         {/* User identification badge */}
-        <div className="px-6 py-3 bg-slate-900/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="px-6 py-3 bg-slate-900/60 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-slate-400" />
             <span className="font-semibold text-white">
@@ -210,7 +210,7 @@ export const ForcePasswordChangeModal: React.FC<ForcePasswordChangeModalProps> =
         </div>
 
         {/* Form body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
           {errorMessage && (
             <div className="p-3.5 bg-rose-950/40 border border-rose-500/40 rounded-xl text-xs text-rose-300 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />

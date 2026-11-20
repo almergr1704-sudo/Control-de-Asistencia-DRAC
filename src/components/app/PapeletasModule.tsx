@@ -1076,7 +1076,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           />
         ) : (
           <div className="w-full overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full min-w-[960px] text-left text-xs border-collapse">
               <thead className="bg-[#090A0D] border-b border-slate-800 text-slate-400 font-medium">
                 <tr>
                   <th className="w-8 px-2 py-3 text-center">#</th>
@@ -1219,7 +1219,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
                               </span>
                               <span
                                 className={`block font-bold ${
-                                  p.hora_real_retorno ? 'text-purple-400' : 'text-amber-400 animate-pulse'
+                                  p.hora_real_retorno ? 'text-purple-400' : 'text-amber-400'
                                 }`}
                               >
                                 R: {p.hora_real_retorno || (p.sin_retorno ? 'Sin retorno' : 'Fuera...')}
@@ -1507,9 +1507,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           NO SELECTOR, NO SEARCH, NO OTHER WORKER OPTION.
           ======================================================== */}
       {showCreateModal && activeUserEmployee && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl my-8 animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#090A0D] shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-600/20 border border-indigo-500/30 rounded-lg text-indigo-400">
                   <FileText className="w-5 h-5" />
@@ -1531,7 +1531,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleCreateSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
               {formError && (
                 <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-xl text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
@@ -1786,8 +1786,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           ======================================================== */}
       {createdPapeletaConfirmation && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-400">
                   <CheckCircle2 className="w-6 h-6" />
@@ -1806,7 +1806,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-3.5 text-xs">
+            <div className="p-5 space-y-3.5 text-xs overflow-y-auto flex-1">
               <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Número de Papeleta:</span>
@@ -1872,9 +1872,9 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           VIEW DETAILS MODAL & AUDIT TRAIL
           ======================================================== */}
       {selectedPapeleta && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl my-8">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#090A0D]">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#090A0D] shrink-0">
               <div>
                 <div className="font-mono text-indigo-400 font-bold text-sm">{selectedPapeleta.code}</div>
                 <h3 className="font-bold text-base text-white">Ficha Oficial de Papeleta de Salida DRAC</h3>
@@ -1888,7 +1888,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+            <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {/* Anti-Autoaprobación Banner if viewing own pending papeleta */}
               {selectedPapeleta.status === 'PENDING_BOSS' &&
                 (selectedPapeleta.employee_dni === activeUserDni ||
@@ -1947,7 +1947,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </div>
 
               {/* Times */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3 bg-[#090A0D] rounded-xl border border-slate-800">
                   <div className="font-bold text-slate-400 text-[10px]">HORARIO ESTIMADO (SOLICITUD)</div>
                   <div className="text-white font-mono mt-1 font-bold">{selectedPapeleta.fecha}</div>
@@ -2047,7 +2047,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               )}
             </div>
 
-            <div className="p-4 bg-[#090A0D] border-t border-slate-800 flex justify-end">
+            <div className="p-4 bg-[#090A0D] border-t border-slate-800 flex justify-end shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedPapeleta(null)}
@@ -2065,8 +2065,8 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
           ======================================================== */}
       {vigilanciaModal.isOpen && vigilanciaModal.papeleta && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5 shrink-0 bg-[#090A0D]">
               <div className="flex items-center gap-2">
                 <div
                   className={`p-2 rounded-lg border ${
@@ -2108,7 +2108,7 @@ export const PapeletasModule: React.FC<PapeletasModuleProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleVigilanciaSubmit} className="space-y-3.5 text-xs">
+            <form onSubmit={handleVigilanciaSubmit} className="p-5 space-y-3.5 text-xs overflow-y-auto flex-1">
               {/* Worker Verification Details Card */}
               <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1.5">
                 <div className="flex items-center justify-between">

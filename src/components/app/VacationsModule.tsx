@@ -789,7 +789,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
         );
       case 'EN_CURSO':
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1 animate-pulse">
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>EN CURSO (Descanso Activo)</span>
           </span>
@@ -1428,7 +1428,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
                         <div
                           className={`p-2.5 rounded-lg border flex items-start gap-2 ${
                             dynamicStatus === 'EN_CURSO'
-                              ? 'bg-amber-950/40 border-amber-800 text-amber-200 animate-pulse'
+                              ? 'bg-amber-950/40 border-amber-800 text-amber-200'
                               : dynamicStatus === 'FINALIZADA'
                               ? 'bg-slate-800 border-slate-700 text-slate-300'
                               : 'bg-slate-900 border-slate-800 text-slate-500'
@@ -1596,7 +1596,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
           {/* Master Vacations Table */}
           <div className="bg-[#0F1115] border border-slate-800 rounded-xl overflow-hidden shadow-sm">
             <div className="w-full overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse table-fixed">
+              <table className="w-full min-w-[920px] text-left text-xs border-collapse">
                 <thead className="bg-[#090A0D] text-slate-400 font-medium border-b border-slate-800">
                   <tr>
                     <th className="w-[40px] px-2 py-3 text-center">#</th>
@@ -1747,10 +1747,10 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleProfileSubmit}
-            className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs max-h-[90vh] overflow-y-auto"
+            className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl text-xs max-h-[90vh] flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 rounded-lg text-indigo-400">
                   <User className="w-4 h-4" />
@@ -1769,12 +1769,13 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </button>
             </div>
 
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
             {/* Read-Only Worker Informational Card (NO WORKER SELECTOR / SEARCH) */}
             <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3.5 space-y-2">
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
                 Datos del Servidor Solicitante (Informativo No Editable):
               </span>
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-slate-400 text-[11px] block">Trabajador:</span>
                   <span className="font-bold text-white text-xs block">
@@ -1881,8 +1882,10 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               )}
             </div>
 
+            </div>
+
             {/* Footer */}
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-800 shrink-0 bg-[#090A0D]">
               <button
                 type="button"
                 onClick={() => setShowProfileRequestModal(false)}
@@ -1909,10 +1912,10 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleAttendanceProgSubmit}
-            className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[92vh] overflow-y-auto"
+            className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-2xl w-full shadow-2xl text-xs max-h-[90vh] flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 rounded-lg text-indigo-400">
                   <CalendarDays className="w-4 h-4" />
@@ -1931,6 +1934,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </button>
             </div>
 
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
             {/* Step 1: Buscador de Trabajadores con Búsqueda Avanzada */}
             <div className="space-y-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800">
               <div className="flex items-center justify-between">
@@ -2125,8 +2129,8 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               )}
 
               {/* Workers Selectable Table with Pagination */}
-              <div className="border border-slate-800 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
-                <table className="w-full text-left text-xs">
+              <div className="border border-slate-800 rounded-lg max-h-48 overflow-auto">
+                <table className="w-full min-w-[640px] text-left text-xs">
                   <thead className="bg-[#060709] text-slate-400 sticky top-0 border-b border-slate-800">
                     <tr>
                       <th className="p-2">DNI</th>
@@ -2306,8 +2310,10 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               )}
             </div>
 
+            </div>
+
             {/* Footer */}
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-800 shrink-0 bg-[#090A0D]">
               <button
                 type="button"
                 onClick={() => setShowAttendanceProgModal(false)}
@@ -2334,9 +2340,9 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleConfirmRejection}
-            className="bg-[#0F1115] border border-rose-800/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs"
+            className="bg-[#0F1115] border border-rose-800/80 rounded-2xl max-w-md w-full shadow-2xl text-xs max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5 shrink-0">
               <div className="flex items-center gap-2 text-rose-400 font-bold">
                 <XCircle className="w-4 h-4" />
                 <span>Rechazar Solicitud de Vacaciones</span>
@@ -2350,31 +2356,33 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 text-xs">
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-800 text-xs">
+                <div>
+                  <strong>Servidor:</strong> {rejectingVacation.employee_name} (DNI: {rejectingVacation.employee_dni})
+                </div>
+                <div className="mt-0.5 text-slate-400">
+                  <strong>Período:</strong> {rejectingVacation.start_date} al {rejectingVacation.end_date} (
+                  {rejectingVacation.total_days} días)
+                </div>
+              </div>
+
               <div>
-                <strong>Servidor:</strong> {rejectingVacation.employee_name} (DNI: {rejectingVacation.employee_dni})
-              </div>
-              <div className="mt-0.5 text-slate-400">
-                <strong>Período:</strong> {rejectingVacation.start_date} al {rejectingVacation.end_date} (
-                {rejectingVacation.total_days} días)
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Motivo de Rechazo / No Procedencia <span className="text-rose-400">* (Obligatorio)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Ej: El período solicitado coincide con actividades institucionales programadas y cierre de mes..."
+                  className="w-full px-3 py-2 bg-[#090A0D] text-white border border-rose-800/50 rounded-lg focus:border-rose-500 focus:outline-none"
+                />
               </div>
             </div>
 
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">
-                Motivo de Rechazo / No Procedencia <span className="text-rose-400">* (Obligatorio)</span>
-              </label>
-              <textarea
-                rows={3}
-                required
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                placeholder="Ej: El período solicitado coincide con actividades institucionales programadas y cierre de mes..."
-                className="w-full px-3 py-2 bg-[#090A0D] text-white border border-rose-800/50 rounded-lg focus:border-rose-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end gap-2 p-4 border-t border-slate-800 shrink-0 bg-[#090A0D]">
               <button
                 type="button"
                 onClick={() => setRejectingVacation(null)}
@@ -2398,8 +2406,8 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       {/* ========================================================================= */}
       {selectedVacationForAudit && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 text-xs max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl max-w-xl w-full shadow-2xl text-xs max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-800 p-5 shrink-0">
               <div className="flex items-center gap-2">
                 <History className="w-4 h-4 text-indigo-400" />
                 <h3 className="font-bold text-sm text-white">
@@ -2415,64 +2423,66 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </button>
             </div>
 
-            <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 space-y-1">
-              <div>
-                <strong>Servidor:</strong> {selectedVacationForAudit.employee_name} (DNI:{' '}
-                {selectedVacationForAudit.employee_dni})
-              </div>
-              <div>
-                <strong>Período:</strong> {selectedVacationForAudit.start_date} al {selectedVacationForAudit.end_date} (
-                {selectedVacationForAudit.total_days} días)
-              </div>
-              <div>
-                <strong>Origen:</strong>{' '}
-                {selectedVacationForAudit.origin === 'PROFILE_VACATION_REQUEST'
-                  ? 'Perfil del Trabajador'
-                  : 'Control de Asistencia / RRHH'}
-              </div>
-              <div>
-                <strong>Estado Actual:</strong> {renderStatusBadge(selectedVacationForAudit.status)}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Eventos de Auditoría Registrados:
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 space-y-1">
+                <div>
+                  <strong>Servidor:</strong> {selectedVacationForAudit.employee_name} (DNI:{' '}
+                  {selectedVacationForAudit.employee_dni})
+                </div>
+                <div>
+                  <strong>Período:</strong> {selectedVacationForAudit.start_date} al {selectedVacationForAudit.end_date} (
+                  {selectedVacationForAudit.total_days} días)
+                </div>
+                <div>
+                  <strong>Origen:</strong>{' '}
+                  {selectedVacationForAudit.origin === 'PROFILE_VACATION_REQUEST'
+                    ? 'Perfil del Trabajador'
+                    : 'Control de Asistencia / RRHH'}
+                </div>
+                <div>
+                  <strong>Estado Actual:</strong> {renderStatusBadge(selectedVacationForAudit.status)}
+                </div>
               </div>
 
-              {selectedVacationForAudit.audits && selectedVacationForAudit.audits.length > 0 ? (
-                <div className="space-y-2 divide-y divide-slate-800/60">
-                  {selectedVacationForAudit.audits.map((aud, index) => (
-                    <div key={aud.id || index} className="pt-2 text-xs space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-indigo-400">
-                          {aud.action_type || 'ACCION'} ➔ {aud.new_status}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">{aud.timestamp}</span>
-                      </div>
-                      <div className="text-slate-300">
-                        <strong>Actor:</strong> {aud.action_by_user_name} ({aud.action_by_role})
-                      </div>
-                      {aud.comment && <div className="text-slate-400 italic">"{aud.comment}"</div>}
-                      {aud.rejection_reason && (
-                        <div className="text-rose-400 font-medium">Motivo: {aud.rejection_reason}</div>
-                      )}
-                      {aud.delegation_info && (
-                        <div className="text-[11px] text-cyan-400">
-                          Acreditación: {aud.delegation_info.unidad_encargada} ({aud.delegation_info.documento})
+              <div className="space-y-3">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Eventos de Auditoría Registrados:
+                </div>
+
+                {selectedVacationForAudit.audits && selectedVacationForAudit.audits.length > 0 ? (
+                  <div className="space-y-2 divide-y divide-slate-800/60">
+                    {selectedVacationForAudit.audits.map((aud, index) => (
+                      <div key={aud.id || index} className="pt-2 text-xs space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-400">
+                            {aud.action_type || 'ACCION'} ➔ {aud.new_status}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">{aud.timestamp}</span>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-slate-500 italic py-2">
-                  Registro vacacional inicializado conforme a la normativa institucional.
-                </div>
-              )}
+                        <div className="text-slate-300">
+                          <strong>Actor:</strong> {aud.action_by_user_name} ({aud.action_by_role})
+                        </div>
+                        {aud.comment && <div className="text-slate-400 italic">"{aud.comment}"</div>}
+                        {aud.rejection_reason && (
+                          <div className="text-rose-400 font-medium">Motivo: {aud.rejection_reason}</div>
+                        )}
+                        {aud.delegation_info && (
+                          <div className="text-[11px] text-cyan-400">
+                            Acreditación: {aud.delegation_info.unidad_encargada} ({aud.delegation_info.documento})
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-slate-500 italic py-2">
+                    Registro vacacional inicializado conforme a la normativa institucional.
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-800">
+            <div className="flex justify-end p-4 border-t border-slate-800 shrink-0 bg-[#090A0D]">
               <button
                 type="button"
                 onClick={() => setSelectedVacationForAudit(null)}
@@ -2490,8 +2500,8 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
       {/* ========================================================================= */}
       {createdVacationConfirmation && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between">
+          <div className="bg-[#0F1115] border border-emerald-500/40 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 bg-emerald-950/30 border-b border-emerald-500/30 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-400">
                   <CheckCircle2 className="w-6 h-6" />
@@ -2510,7 +2520,7 @@ export const VacationsModule: React.FC<VacationsModuleProps> = ({
               </button>
             </div>
 
-            <div className="p-5 space-y-3.5 text-xs">
+            <div className="p-5 space-y-3.5 text-xs overflow-y-auto flex-1">
               <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-3.5 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Código de Solicitud:</span>

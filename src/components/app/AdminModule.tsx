@@ -63,6 +63,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   const [selectedEmpForReset, setSelectedEmpForReset] = useState<Employee | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState('123456');
   const [showResetEye, setShowResetEye] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(null);
 
   // User Edit Modal State
   const [selectedEmpForEdit, setSelectedEmpForEdit] = useState<Employee | null>(null);
@@ -245,13 +246,13 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
   return (
     <div className="space-y-6">
       {/* Sub navigation */}
-      <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-1.5 flex space-x-1">
+      <div className="bg-[#090A0D] border border-slate-800 rounded-lg p-1.5 flex flex-wrap gap-1">
         <button
           onClick={() => setActiveSubTab('USERS')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all ${
             activeSubTab === 'USERS'
-              ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           Gestión de Usuarios DRAC ({employees.length})
@@ -260,8 +261,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           onClick={() => setActiveSubTab('ROLES')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all ${
             activeSubTab === 'ROLES'
-              ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           Roles y Permisos
@@ -270,8 +271,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           onClick={() => setActiveSubTab('AUDIT')}
           className={`px-3.5 py-1.5 text-xs font-semibold rounded transition-all ${
             activeSubTab === 'AUDIT'
-              ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-600'
-              : 'text-slate-400 hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
           }`}
         >
           Auditoría de Acciones y Cambios ({auditLogs.length})
@@ -349,7 +350,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           ) : (
             <div className="space-y-3">
               <div className="overflow-x-auto border border-slate-800 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[860px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <SortableHeader
@@ -489,7 +490,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-1 bg-[#060709] p-1 rounded-lg border border-slate-800">
+            <div className="flex flex-wrap items-center gap-1 bg-[#060709] p-1 rounded-lg border border-slate-800">
               <button
                 onClick={() => setRolesViewTab('MATRIX')}
                 className={`px-3 py-1.5 text-xs font-semibold rounded transition-all flex items-center gap-1.5 ${
@@ -561,7 +562,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
 
               {/* Matrix Table */}
               <div className="overflow-x-auto border border-slate-800/80 rounded-lg">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[860px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <th className="p-3">Módulo / Función Institucional</th>
@@ -847,7 +848,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 return (
                   <div className="space-y-3">
                     <div className="overflow-x-auto border border-slate-800/80 rounded-lg">
-                      <table className="w-full text-left text-xs border-collapse">
+                      <table className="w-full min-w-[860px] text-left text-xs border-collapse">
                         <thead>
                           <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                             <th className="p-3">Servidor Público</th>
@@ -1080,8 +1081,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           {/* ROLE MODIFICATION MODAL */}
           {roleModalEmp && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-              <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="bg-[#090A0D] border border-slate-800 rounded-xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4 shrink-0">
                   <div className="flex items-center gap-2">
                     <UserCog className="w-5 h-5 text-indigo-400" />
                     <h3 className="font-bold text-sm text-white">
@@ -1096,48 +1097,50 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   </button>
                 </div>
 
-                <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800 space-y-1">
-                  <div className="font-bold text-white text-xs">
-                    {roleModalEmp.first_name} {roleModalEmp.last_name}
+                <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                  <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-800 space-y-1">
+                    <div className="font-bold text-white text-xs">
+                      {roleModalEmp.first_name} {roleModalEmp.last_name}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      DNI: <span className="text-indigo-300 font-mono">{roleModalEmp.dni}</span> | Cargo: {roleModalEmp.cargo_name}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Área: {roleModalEmp.area_name || roleModalEmp.dependencia_name}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    DNI: <span className="text-indigo-300 font-mono">{roleModalEmp.dni}</span> | Cargo: {roleModalEmp.cargo_name}
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Seleccionar Rol Funcional Principal:
+                    </label>
+                    <select
+                      value={selectedAssignedRole}
+                      onChange={(e) => setSelectedAssignedRole(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 font-semibold"
+                    >
+                      <option value="TRABAJADOR">TRABAJADOR (Servidor Base)</option>
+                      <option value="JEFE">JEFE (Responsable / Jefe de Área)</option>
+                      <option value="HR_ADMIN">HR_ADMIN (Jefe de Recursos Humanos)</option>
+                      <option value="DIRECTOR_GENERAL">DIRECTOR_GENERAL (Director Regional)</option>
+                      <option value="CONTROL_ASISTENCIA">CONTROL_ASISTENCIA (Operador de Asistencia)</option>
+                      <option value="VIGILANCIA">VIGILANCIA (Garita Principal)</option>
+                      <option value="ADMIN_GENERAL">ADMIN_GENERAL (Administrador del Sistema)</option>
+                    </select>
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Área: {roleModalEmp.area_name || roleModalEmp.dependencia_name}
+
+                  <div className="p-3 bg-amber-950/40 border border-amber-800/40 rounded-lg text-[11px] text-amber-300 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5" />
+                      <span>Nota sobre Encargaturas Temporales:</span>
+                    </div>
+                    <p className="text-[10px] text-amber-200/90 leading-relaxed">
+                      Si este trabajador asume transitoriamente una jefatura, regístrela en el módulo <strong>Encargaturas Temporales</strong> con su resolución de sustento. El sistema transferirá las funciones automáticamente durante la vigencia sin necesidad de modificar permanentemente su rol base aquí.
+                    </p>
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Seleccionar Rol Funcional Principal:
-                  </label>
-                  <select
-                    value={selectedAssignedRole}
-                    onChange={(e) => setSelectedAssignedRole(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#0F1115] text-slate-200 border border-slate-800 rounded text-xs focus:outline-none focus:border-indigo-600 font-semibold"
-                  >
-                    <option value="TRABAJADOR">TRABAJADOR (Servidor Base)</option>
-                    <option value="JEFE">JEFE (Responsable / Jefe de Área)</option>
-                    <option value="HR_ADMIN">HR_ADMIN (Jefe de Recursos Humanos)</option>
-                    <option value="DIRECTOR_GENERAL">DIRECTOR_GENERAL (Director Regional)</option>
-                    <option value="CONTROL_ASISTENCIA">CONTROL_ASISTENCIA (Operador de Asistencia)</option>
-                    <option value="VIGILANCIA">VIGILANCIA (Garita Principal)</option>
-                    <option value="ADMIN_GENERAL">ADMIN_GENERAL (Administrador del Sistema)</option>
-                  </select>
-                </div>
-
-                <div className="p-3 bg-amber-950/40 border border-amber-800/40 rounded-lg text-[11px] text-amber-300 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <Info className="w-3.5 h-3.5" />
-                    <span>Nota sobre Encargaturas Temporales:</span>
-                  </div>
-                  <p className="text-[10px] text-amber-200/90 leading-relaxed">
-                    Si este trabajador asume transitoriamente una jefatura, regístrela en el módulo <strong>Encargaturas Temporales</strong> con su resolución de sustento. El sistema transferirá las funciones automáticamente durante la vigencia sin necesidad de modificar permanentemente su rol base aquí.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-800 shrink-0">
                   <button
                     type="button"
                     onClick={() => setRoleModalEmp(null)}
@@ -1246,7 +1249,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
           ) : (
             <div className="space-y-3">
               <div className="overflow-x-auto border border-slate-800 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full min-w-[860px] text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#060709] text-slate-400 font-semibold">
                       <SortableHeader
@@ -1316,8 +1319,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       {/* MODAL: RESTABLECER CONTRASEÑA (ADMINISTRADOR) */}
       {selectedEmpForReset && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/50 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
                   <Key className="w-5 h-5" />
@@ -1328,14 +1331,17 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 </div>
               </div>
               <button
-                onClick={() => setSelectedEmpForReset(null)}
+                onClick={() => {
+                  setResetPasswordError(null);
+                  setSelectedEmpForReset(null);
+                }}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 space-y-4 text-xs">
+            <div className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-xl flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-sm border border-indigo-500/30">
                   {selectedEmpForReset.first_name[0]}
@@ -1371,7 +1377,10 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   <input
                     type={showResetEye ? 'text' : 'password'}
                     value={resetPasswordValue}
-                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    onChange={(e) => {
+                      setResetPasswordValue(e.target.value);
+                      if (resetPasswordError) setResetPasswordError(null);
+                    }}
                     placeholder="Ej: 123456"
                     className="w-full bg-[#060709] border border-slate-800 rounded-lg pl-3 pr-10 py-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
                   />
@@ -1383,13 +1392,19 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                     {showResetEye ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {resetPasswordError && (
+                  <p className="text-[11px] text-rose-400 font-medium">{resetPasswordError}</p>
+                )}
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/30 flex items-center justify-end gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setSelectedEmpForReset(null)}
+                onClick={() => {
+                  setResetPasswordError(null);
+                  setSelectedEmpForReset(null);
+                }}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
               >
                 Cancelar
@@ -1398,9 +1413,10 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 type="button"
                 onClick={async () => {
                   if (!resetPasswordValue.trim()) {
-                    alert('Por favor ingrese una contraseña temporal.');
+                    setResetPasswordError('Por favor ingrese una contraseña temporal válida.');
                     return;
                   }
+                  const targetUsername = selectedEmpForReset.username || selectedEmpForReset.dni;
                   const { hash, salt } = await hashPassword(resetPasswordValue.trim());
                   if (onEditEmployee) {
                     onEditEmployee({
@@ -1412,8 +1428,9 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                       last_password_change: undefined,
                     });
                   }
+                  setResetPasswordError(null);
                   setSelectedEmpForReset(null);
-                  alert(`✅ Contraseña temporal restablecida con éxito para @${selectedEmpForReset.username || selectedEmpForReset.dni}.\nSe solicitará cambio obligatorio en su próximo inicio de sesión.`);
+                  setAdminToast(`Contraseña temporal restablecida para @${targetUsername}. Se solicitará cambio en el próximo ingreso.`);
                 }}
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-amber-600/20"
               >
@@ -1428,8 +1445,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
       {/* EDIT USER ROLES AND STATUS MODAL */}
       {selectedEmpForEdit && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
                   <UserCog className="w-5 h-5" />
@@ -1465,7 +1482,7 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                 }
                 setSelectedEmpForEdit(null);
               }}
-              className="p-5 space-y-4"
+              className="p-5 space-y-4 overflow-y-auto flex-1"
             >
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -1509,8 +1526,8 @@ export const AdminModule: React.FC<AdminModuleProps> = ({
                   onChange={(e) => setEditUserActive(e.target.value === 'ACTIVE')}
                   className="w-full bg-[#060709] border border-slate-800 rounded-lg p-2.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
                 >
-                  <option value="ACTIVE">🟢 Activo (Acceso Autorizado)</option>
-                  <option value="INACTIVE">🔴 Inactivo (Acceso Suspendido / Baja)</option>
+                  <option value="ACTIVE">Activo (Acceso Autorizado)</option>
+                  <option value="INACTIVE">Inactivo (Acceso Suspendido / Baja)</option>
                 </select>
               </div>
 

@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('device:config-changed', handler);
   },
 
-  // Integración BioTime Platform Service Console (C:\BioTime)
+  // Integración BioTime Platform Service Console / BioTime PRO
   checkBioTimeStatus: (params = {}) => {
     return ipcRenderer.invoke('biotime:check-status', params);
   },
@@ -55,6 +55,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   syncBioTimePunches: (params = {}) => {
     return ipcRenderer.invoke('biotime:sync-punches', params);
+  },
+  getBioTimeConfig: () => {
+    return ipcRenderer.invoke('biotime:get-config');
+  },
+  saveBioTimeConfig: (config = {}) => {
+    return ipcRenderer.invoke('biotime:save-config', config);
+  },
+  detectBioTimePorts: (params = {}) => {
+    return ipcRenderer.invoke('biotime:detect-ports', params);
+  },
+  testBioTimeConnection: (params = {}) => {
+    return ipcRenderer.invoke('biotime:test-connection', params);
+  },
+  queryBioTimeDevices: (params = {}) => {
+    return ipcRenderer.invoke('biotime:query-devices', params);
+  },
+  downloadBioTimePunches: (params = {}) => {
+    return ipcRenderer.invoke('biotime:download-punches', params);
   },
   queryZkDeviceUsers: (params = {}) => {
     return ipcRenderer.invoke('zk:query-device-users', params);

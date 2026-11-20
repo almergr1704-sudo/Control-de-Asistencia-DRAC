@@ -77,6 +77,7 @@ export const App: React.FC = () => {
     return 'dash_overview';
   });
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
   // Authentication & Active Profile State
   const [employees, setEmployees] = useState<Employee[]>(() => {
@@ -654,9 +655,11 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         onResetData={handleResetData}
         onToggleSidebarMobile={() => setIsOpenMobile((prev) => !prev)}
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebarDesktop={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-w-0">
         {/* Left Navigation Sidebar */}
         <Sidebar
           activeView={activeView}
@@ -664,11 +667,17 @@ export const App: React.FC = () => {
           activeRole={activeRole}
           isOpenMobile={isOpenMobile}
           setIsOpenMobile={setIsOpenMobile}
+          isCollapsedDesktop={isSidebarCollapsed}
+          onToggleCollapseDesktop={() => setIsSidebarCollapsed((prev) => !prev)}
         />
 
         {/* Main Content Area */}
-        <main className="flex-1 md:pl-64 overflow-y-auto min-h-[calc(100vh-65px)] p-4 sm:p-6 lg:p-8 bg-[#090A0D]">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main
+          className={`flex-1 min-w-0 ${
+            isSidebarCollapsed ? 'md:pl-[72px]' : 'md:pl-64'
+          } transition-all duration-200 overflow-y-auto min-h-[calc(100vh-65px)] p-4 sm:p-6 lg:p-8 bg-[#090A0D]`}
+        >
+          <div className="max-w-7xl mx-auto space-y-6 min-w-0">
             {/* VIEW ROUTER */}
             {activeView === 'dash_overview' && (
               <OperationalDashboard
@@ -929,6 +938,7 @@ export const App: React.FC = () => {
                 employees={employees}
                 activeRole={activeRole}
                 activeSubView={activeView}
+                onSelectView={handleSelectView}
                 onRefreshDevices={loadServerData}
                 onRefreshPunches={loadServerData}
               />
