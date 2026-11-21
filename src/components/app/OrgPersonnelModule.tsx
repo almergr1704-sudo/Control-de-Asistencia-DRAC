@@ -66,7 +66,12 @@ import {
   Encargatura,
   PapeletaSalida,
   DispositivoZkTeco,
+  MarcacionRaw,
+  AttendanceRecord,
+  Vacacion,
+  ConsolidatedEmployeeProfile,
 } from '../../types';
+import { getApiUrl } from '../../utils/apiConfig';
 import { syncEmployeeToDevice, disableUserOnDevice } from '../../utils/zktecoEngine';
 import { DataPolicyConfirmModal, DataPolicyConfirmConfig } from './DataPolicyModal';
 import { getEmployeeAssignedRoles } from '../../utils/encargaturaUtils';
@@ -108,6 +113,9 @@ interface OrgPersonnelModuleProps {
   encargaturas?: Encargatura[];
   papeletas?: PapeletaSalida[];
   devices?: DispositivoZkTeco[];
+  rawPunches?: MarcacionRaw[];
+  attendance?: AttendanceRecord[];
+  vacaciones?: Vacacion[];
 
   onAddDependencia: (dep: Omit<Dependencia, 'id' | 'created_at'>) => void;
   onEditDependencia: (dep: Dependencia) => void;
@@ -152,6 +160,9 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
   encargaturas = [],
   papeletas = [],
   devices = [],
+  rawPunches = [],
+  attendance = [],
+  vacaciones = [],
   onAddDependencia,
   onEditDependencia,
   onDeleteDependencia,
@@ -633,7 +644,148 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
 
   // Detail Modal for Employee (Directorio de Personal - Ficha Integral)
   const [selectedEmpForDetail, setSelectedEmpForDetail] = useState<Employee | null>(null);
+  const [empProfileData, setEmpProfileData] = useState<ConsolidatedEmployeeProfile | null>(null);
+  const [empProfileLoading, setEmpProfileLoading] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'GENERAL' | 'BIOMETRICO' | 'ASISTENCIA'>('GENERAL');
   const [openEmpActionMenuId, setOpenEmpActionMenuId] = useState<string | null>(null);
+
+  const canViewSensitivePersonal = [
+    'ADMIN_GENERAL',
+    'HR_ADMIN',
+    'JEFE_RRHH',
+    'DIRECTOR_GENERAL',
+    'CONTROL_ASISTENCIA',
+    'JEFE',
+    'SUPERVISOR',
+  ].includes(activeRole);
+
+  React.useEffect(() => {
+    if (!selectedEmpForDetail) {
+      setEmpProfileData(null);
+      return;
+    }
+    setProfileModalTab('GENERAL');
+    let cancelled = false;
+    const emp = selectedEmpForDetail;
+
+    const buildFallbackProfile = (): ConsolidatedEmployeeProfile => {
+      const empPunches = rawPunches
+        .filter(
+          (p) =>
+            p.employee_id === emp.id ||
+            p.employee_dni === emp.dni ||
+            (emp.zkteco_pin && p.employee_code === emp.zkteco_pin)
+        )
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+      const empAtt = attendance
+        .filter((a) => a.employee_id === emp.id || a.employee_dni === emp.dni)
+        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+      const empPaps = papeletas.filter((p) => p.employee_id === emp.id || p.employee_dni === emp.dni);
+      const empVacs = vacaciones.filter((v) => v.employee_id === emp.id || v.employee_dni === emp.dni);
+      const assignedHor = horarios.find((h) => h.id === emp.schedule_id) || horarios[0];
+      const entradas = empPunches.filter((p) => p.punch_state !== 1 && p.punch_type !== 'CHECK_OUT').length;
+      const salidas = empPunches.length - entradas;
+      const diasAsistencia = new Set(empAtt.filter((a) => a.status !== 'ABSENT').map((a) => a.fecha)).size;
+      const tardanzaDias = empAtt.filter((a) => a.status === 'LATE' || (a.net_tardiness_minutes || 0) > 0).length;
+      const tardanzaMin = empAtt.reduce((s, a) => s + Number(a.net_tardiness_minutes || a.total_tardiness_minutes || 0), 0);
+      const inasistencias = empAtt.filter((a) => a.status === 'ABSENT').length;
+      const horas = empAtt.reduce((s, a) => s + Number(a.total_effective_hours ?? 0), 0);
+      const depMeta = dependencias.find((d) => d.id === emp.dependencia_id);
+      return {
+        personal: {
+          id: emp.id,
+          dni: emp.dni,
+          codigo_drac: emp.codigo_trabajador || '',
+          first_name: emp.first_name,
+          last_name: emp.last_name,
+          full_name: normalizePersonName(`${emp.first_name || ''} ${emp.last_name || ''}`.trim()),
+          email: emp.email || '',
+          phone: canViewSensitivePersonal ? emp.phone || '' : undefined,
+          active: emp.active !== false,
+          hire_date: emp.hire_date || null,
+        },
+        institucional: {
+          sede_dependencia: emp.dependencia_name || depMeta?.name || 'Sede Central DRAC',
+          dependencia_tipo: depMeta?.type || 'SEDE_CENTRAL',
+          agencia_agraria: depMeta?.type === 'AGENCIA_AGRARIA' ? emp.dependencia_name || depMeta.name : null,
+          direccion_organo: emp.direccion_organo_name || 'Sin Dirección Asignada',
+          area_oficina: emp.area_name || 'Sin Área',
+          subarea: emp.subarea_name || null,
+          cargo: emp.position || 'Servidor Público',
+          regimen_laboral: emp.regimen_laboral,
+          condicion_laboral: emp.condicion_laboral,
+          supervisor_name: emp.supervisor_name || null,
+          horario_asignado: {
+            id: assignedHor?.id || emp.schedule_id || 'hor-01',
+            code: assignedHor?.code,
+            name: emp.schedule_name || assignedHor?.name || 'Horario Institucional DRAC',
+            turno1: assignedHor?.turno1_name || null,
+            turno2: assignedHor?.turno2_name || null,
+            working_days: assignedHor?.working_days,
+          },
+        },
+        biometrico: {
+          pin_principal: emp.zkteco_pin || emp.biometric_user_id || emp.dni,
+          estado_vinculacion: emp.biometric_sync_status || (emp.zkteco_pin ? 'SINCRONIZADO' : 'NO_REGISTRADO'),
+          fecha_vinculacion: emp.biometric_last_sync || null,
+          dispositivos_vinculados: emp.biometric_sync_device_id
+            ? [
+                {
+                  id: `${emp.biometric_sync_device_id}__${emp.zkteco_pin || emp.dni}`,
+                  device_id: emp.biometric_sync_device_id,
+                  device_sn:
+                    devices.find((d) => d.id === emp.biometric_sync_device_id)?.serial_number || 'AEH2223460040',
+                  device_name: emp.biometric_sync_device_name || 'Reloj Biométrico DRAC',
+                  pin: emp.zkteco_pin || emp.biometric_user_id || emp.dni,
+                  link_status: 'VINCULADO',
+                  linked_at: emp.biometric_last_sync || null,
+                  present_on_device: true,
+                },
+              ]
+            : [],
+        },
+        asistencia: {
+          resumen: {
+            total_marcaciones: empPunches.length,
+            entradas,
+            salidas,
+            dias_asistencia: diasAsistencia,
+            tardanzas_dias: tardanzaDias,
+            tardanzas_minutos_netos: tardanzaMin,
+            inasistencias,
+            horas_trabajadas: Number(horas.toFixed(1)),
+            papeletas_total: empPaps.length,
+            vacaciones_total: empVacs.length,
+          },
+          marcaciones_recientes: empPunches.slice(0, 12),
+          asistencia_reciente: empAtt.slice(0, 12),
+          papeletas: empPaps.slice(0, 10),
+          vacaciones: empVacs.slice(0, 10),
+        },
+      };
+    };
+
+    setEmpProfileData(buildFallbackProfile());
+    setEmpProfileLoading(true);
+    fetch(
+      getApiUrl(`/api/employees/${encodeURIComponent(emp.id)}/profile?viewerRole=${encodeURIComponent(activeRole)}`)
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        const resolvedProfile = json?.data || json?.profile;
+        if (!cancelled && json?.success && resolvedProfile) {
+          setEmpProfileData(resolvedProfile);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setEmpProfileLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEmpForDetail, activeRole, rawPunches, attendance, papeletas, vacaciones, horarios, devices, dependencias]);
 
   // Biometric Synchronization state
   const [syncingEmpId, setSyncingEmpId] = useState<string | null>(null);
@@ -3922,18 +4074,19 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
       {/* MODAL: FICHA INTEGRAL DEL SERVIDOR DRAC */}
       {selectedEmpForDetail && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="bg-[#0F1115] border border-slate-800 rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/60 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold text-base border border-indigo-500/30">
                   {selectedEmpForDetail.first_name[0]}
                   {selectedEmpForDetail.last_name[0]}
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-bold text-base text-white">
-                      {selectedEmpForDetail.first_name} {selectedEmpForDetail.last_name}
+                      {empProfileData?.personal.full_name ||
+                        `${selectedEmpForDetail.first_name} ${selectedEmpForDetail.last_name}`}
                     </h3>
                     <span
                       className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
@@ -3944,15 +4097,24 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                     >
                       {selectedEmpForDetail.active ? 'ACTIVO' : 'INACTIVO'}
                     </span>
+                    {empProfileLoading && (
+                      <span className="text-[10px] text-indigo-300 font-mono flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Actualizando ficha...
+                      </span>
+                    )}
                   </div>
-                  <div className="text-xs text-slate-400 flex items-center gap-3 font-mono mt-0.5">
+                  <div className="text-xs text-slate-400 flex flex-wrap items-center gap-3 font-mono mt-0.5">
                     <span className="text-indigo-400 font-bold">
-                      Cód: {selectedEmpForDetail.codigo_trabajador || 'DRAC-2026'}
+                      Cód: {empProfileData?.personal.codigo_drac || selectedEmpForDetail.codigo_trabajador || 'DRAC-2026'}
                     </span>
                     <span>•</span>
                     <span>DNI: {selectedEmpForDetail.dni}</span>
                     <span>•</span>
                     <span className="text-cyan-400 font-semibold">@{selectedEmpForDetail.username || selectedEmpForDetail.dni}</span>
+                    <span>•</span>
+                    <span className="text-emerald-400 font-semibold">
+                      PIN Reloj: {empProfileData?.biometrico.pin_principal || selectedEmpForDetail.zkteco_pin || selectedEmpForDetail.dni}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3964,232 +4126,380 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
               </button>
             </div>
 
+            {/* Modal Navigation Tabs */}
+            <div className="px-6 pt-3 border-b border-slate-800 bg-[#090A0D] flex gap-2 overflow-x-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setProfileModalTab('GENERAL')}
+                className={`px-3.5 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
+                  profileModalTab === 'GENERAL'
+                    ? 'border-indigo-500 text-indigo-300'
+                    : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                1. Personal e Institucional
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileModalTab('BIOMETRICO')}
+                className={`px-3.5 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
+                  profileModalTab === 'BIOMETRICO'
+                    ? 'border-cyan-500 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                2. Vinculación Biométrica ({empProfileData?.biometrico.dispositivos_vinculados.length || 0})
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileModalTab('ASISTENCIA')}
+                className={`px-3.5 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-colors ${
+                  profileModalTab === 'ASISTENCIA'
+                    ? 'border-emerald-500 text-emerald-300'
+                    : 'border-transparent text-slate-400 hover:text-white'
+                }`}
+              >
+                3. Asistencia, Tardanzas y Licencias ({empProfileData?.asistencia.resumen.total_marcaciones || 0})
+              </button>
+            </div>
+
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-5 text-xs">
-              {/* Sección 1: Ubicación Orgánica Institucional */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-indigo-400 font-bold uppercase tracking-wider text-[10px]">
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>Ubicación Orgánica en la DRAC</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Dependencia Jerárquica:</span>
-                    <span className="font-semibold text-white text-xs mt-0.5 block">{selectedEmpForDetail.dependencia_name}</span>
+              {profileModalTab === 'GENERAL' && (
+                <>
+                  {/* Sección 1: Información Personal */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-sky-400 font-bold uppercase tracking-wider text-[10px]">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Información Personal y de Contacto</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Nombres Completos:</span>
+                        <span className="font-semibold text-white text-xs mt-0.5 block">
+                          {selectedEmpForDetail.first_name} {selectedEmpForDetail.last_name}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">DNI / Documento:</span>
+                        <span className="font-mono font-bold text-indigo-300 text-xs mt-0.5 block">{selectedEmpForDetail.dni}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Código DRAC:</span>
+                        <span className="font-mono font-bold text-cyan-300 text-xs mt-0.5 block">
+                          {empProfileData?.personal.codigo_drac || selectedEmpForDetail.codigo_trabajador}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Correo Institucional:</span>
+                        <span className="text-slate-200 text-xs mt-0.5 block break-all">
+                          {selectedEmpForDetail.email || 'Sin correo'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Teléfono de Contacto:</span>
+                        <span className="text-slate-200 font-mono text-xs mt-0.5 block">
+                          {canViewSensitivePersonal
+                            ? empProfileData?.personal.phone || selectedEmpForDetail.phone || 'No registrado'
+                            : 'Restringido por rol'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Fecha de Ingreso:</span>
+                        <span className="font-mono text-slate-300 text-xs mt-0.5 block">
+                          {selectedEmpForDetail.hire_date || 'No registrada'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Dirección / Órgano:</span>
-                    <span className="font-semibold text-white text-xs mt-0.5 block">
-                      {selectedEmpForDetail.direccion_organo_name || 'Sin Dirección Asignada'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Área / Oficina Agraria:</span>
-                    <span className="font-semibold text-white text-xs mt-0.5 block">{selectedEmpForDetail.area_name || 'Sin Área'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Subárea / Sector:</span>
-                    <span className="font-semibold text-slate-300 text-xs mt-0.5 block">
-                      {selectedEmpForDetail.subarea_name || 'N/A (Asignación General)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Sección 2: Régimen y Cargo Laboral */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-emerald-400 font-bold uppercase tracking-wider text-[10px]">
-                  <Briefcase className="w-3.5 h-3.5" />
-                  <span>Situación Laboral & Cargo</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
-                  <div className="md:col-span-2">
-                    <span className="text-slate-400 text-[11px] block">Cargo Institucional (Puesto):</span>
-                    <span className="font-bold text-white text-xs mt-0.5 block">{selectedEmpForDetail.position}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Régimen Laboral:</span>
-                    <span className="px-2 py-0.5 bg-slate-800 text-indigo-300 font-mono font-bold rounded border border-slate-700 inline-block mt-0.5 text-[11px]">
-                      {selectedEmpForDetail.regimen_laboral}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Condición Laboral:</span>
-                    <span className="font-semibold text-slate-300 text-xs mt-0.5 block">{selectedEmpForDetail.condicion_laboral}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Fecha de Ingreso:</span>
-                    <span className="font-mono text-slate-300 text-xs mt-0.5 block">{selectedEmpForDetail.hire_date || 'No registrada'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">PIN Biométrico ZKTeco:</span>
-                    <span className="font-mono text-emerald-400 font-bold text-xs mt-0.5 block">
-                      {selectedEmpForDetail.zkteco_pin || selectedEmpForDetail.dni}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sección 3: Gobernanza RBAC y VoBo */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider text-[10px]">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Perfil del Sistema, Seguridad & Aprobadores</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Perfil Principal & Secundarios:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {getEmployeeAssignedRoles(selectedEmpForDetail).map((r) => {
-                        const rDef = SYSTEM_ROLES_CATALOG.find((x) => x.role === r) || SYSTEM_ROLES_CATALOG[0];
-                        return (
-                          <span
-                            key={r}
-                            className={`px-2 py-0.5 text-[10px] font-bold rounded border inline-flex items-center gap-1 ${rDef.color}`}
-                          >
-                            <Shield className="w-2.5 h-2.5" />
-                            <span>{rDef.badge}</span>
+                  {/* Sección 2: Información Institucional y Horario */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-indigo-400 font-bold uppercase tracking-wider text-[10px]">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>Información Institucional, Régimen y Horario Asignado</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Sede / Dependencia:</span>
+                        <span className="font-semibold text-white text-xs mt-0.5 block">
+                          {empProfileData?.institucional.sede_dependencia || selectedEmpForDetail.dependencia_name}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Agencia Agraria:</span>
+                        <span className="font-semibold text-slate-200 text-xs mt-0.5 block">
+                          {empProfileData?.institucional.agencia_agraria || 'Sede Central / No aplica'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Dirección / Órgano:</span>
+                        <span className="font-semibold text-white text-xs mt-0.5 block">
+                          {empProfileData?.institucional.direccion_organo || selectedEmpForDetail.direccion_organo_name || 'Sin Dirección Asignada'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Área / Oficina:</span>
+                        <span className="font-semibold text-white text-xs mt-0.5 block">
+                          {empProfileData?.institucional.area_oficina || selectedEmpForDetail.area_name || 'Sin Área'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Subárea / Sector:</span>
+                        <span className="font-semibold text-slate-300 text-xs mt-0.5 block">
+                          {empProfileData?.institucional.subarea || selectedEmpForDetail.subarea_name || 'N/A'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Cargo Institucional:</span>
+                        <span className="font-bold text-indigo-300 text-xs mt-0.5 block">
+                          {empProfileData?.institucional.cargo || selectedEmpForDetail.position}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Régimen Laboral:</span>
+                        <span className="px-2 py-0.5 bg-slate-800 text-indigo-300 font-mono font-bold rounded border border-slate-700 inline-block mt-0.5 text-[11px]">
+                          {selectedEmpForDetail.regimen_laboral}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Condición Laboral:</span>
+                        <span className="font-semibold text-slate-300 text-xs mt-0.5 block">{selectedEmpForDetail.condicion_laboral}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Horario Asignado:</span>
+                        <span className="font-semibold text-emerald-300 text-xs mt-0.5 block">
+                          {empProfileData?.institucional.horario_asignado.name || selectedEmpForDetail.schedule_name || 'Horario Institucional'}
+                        </span>
+                        {(empProfileData?.institucional.horario_asignado.turno1 || empProfileData?.institucional.horario_asignado.turno2) && (
+                          <span className="text-[10px] text-slate-400 font-mono block">
+                            {[empProfileData?.institucional.horario_asignado.turno1, empProfileData?.institucional.horario_asignado.turno2]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Jefe Inmediato Asignado (VoBo):</span>
-                    <div className="font-bold text-amber-300 text-xs mt-1 flex items-center gap-1.5">
-                      <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>{selectedEmpForDetail.supervisor_name || 'Asignación Jerárquica Directa'}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Estado de Primer Ingreso:</span>
-                    <div className="mt-1">
-                      {selectedEmpForDetail.primer_ingreso === 'PENDIENTE' || selectedEmpForDetail.password_change_required ? (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-semibold inline-block">
-                          Pendiente de cambio de clave
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold inline-block">
-                          Contraseña definitiva activa
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Correo Institucional & Teléfono:</span>
-                    <span className="text-slate-300 text-xs mt-0.5 block">
-                      {selectedEmpForDetail.email || 'Sin correo'} {selectedEmpForDetail.phone ? `• Tel: ${selectedEmpForDetail.phone}` : ''}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Sección 4: Sincronización Biométrica ZKTeco */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>Sincronización Biométrica ZKTeco (Maestro DRAC → Reloj)</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-slate-400">Estado:</span>
-                    <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-1 ${
-                        selectedEmpForDetail.biometric_sync_status === 'SINCRONIZADO'
-                          ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
-                          : selectedEmpForDetail.biometric_sync_status === 'ERROR'
-                          ? 'bg-rose-500/10 text-rose-300 border border-rose-500/30'
-                          : selectedEmpForDetail.biometric_sync_status === 'DESACTIVADO'
-                          ? 'bg-slate-500/10 text-slate-400 border border-slate-700'
-                          : 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          selectedEmpForDetail.biometric_sync_status === 'SINCRONIZADO'
-                            ? 'bg-emerald-400'
-                            : selectedEmpForDetail.biometric_sync_status === 'ERROR'
-                            ? 'bg-rose-400'
-                            : 'bg-amber-400'
-                        }`}
-                      />
-                      {selectedEmpForDetail.biometric_sync_status || (selectedEmpForDetail.active ? 'SINCRONIZADO' : 'DESACTIVADO')}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-800 space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-400 text-[11px] block">User ID en Reloj:</span>
-                      <span className="font-mono text-cyan-300 font-bold text-xs mt-0.5 block">
-                        {selectedEmpForDetail.biometric_user_id ||
-                          selectedEmpForDetail.codigo_trabajador.replace(/[^0-9]/g, '').padStart(6, '0') ||
-                          selectedEmpForDetail.dni}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[11px] block">Reloj Asignado:</span>
-                      <span className="font-semibold text-slate-200 text-xs mt-0.5 block">
-                        {selectedEmpForDetail.biometric_sync_device_name ||
-                          devices.find((d) => d.dependencia_id === selectedEmpForDetail.dependencia_id)?.name ||
-                          'ZKTeco Sede Central'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-[11px] block">Última Sincronización:</span>
-                      <span className="font-mono text-slate-300 text-xs mt-0.5 block">
-                        {selectedEmpForDetail.biometric_last_sync || '20/08/2026 09:32:00'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {syncFeedback && (
-                    <div
-                      className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
-                        syncFeedback.type === 'SUCCESS'
-                          ? 'bg-emerald-950/30 border-emerald-800 text-emerald-200'
-                          : syncFeedback.type === 'ERROR'
-                          ? 'bg-rose-950/30 border-rose-800 text-rose-200'
-                          : 'bg-indigo-950/30 border-indigo-800 text-indigo-200'
-                      }`}
-                    >
-                      {syncFeedback.type === 'SUCCESS' ? (
-                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                      )}
-                      <div className="space-y-1">
-                        <p className="font-bold">{syncFeedback.message}</p>
-                        {syncFeedback.device_name && (
-                          <p className="text-[11px] text-slate-400 font-mono">
-                            Dispositivo: {syncFeedback.device_name} • User ID: {syncFeedback.biometric_user_id} • Fecha:{' '}
-                            {syncFeedback.timestamp}
-                          </p>
                         )}
                       </div>
                     </div>
-                  )}
+                  </div>
 
-                  {canManageOrg && (
-                    <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] font-bold text-slate-300">Destino:</label>
-                        <select
-                          value={selectedSyncDeviceId}
-                          onChange={(e) => setSelectedSyncDeviceId(e.target.value)}
-                          className="bg-[#060709] border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:border-cyan-500 focus:outline-none"
-                        >
-                          {devices.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name} ({d.ip_address}:{d.port})
-                            </option>
-                          ))}
-                        </select>
+                  {/* Gobernanza RBAC y VoBo */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-amber-400 font-bold uppercase tracking-wider text-[10px]">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Perfil del Sistema, Seguridad & Aprobadores</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/40 rounded-xl border border-slate-800/80">
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Perfil Principal & Secundarios:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {getEmployeeAssignedRoles(selectedEmpForDetail).map((r) => {
+                            const rDef = SYSTEM_ROLES_CATALOG.find((x) => x.role === r) || SYSTEM_ROLES_CATALOG[0];
+                            return (
+                              <span
+                                key={r}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded border inline-flex items-center gap-1 ${rDef.color}`}
+                              >
+                                <Shield className="w-2.5 h-2.5" />
+                                <span>{rDef.badge}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Jefe Inmediato Asignado (VoBo):</span>
+                        <div className="font-bold text-amber-300 text-xs mt-1 flex items-center gap-1.5">
+                          <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>{selectedEmpForDetail.supervisor_name || 'Asignación Jerárquica Directa'}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[11px] block">Estado de Primer Ingreso:</span>
+                        <div className="mt-1">
+                          {selectedEmpForDetail.primer_ingreso === 'PENDIENTE' || selectedEmpForDetail.password_change_required ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-semibold inline-block">
+                              Pendiente de cambio de clave
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold inline-block">
+                              Contraseña definitiva activa
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
-                      <div className="flex items-center gap-2">
-                        {selectedEmpForDetail.active && (
+              {profileModalTab === 'BIOMETRICO' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3.5 bg-slate-900/50 rounded-xl border border-slate-800">
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">PIN / User ID Principal:</span>
+                      <span className="font-mono text-cyan-300 font-bold text-sm mt-0.5 block">
+                        {empProfileData?.biometrico.pin_principal || selectedEmpForDetail.zkteco_pin || selectedEmpForDetail.dni}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Estado de Vinculación:</span>
+                      <span className="font-mono text-emerald-300 font-bold text-xs mt-0.5 block">
+                        {empProfileData?.biometrico.estado_vinculacion || selectedEmpForDetail.biometric_sync_status || 'SINCRONIZADO'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-[11px] block">Fecha de Última Vinculación:</span>
+                      <span className="font-mono text-slate-300 text-xs mt-0.5 block">
+                        {empProfileData?.biometrico.fecha_vinculacion || selectedEmpForDetail.biometric_last_sync || 'Sin registro'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lista de dispositivos vinculados */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-cyan-400 font-bold uppercase tracking-wider text-[10px]">
+                      <Fingerprint className="w-3.5 h-3.5" />
+                      <span>Dispositivos Biométricos Vinculados por Número de Serie (device_sn + PIN)</span>
+                    </div>
+                    {!empProfileData?.biometrico.dispositivos_vinculados.length ? (
+                      <div className="p-4 bg-[#090A0D] border border-slate-800 rounded-xl text-slate-400 text-center">
+                        Aún no existen vínculos por número de serie registrados en la tabla de usuarios de reloj para este trabajador.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090A0D]">
+                        <table className="w-full min-w-[600px] text-left text-[11px]">
+                          <thead className="border-b border-slate-800 text-slate-400">
+                            <tr>
+                              <th className="p-2.5">Reloj Biométrico</th>
+                              <th className="p-2.5">Número de Serie</th>
+                              <th className="p-2.5">PIN</th>
+                              <th className="p-2.5">Nombre en Reloj</th>
+                              <th className="p-2.5">Estado</th>
+                              <th className="p-2.5">Vinculado el</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60">
+                            {empProfileData.biometrico.dispositivos_vinculados.map((dv) => (
+                              <tr key={dv.id}>
+                                <td className="p-2.5 text-white font-semibold">{dv.device_name}</td>
+                                <td className="p-2.5 font-mono text-indigo-300">{dv.device_sn}</td>
+                                <td className="p-2.5 font-mono text-cyan-300 font-bold">{dv.pin}</td>
+                                <td className="p-2.5 text-slate-400 font-mono">{dv.clock_name_origin || '—'}</td>
+                                <td className="p-2.5">
+                                  <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
+                                    {dv.link_status}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 font-mono text-slate-400">{dv.linked_at ? dv.linked_at.substring(0, 19).replace('T', ' ') : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Controles Maestro DRAC -> Reloj */}
+                  <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-800 space-y-3">
+                    {syncFeedback && (
+                      <div
+                        className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 ${
+                          syncFeedback.type === 'SUCCESS'
+                            ? 'bg-emerald-950/30 border-emerald-800 text-emerald-200'
+                            : syncFeedback.type === 'ERROR'
+                            ? 'bg-rose-950/30 border-rose-800 text-rose-200'
+                            : 'bg-indigo-950/30 border-indigo-800 text-indigo-200'
+                        }`}
+                      >
+                        {syncFeedback.type === 'SUCCESS' ? (
+                          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        )}
+                        <div className="space-y-1">
+                          <p className="font-bold">{syncFeedback.message}</p>
+                          {syncFeedback.device_name && (
+                            <p className="text-[11px] text-slate-400 font-mono">
+                              Dispositivo: {syncFeedback.device_name} • User ID: {syncFeedback.biometric_user_id} • Fecha:{' '}
+                              {syncFeedback.timestamp}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {canManageOrg && (
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-[11px] font-bold text-slate-300">Destino:</label>
+                          <select
+                            value={selectedSyncDeviceId}
+                            onChange={(e) => setSelectedSyncDeviceId(e.target.value)}
+                            className="bg-[#060709] border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:border-cyan-500 focus:outline-none"
+                          >
+                            {devices.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name} ({d.ip_address}:{d.port})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {selectedEmpForDetail.active && (
+                            <button
+                              type="button"
+                              disabled={syncingEmpId === selectedEmpForDetail.id}
+                              onClick={async () => {
+                                const emp = selectedEmpForDetail;
+                                const targetDev = devices.find((d) => d.id === selectedSyncDeviceId) || devices[0];
+                                if (!targetDev) return;
+
+                                setSyncingEmpId(emp.id);
+                                setSyncFeedback(null);
+
+                                try {
+                                  const res = await syncEmployeeToDevice(emp, targetDev);
+                                  if (res.success) {
+                                    const updatedEmp: Employee = {
+                                      ...emp,
+                                      biometric_user_id: res.biometric_user_id,
+                                      biometric_sync_status: 'SINCRONIZADO',
+                                      biometric_last_sync: res.timestamp || new Date().toLocaleString('es-PE'),
+                                      biometric_sync_device_id: targetDev.id,
+                                      biometric_sync_device_name: targetDev.name,
+                                    };
+                                    onEditEmployee(updatedEmp);
+                                    setSelectedEmpForDetail(updatedEmp);
+                                    setSyncFeedback({
+                                      type: 'SUCCESS',
+                                      message: `✓ Trabajador sincronizado correctamente con ${targetDev.name}`,
+                                      biometric_user_id: res.biometric_user_id,
+                                      device_name: targetDev.name,
+                                      timestamp: res.timestamp || new Date().toLocaleString('es-PE'),
+                                    });
+                                  } else {
+                                    setSyncFeedback({
+                                      type: 'ERROR',
+                                      message: `✕ Error: ${res.message}`,
+                                    });
+                                  }
+                                } catch (err: any) {
+                                  setSyncFeedback({
+                                    type: 'ERROR',
+                                    message: `✕ Error al enviar al biométrico: ${err?.message || 'Fallo de conexión'}`,
+                                  });
+                                } finally {
+                                  setSyncingEmpId(null);
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1.5 shadow-lg shadow-cyan-600/20"
+                            >
+                              <Zap className={`w-3.5 h-3.5 ${syncingEmpId === selectedEmpForDetail.id ? 'animate-spin' : ''}`} />
+                              <span>{syncingEmpId === selectedEmpForDetail.id ? 'Enviando...' : 'Enviar al Reloj'}</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             disabled={syncingEmpId === selectedEmpForDetail.id}
@@ -4202,103 +4512,174 @@ export const OrgPersonnelModule: React.FC<OrgPersonnelModuleProps> = ({
                               setSyncFeedback(null);
 
                               try {
-                                const res = await syncEmployeeToDevice(emp, targetDev);
+                                const res = await disableUserOnDevice(emp, targetDev);
                                 if (res.success) {
                                   const updatedEmp: Employee = {
                                     ...emp,
-                                    biometric_user_id: res.biometric_user_id,
-                                    biometric_sync_status: 'SINCRONIZADO',
-                                    biometric_last_sync: res.timestamp || new Date().toLocaleString('es-PE'),
-                                    biometric_sync_device_id: targetDev.id,
-                                    biometric_sync_device_name: targetDev.name,
+                                    biometric_sync_status: 'DESACTIVADO',
+                                    biometric_last_sync: new Date().toLocaleString('es-PE'),
                                   };
                                   onEditEmployee(updatedEmp);
                                   setSelectedEmpForDetail(updatedEmp);
                                   setSyncFeedback({
-                                    type: 'SUCCESS',
-                                    message: `✓ Trabajador sincronizado correctamente con ${targetDev.name}`,
-                                    biometric_user_id: res.biometric_user_id,
+                                    type: 'INFO',
+                                    message: `Trabajador desactivado en el terminal ${targetDev.name}`,
+                                    biometric_user_id: emp.biometric_user_id || emp.dni,
                                     device_name: targetDev.name,
-                                    timestamp: res.timestamp || new Date().toLocaleString('es-PE'),
+                                    timestamp: new Date().toLocaleString('es-PE'),
                                   });
                                 } else {
                                   setSyncFeedback({
                                     type: 'ERROR',
-                                    message: `✕ Error: ${res.message}`,
+                                    message: `Error al desactivar: ${res.message}`,
                                   });
                                 }
                               } catch (err: any) {
                                 setSyncFeedback({
                                   type: 'ERROR',
-                                  message: `✕ Error al enviar al biométrico: ${err?.message || 'Fallo de conexión'}`,
+                                  message: `Error: ${err?.message}`,
                                 });
                               } finally {
                                 setSyncingEmpId(null);
                               }
                             }}
-                            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1.5 shadow-lg shadow-cyan-600/20"
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
                           >
-                            <Zap className={`w-3.5 h-3.5 ${syncingEmpId === selectedEmpForDetail.id ? 'animate-spin' : ''}`} />
-                            <span>{syncingEmpId === selectedEmpForDetail.id ? 'Enviando...' : 'Enviar al Reloj'}</span>
+                            Desactivar en Biométrico
                           </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {profileModalTab === 'ASISTENCIA' && empProfileData && (
+                <div className="space-y-4">
+                  {/* KPIs Consolidados */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase block">Marcaciones Totales</span>
+                      <span className="text-lg font-bold font-mono text-white">
+                        {empProfileData.asistencia.resumen.total_marcaciones}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block font-mono">
+                        {empProfileData.asistencia.resumen.entradas} Ent · {empProfileData.asistencia.resumen.salidas} Sal
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase block">Días Asistidos / Horas</span>
+                      <span className="text-lg font-bold font-mono text-emerald-400">
+                        {empProfileData.asistencia.resumen.dias_asistencia} d
+                      </span>
+                      <span className="text-[10px] text-emerald-300/80 block font-mono">
+                        {empProfileData.asistencia.resumen.horas_trabajadas} hrs acumuladas
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase block">Tardanzas / Faltas</span>
+                      <span className="text-lg font-bold font-mono text-amber-400">
+                        {empProfileData.asistencia.resumen.tardanzas_dias} / {empProfileData.asistencia.resumen.inasistencias}
+                      </span>
+                      <span className="text-[10px] text-amber-300/80 block font-mono">
+                        {empProfileData.asistencia.resumen.tardanzas_minutos_netos} min netos tardanza
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl">
+                      <span className="text-[10px] text-slate-400 uppercase block">Papeletas / Vacaciones</span>
+                      <span className="text-lg font-bold font-mono text-indigo-300">
+                        {empProfileData.asistencia.resumen.papeletas_total} / {empProfileData.asistencia.resumen.vacaciones_total}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">Solicitudes registradas</span>
+                    </div>
+                  </div>
+
+                  {/* Marcaciones Recientes */}
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                      Historial Reciente de Marcaciones Biométricas
+                    </div>
+                    {empProfileData.asistencia.marcaciones_recientes.length === 0 ? (
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-lg text-slate-400">
+                        No hay marcaciones biométricas registradas para este servidor.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#090A0D]">
+                        <table className="w-full min-w-[540px] text-left text-[11px]">
+                          <thead className="border-b border-slate-800 text-slate-400">
+                            <tr>
+                              <th className="p-2.5">Fecha y Hora</th>
+                              <th className="p-2.5">Dispositivo / S/N</th>
+                              <th className="p-2.5">Tipo / Método</th>
+                              <th className="p-2.5">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60">
+                            {empProfileData.asistencia.marcaciones_recientes.map((m) => (
+                              <tr key={m.id}>
+                                <td className="p-2.5 font-mono text-amber-300">{m.timestamp}</td>
+                                <td className="p-2.5 text-slate-300">
+                                  {m.device_name || m.device_sn} <span className="text-slate-500 font-mono">({m.device_sn})</span>
+                                </td>
+                                <td className="p-2.5 font-mono text-slate-300">
+                                  {m.punch_state === 1 || m.punch_type === 'CHECK_OUT' ? 'SALIDA' : 'ENTRADA'} · {m.verify_mode}
+                                </td>
+                                <td className="p-2.5">
+                                  <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px]">
+                                    {m.validation_status || 'VALIDA'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Papeletas y Vacaciones */}
+                  {(empProfileData.asistencia.papeletas.length > 0 || empProfileData.asistencia.vacaciones.length > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-xl space-y-2">
+                        <div className="text-[10px] font-bold uppercase text-amber-400">Papeletas de Salida ({empProfileData.asistencia.papeletas.length})</div>
+                        {empProfileData.asistencia.papeletas.length === 0 ? (
+                          <p className="text-slate-500">Sin papeletas</p>
+                        ) : (
+                          empProfileData.asistencia.papeletas.slice(0, 5).map((pap) => (
+                            <div key={pap.id} className="flex items-center justify-between border-b border-slate-800/50 pb-1.5 last:border-0 last:pb-0">
+                              <div>
+                                <div className="font-mono text-indigo-300 font-bold">{pap.code} · {pap.fecha}</div>
+                                <div className="text-slate-400 text-[10px]">{pap.motivo}</div>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px]">{pap.status}</span>
+                            </div>
+                          ))
                         )}
-
-                        <button
-                          type="button"
-                          disabled={syncingEmpId === selectedEmpForDetail.id}
-                          onClick={async () => {
-                            const emp = selectedEmpForDetail;
-                            const targetDev = devices.find((d) => d.id === selectedSyncDeviceId) || devices[0];
-                            if (!targetDev) return;
-
-                            setSyncingEmpId(emp.id);
-                            setSyncFeedback(null);
-
-                            try {
-                              const res = await disableUserOnDevice(emp, targetDev);
-                              if (res.success) {
-                                const updatedEmp: Employee = {
-                                  ...emp,
-                                  biometric_sync_status: 'DESACTIVADO',
-                                  biometric_last_sync: new Date().toLocaleString('es-PE'),
-                                };
-                                onEditEmployee(updatedEmp);
-                                setSelectedEmpForDetail(updatedEmp);
-                                setSyncFeedback({
-                                  type: 'INFO',
-                                  message: `Trabajador desactivado en el terminal ${targetDev.name}`,
-                                  biometric_user_id: emp.biometric_user_id || emp.dni,
-                                  device_name: targetDev.name,
-                                  timestamp: new Date().toLocaleString('es-PE'),
-                                });
-                              } else {
-                                setSyncFeedback({
-                                  type: 'ERROR',
-                                  message: `Error al desactivar: ${res.message}`,
-                                });
-                              }
-                            } catch (err: any) {
-                              setSyncFeedback({
-                                type: 'ERROR',
-                                message: `Error: ${err?.message}`,
-                              });
-                            } finally {
-                              setSyncingEmpId(null);
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
-                        >
-                          Desactivar en Biométrico
-                        </button>
+                      </div>
+                      <div className="p-3 bg-[#090A0D] border border-slate-800 rounded-xl space-y-2">
+                        <div className="text-[10px] font-bold uppercase text-emerald-400">Vacaciones ({empProfileData.asistencia.vacaciones.length})</div>
+                        {empProfileData.asistencia.vacaciones.length === 0 ? (
+                          <p className="text-slate-500">Sin vacaciones</p>
+                        ) : (
+                          empProfileData.asistencia.vacaciones.slice(0, 5).map((vac) => (
+                            <div key={vac.id} className="flex items-center justify-between border-b border-slate-800/50 pb-1.5 last:border-0 last:pb-0">
+                              <div>
+                                <div className="font-mono text-emerald-300 font-bold">{vac.start_date} → {vac.end_date}</div>
+                                <div className="text-slate-400 text-[10px]">{vac.total_days || vac.dias_solicitados} día(s) · {vac.tipo}</div>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px]">{vac.status}</span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-end gap-2">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/40 flex items-center justify-end gap-2 shrink-0">
               <button
                 onClick={() => setSelectedEmpForDetail(null)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"

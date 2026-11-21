@@ -481,5 +481,70 @@ ON auditoria FOR INSERT TO authenticated, anon WITH CHECK (true);
 
 CREATE POLICY "Permitir lectura de auditoría a directivos y administradores"
 ON auditoria FOR SELECT TO authenticated, anon USING (true);
+
+-- =============================================================================
+-- 15. MIGRACIONES INCREMENTALES, OUTBOX Y VERSIONADO OPTIMISTA (NO DESTRUCTIVO)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    id VARCHAR(100) PRIMARY KEY,
+    version VARCHAR(40) NOT NULL,
+    description TEXT NOT NULL,
+    checksum VARCHAR(128),
+    applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    app_version VARCHAR(40),
+    status VARCHAR(30) NOT NULL DEFAULT 'APPLIED'
+);
+
+CREATE TABLE IF NOT EXISTS sync_outbox_audit (
+    id UUID PRIMARY KEY,
+    idempotency_key VARCHAR(200) UNIQUE NOT NULL,
+    entity_type VARCHAR(80) NOT NULL,
+    entity_id VARCHAR(120) NOT NULL,
+    operation VARCHAR(20) NOT NULL,
+    record_version INT NOT NULL DEFAULT 1,
+    origin VARCHAR(20) NOT NULL DEFAULT 'DESKTOP',
+    payload JSONB,
+    status VARCHAR(30) NOT NULL DEFAULT 'SINCRONIZADO',
+    synced_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_outbox_audit_entity ON sync_outbox_audit(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_outbox_audit_synced ON sync_outbox_audit(synced_at DESC);
+
+DO $$ BEGIN
+    ALTER TABLE IF EXISTS trabajadores ADD COLUMN IF NOT EXISTS zkteco_pin VARCHAR(50);
+    ALTER TABLE IF EXISTS trabajadores ADD COLUMN IF NOT EXISTS biometric_user_id VARCHAR(50);
+    ALTER TABLE IF EXISTS trabajadores ADD COLUMN IF NOT EXISTS record_version INT NOT NULL DEFAULT 1;
+    ALTER TABLE IF EXISTS trabajadores ADD COLUMN IF NOT EXISTS updated_by_origin VARCHAR(20) DEFAULT 'WEB';
+    ALTER TABLE IF EXISTS trabajadores ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50);
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS employee_codigo_drac VARCHAR(30);
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS employee_code VARCHAR(50);
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS employee_name VARCHAR(200);
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS validation_status VARCHAR(40) DEFAULT 'VALIDA';
+    ALTER TABLE IF EXISTS marcaciones_raw ADD COLUMN IF NOT EXISTS record_version INT NOT NULL DEFAULT 1;
+
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS codigo_drac VARCHAR(30);
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS dependencia_nombre VARCHAR(150);
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS direccion_nombre VARCHAR(150);
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS area_nombre VARCHAR(150);
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS cargo_nombre VARCHAR(150);
+    ALTER TABLE IF EXISTS asistencias ADD COLUMN IF NOT EXISTS record_version INT NOT NULL DEFAULT 1;
+EXCEPTION WHEN others THEN NULL;
+END $$;
+
+ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sync_outbox_audit ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+    CREATE POLICY "Permitir lectura migraciones DRAC" ON schema_migrations FOR SELECT TO authenticated, anon USING (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "Permitir gestión outbox DRAC" ON sync_outbox_audit FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 `;
+
 

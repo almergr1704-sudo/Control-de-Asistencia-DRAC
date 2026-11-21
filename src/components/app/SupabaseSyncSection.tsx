@@ -17,19 +17,20 @@ import {
   Hash,
   Terminal,
   Activity,
-  ArrowRight,
   Sparkles,
+  HardDrive,
 } from 'lucide-react';
 import { POSTGRES_DDL_SQL } from '../../data/ddlSql';
 import {
   checkSupabaseConnection,
   getOfflineQueue,
   flushOfflineQueue,
+  pullIncrementalFromCloud,
   getAppOrigin,
   getSavedSupabaseConfig,
   updateSupabaseConfig,
 } from '../../lib/supabaseClient';
-import { AppOrigin, SupabaseConfigStatus } from '../../types';
+import { AppOrigin, SupabaseConfigStatus, SystemStorageStatus } from '../../types';
 import { getApiUrl } from '../../utils/apiConfig';
 
 export const SupabaseSyncSection: React.FC = () => {
@@ -50,12 +51,22 @@ export const SupabaseSyncSection: React.FC = () => {
   const [sbCfgNotice, setSbCfgNotice] = useState<string | null>(null);
 
   const [dbStats, setDbStats] = useState<SupabaseConfigStatus | null>(null);
+  const [storageStatus, setStorageStatus] = useState<SystemStorageStatus | null>(null);
+  const [creatingBackup, setCreatingBackup] = useState(false);
+  const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [copiedDdl, setCopiedDdl] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'OVERVIEW' | 'DDL' | 'CORRELATIVO' | 'OFFLINE_QUEUE' | 'AUDIT'>('OVERVIEW');
 
-  // Offline queue state
+  // Offline / Persistent Outbox queue state
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
+  const [serverOutbox, setServerOutbox] = useState<{
+    items: any[];
+    counts: { total: number; pending: number; synced: number; failed: number; conflict: number };
+    lastPullAt?: string | null;
+    lastPushAt?: string | null;
+  } | null>(null);
   const [syncingQueue, setSyncingQueue] = useState(false);
+  const [pullingCloud, setPullingCloud] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ processed: number; total: number } | null>(null);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
@@ -78,10 +89,36 @@ export const SupabaseSyncSection: React.FC = () => {
       const conn = await checkSupabaseConnection();
       setConnectionStatus(conn);
 
-      const res = await fetch(getApiUrl('/api/supabase/status'));
-      if (res.ok) {
+      const [res, storageRes, outboxRes] = await Promise.all([
+        fetch(getApiUrl('/api/supabase/status')).catch(() => null),
+        fetch(getApiUrl('/api/system/storage-status')).catch(() => null),
+        fetch(getApiUrl('/api/sync/outbox')).catch(() => null),
+      ]);
+
+      if (res?.ok) {
         const data = await res.json();
         setDbStats(data);
+      }
+      if (storageRes?.ok) {
+        const sData = await storageRes.json();
+        if (sData?.success) setStorageStatus(sData);
+      }
+      if (outboxRes?.ok) {
+        const oData = await outboxRes.json();
+        if (oData?.success) {
+          setServerOutbox({
+            items: Array.isArray(oData.items) ? oData.items : [],
+            counts: {
+              total: Number(oData.total || 0),
+              pending: Number(oData.pending || 0),
+              synced: Number(oData.synced || 0),
+              failed: Number(oData.failed || 0),
+              conflict: Number(oData.conflicts || 0),
+            },
+            lastPullAt: oData.cursor?.last_pull_at || null,
+            lastPushAt: oData.cursor?.last_push_at || null,
+          });
+        }
       }
 
       setOfflineQueue(getOfflineQueue());
@@ -90,6 +127,31 @@ export const SupabaseSyncSection: React.FC = () => {
       console.error('Error fetching Supabase status:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateVerifiedBackup = async () => {
+    setCreatingBackup(true);
+    setBackupNotice(null);
+    try {
+      const res = await fetch(getApiUrl('/api/system/backup'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'manual_ui_backup' }),
+      });
+      const json = await res.json();
+      if (json?.success && json?.backup) {
+        setBackupNotice(
+          `Respaldo verificado SHA-256 creado: ${json.backup.filename} (${Math.round((json.backup.size_bytes || 0) / 1024)} KB).`
+        );
+        await fetchStatus();
+      } else {
+        setBackupNotice(`No se pudo crear el respaldo: ${json?.error || json?.message || 'Error interno'}`);
+      }
+    } catch (err: any) {
+      setBackupNotice(`Error creando respaldo: ${err?.message || 'Error de red'}`);
+    } finally {
+      setCreatingBackup(false);
     }
   };
 
@@ -146,17 +208,38 @@ export const SupabaseSyncSection: React.FC = () => {
       const result = await flushOfflineQueue((processed, total) => {
         setSyncProgress({ processed, total });
       });
-      setOfflineQueue(getOfflineQueue());
+      await fetchStatus();
       if (result.success) {
         setSyncSuccessMsg(`Sincronización completada: ${result.processed} operaciones procesadas exitosamente.`);
       } else {
-        setSyncSuccessMsg(`Sincronización parcial: ${result.processed} procesadas, ${result.failed} pendientes para reintento.`);
+        setSyncSuccessMsg(
+          `Sincronización parcial: ${result.processed} procesadas, ${result.failed} pendientes protegidas para reintento automático.`
+        );
       }
     } catch (err: any) {
       setSyncSuccessMsg(`Error durante la sincronización: ${err?.message}`);
     } finally {
       setSyncingQueue(false);
       setSyncProgress(null);
+      setTimeout(() => setSyncSuccessMsg(null), 5000);
+    }
+  };
+
+  const handlePullFromCloud = async () => {
+    setPullingCloud(true);
+    setSyncSuccessMsg(null);
+    try {
+      const result = await pullIncrementalFromCloud();
+      await fetchStatus();
+      if (result.success) {
+        setSyncSuccessMsg(result.message || 'Pull incremental desde Supabase completado sin conflictos.');
+      } else {
+        setSyncSuccessMsg(result.message || 'No se pudo completar el pull incremental desde Supabase.');
+      }
+    } catch (err: any) {
+      setSyncSuccessMsg(`Error en pull incremental: ${err?.message}`);
+    } finally {
+      setPullingCloud(false);
       setTimeout(() => setSyncSuccessMsg(null), 5000);
     }
   };
@@ -338,7 +421,9 @@ export const SupabaseSyncSection: React.FC = () => {
           }`}
         >
           <Zap className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Cola Offline Desktop ({offlineQueue.length})</span>
+          <span>
+            Cola Outbox Desktop ({(serverOutbox?.counts.pending || 0) + offlineQueue.length})
+          </span>
         </button>
 
         <button
@@ -357,6 +442,73 @@ export const SupabaseSyncSection: React.FC = () => {
       {/* TAB 1: OVERVIEW & TABLES COUNT */}
       {activeSubTab === 'OVERVIEW' && (
         <div className="space-y-6">
+          {/* Storage, Versioning, Migrations & Verified Backups */}
+          {storageStatus && (
+            <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <HardDrive className="w-4 h-4 text-emerald-400" />
+                    <span>Persistencia Segura, Versionamiento y Respaldos Verificados</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Protección automática ante actualizaciones de escritorio sin sobrescribir configuraciones ni registros previos.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateVerifiedBackup}
+                  disabled={creatingBackup}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{creatingBackup ? 'Creando Respaldo...' : 'Crear Respaldo SHA-256 Ahora'}</span>
+                </button>
+              </div>
+
+              {backupNotice && (
+                <div className="p-3 bg-emerald-950/30 border border-emerald-800/60 rounded-lg text-xs text-emerald-200">
+                  {backupNotice}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold">Versión App / Compilación</div>
+                  <div className="text-sm font-bold font-mono text-white mt-0.5">v{storageStatus.appVersion}</div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">Build: {storageStatus.buildDate}</div>
+                </div>
+                <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold">Esquema y Migraciones</div>
+                  <div className="text-sm font-bold font-mono text-indigo-300 mt-0.5">{storageStatus.schemaVersion}</div>
+                  <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                    {storageStatus.migrationStatus} · {storageStatus.migrationsCount} aplicadas
+                  </div>
+                </div>
+                <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold">Último Respaldo Verificado</div>
+                  <div className="text-xs font-bold font-mono text-emerald-300 mt-0.5 truncate">
+                    {storageStatus.lastBackup ? storageStatus.lastBackup.filename : 'Sin respaldos'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
+                    {storageStatus.lastBackup
+                      ? `SHA-256: ${storageStatus.lastBackup.checksum_sha256.substring(0, 12)}… (${storageStatus.backupsCount} total)`
+                      : 'Genere su primer respaldo preventivo'}
+                  </div>
+                </div>
+                <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold">Cola Outbox Persistente</div>
+                  <div className="text-sm font-bold font-mono text-amber-300 mt-0.5">
+                    {serverOutbox?.counts.pending ?? 0} Pendientes · {serverOutbox?.counts.synced ?? 0} Sync
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate" title={storageStatus.baseDir}>
+                    Dir: {storageStatus.baseDir}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
               <div>
@@ -622,29 +774,67 @@ $$ LANGUAGE plpgsql;`}
         </div>
       )}
 
-      {/* TAB 4: OFFLINE QUEUE MANAGER */}
+      {/* TAB 4: OFFLINE & PERSISTENT OUTBOX QUEUE MANAGER */}
       {activeSubTab === 'OFFLINE_QUEUE' && (
         <div className="bg-[#090A0D] border border-slate-800 rounded-xl p-6 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Zap className="w-4 h-4 text-indigo-400" />
-                <span>Cola de Sincronización Offline (Cliente Desktop)</span>
+                <span>Cola Outbox Bidireccional Persistente (Web ↔ Escritorio)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Almacén temporal local para cuando el cliente de escritorio pierde conectividad a Internet.
+                Registra cada operación con UUID e idempotencia en disco. Si no hay conexión, las operaciones pendientes jamás se descartan y se reintentan automáticamente.
               </p>
             </div>
 
-            <button
-              onClick={handleFlushQueue}
-              disabled={syncingQueue || offlineQueue.length === 0}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 shadow-sm"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncingQueue ? 'animate-spin' : ''}`} />
-              <span>Sincronizar Cola Ahora</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handlePullFromCloud}
+                disabled={pullingCloud}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-cyan-300 border border-cyan-800/50 font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${pullingCloud ? 'animate-spin' : ''}`} />
+                <span>{pullingCloud ? 'Descargando...' : 'Pull Incremental Nube'}</span>
+              </button>
+
+              <button
+                onClick={handleFlushQueue}
+                disabled={syncingQueue || ((serverOutbox?.counts.pending || 0) === 0 && offlineQueue.length === 0)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncingQueue ? 'animate-spin' : ''}`} />
+                <span>Sincronizar Cola Ahora</span>
+              </button>
+            </div>
           </div>
+
+          {serverOutbox && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+              <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                <span className="text-[10px] text-slate-500 uppercase block">Total Outbox</span>
+                <span className="font-mono font-bold text-white text-base">{serverOutbox.counts.total}</span>
+              </div>
+              <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                <span className="text-[10px] text-slate-500 uppercase block">Pendientes</span>
+                <span className="font-mono font-bold text-amber-300 text-base">{serverOutbox.counts.pending}</span>
+              </div>
+              <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                <span className="text-[10px] text-slate-500 uppercase block">Sincronizados</span>
+                <span className="font-mono font-bold text-emerald-400 text-base">{serverOutbox.counts.synced}</span>
+              </div>
+              <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                <span className="text-[10px] text-slate-500 uppercase block">Conflictos</span>
+                <span className="font-mono font-bold text-rose-400 text-base">{serverOutbox.counts.conflict}</span>
+              </div>
+              <div className="p-3 bg-[#060709] border border-slate-800 rounded-lg">
+                <span className="text-[10px] text-slate-500 uppercase block">Último Pull/Push</span>
+                <span className="font-mono text-slate-300 text-[10px] block truncate">
+                  {serverOutbox.lastPullAt || serverOutbox.lastPushAt || 'Sin sync reciente'}
+                </span>
+              </div>
+            </div>
+          )}
 
           {syncSuccessMsg && (
             <div className="p-3.5 bg-indigo-950/80 border border-indigo-700 rounded-xl text-indigo-200 text-xs flex items-center gap-2">
@@ -668,31 +858,85 @@ $$ LANGUAGE plpgsql;`}
             </div>
           )}
 
-          {offlineQueue.length === 0 ? (
+          {(!serverOutbox?.items.length && offlineQueue.length === 0) ? (
             <div className="p-8 text-center bg-[#060709] border border-slate-800/80 rounded-xl text-slate-400 space-y-2">
               <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-              <div className="font-bold text-white text-xs">Cola Offline Vacía</div>
+              <div className="font-bold text-white text-xs">Cola Outbox Al Día</div>
               <p className="text-[11px] text-slate-500 max-w-md mx-auto">
-                Todas las operaciones de este cliente se encuentran sincronizadas con la base de datos central en Supabase.
+                Todas las operaciones de este cliente se encuentran sincronizadas o aún no se han encolado cambios pendientes.
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-300">Operaciones Pendientes en Cola ({offlineQueue.length}):</div>
-              <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-[#060709]">
-                {offlineQueue.map((op, idx) => (
-                  <div key={op.id || idx} className="p-3 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2.5">
-                      <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-mono text-[10px] font-bold">
-                        {op.action}
-                      </span>
-                      <span className="text-white font-mono">{op.table}</span>
-                      <span className="text-slate-500 text-[10px]">{op.timestamp}</span>
-                    </div>
-                    <span className="text-amber-400 font-mono text-[10px]">Reintentos: {op.retryCount || 0}</span>
+            <div className="space-y-4">
+              {serverOutbox && serverOutbox.items.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-slate-300">
+                    Eventos Persistidos en Disco (`sync/sync-outbox.json`, últimos {serverOutbox.items.length}):
                   </div>
-                ))}
-              </div>
+                  <div className="overflow-x-auto border border-slate-800 rounded-xl bg-[#060709]">
+                    <table className="w-full min-w-[740px] text-left text-[11px]">
+                      <thead className="border-b border-slate-800 text-slate-400">
+                        <tr>
+                          <th className="p-2.5">Entidad</th>
+                          <th className="p-2.5">ID</th>
+                          <th className="p-2.5">Operación</th>
+                          <th className="p-2.5">Origen</th>
+                          <th className="p-2.5">Versión</th>
+                          <th className="p-2.5">Estado</th>
+                          <th className="p-2.5">Reintentos / Error</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {serverOutbox.items.slice(0, 25).map((ev) => (
+                          <tr key={ev.id}>
+                            <td className="p-2.5 text-white font-bold">{ev.entity_type}</td>
+                            <td className="p-2.5 text-indigo-300 truncate max-w-[140px]">{ev.entity_id}</td>
+                            <td className="p-2.5 text-slate-300">{ev.operation}</td>
+                            <td className="p-2.5 text-cyan-400">{ev.origin}</td>
+                            <td className="p-2.5 text-slate-400">v{ev.record_version}</td>
+                            <td className="p-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  ev.status === 'SINCRONIZADO'
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                    : ev.status === 'CONFLICTO'
+                                    ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-700'
+                                }`}
+                              >
+                                {ev.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-slate-400 truncate max-w-[200px]" title={ev.last_error || ''}>
+                              {ev.attempts ?? ev.retries ?? 0} {ev.last_error ? `· ${ev.last_error}` : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {offlineQueue.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-slate-300">Operaciones en Cola Local del Navegador ({offlineQueue.length}):</div>
+                  <div className="divide-y divide-slate-800 border border-slate-800 rounded-xl overflow-hidden bg-[#060709]">
+                    {offlineQueue.map((op, idx) => (
+                      <div key={op.id || idx} className="p-3 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2.5">
+                          <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-mono text-[10px] font-bold">
+                            {op.action}
+                          </span>
+                          <span className="text-white font-mono">{op.table}</span>
+                          <span className="text-slate-500 text-[10px]">{op.timestamp}</span>
+                        </div>
+                        <span className="text-amber-400 font-mono text-[10px]">Reintentos: {op.retryCount || 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

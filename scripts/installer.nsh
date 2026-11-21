@@ -4,6 +4,7 @@
 ; =========================================================================
 
 !macro customInstall
+  DetailPrint "DRAC: Conservando intactos los datos persistentes del usuario en %APPDATA%\DRAC Control de Asistencia..."
   DetailPrint "DRAC: Configurando Firewall de Windows para marcadores biometricos ZKTeco..."
 
   ; 1. Regla de Entrada TCP 4370 (Recepción de datos ZKTeco y modo ADMS/PUSH)
@@ -19,7 +20,7 @@
   ; 4. Respaldo PowerShell en caso de directivas netsh restringidas
   nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command \"New-NetFirewallRule -DisplayName \"DRAC Control Asistencia - ZKTeco TCP 4370 IN\" -Direction Inbound -Protocol TCP -LocalPort 4370 -Action Allow -Profile Any -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName \"DRAC Control Asistencia - ZKTeco TCP 4370 OUT\" -Direction Outbound -Protocol TCP -RemotePort 4370 -Action Allow -Profile Any -ErrorAction SilentlyContinue\"'
 
-  DetailPrint "DRAC: Reglas de Firewall de Windows aplicadas correctamente para TCP 4370."
+  DetailPrint "DRAC: Reglas de Firewall de Windows aplicadas correctamente. Directorio de datos preservado."
 !macroend
 
 !macro customUnInstall
@@ -28,4 +29,8 @@
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name=$\"DRAC Control Asistencia - ZKTeco TCP 4370 OUT$\"'
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name=$\"DRAC Control Asistencia - Aplicación Ejecutable IN$\"'
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name=$\"DRAC Control Asistencia - Aplicación Ejecutable OUT$\"'
+  ; POLITICA CERO PERDIDA DE DATOS:
+  ; Nunca eliminar $APPDATA\DRAC Control de Asistencia (database, data, backups, sync, config, logs)
+  ; durante actualizaciones ni desinstalaciones del ejecutable.
+  DetailPrint "DRAC: Datos institucionales, respaldos y configuracion preservados en $APPDATA\DRAC Control de Asistencia."
 !macroend

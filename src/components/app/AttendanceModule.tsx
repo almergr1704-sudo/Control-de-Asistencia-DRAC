@@ -1112,18 +1112,61 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       .slice(0, 40);
   }, [employees, linkEmployeeSearch]);
 
-  // Filter raw punches (supports date, worker name/dni/code, and device)
+  const employeeLookup = useMemo(() => {
+    const byId = new Map<string, Employee>();
+    const byDni = new Map<string, Employee>();
+    for (const emp of employees) {
+      if (emp.id) byId.set(emp.id, emp);
+      if (emp.dni) byDni.set(String(emp.dni).trim(), emp);
+    }
+    return { byId, byDni };
+  }, [employees]);
+
+  const resolveOfficialWorker = (empId?: string | null, empDni?: string | null) => {
+    const matched =
+      (empId ? employeeLookup.byId.get(empId) : undefined) ||
+      (empDni ? employeeLookup.byDni.get(String(empDni).trim()) : undefined);
+    if (!matched) return null;
+    const fullName = normalizePersonName(`${matched.first_name || ''} ${matched.last_name || ''}`.trim());
+    return {
+      employee: matched,
+      dni: matched.dni,
+      codigoDrac: matched.codigo_trabajador || '',
+      fullName,
+      dependencia: matched.dependencia_name || '',
+      direccion: matched.direccion_organo_name || '',
+      area: matched.area_name || '',
+      cargo: matched.position || '',
+    };
+  };
+
+  // Filter raw punches (supports date, worker name/dni/code/org, and device)
   const applyPunchFilters = (list: MarcacionRaw[]) => {
     return list.filter((p) => {
       if (dateFilter && p.fecha !== dateFilter && !p.timestamp?.startsWith(dateFilter)) return false;
       if (deviceFilter !== 'ALL' && p.device_sn !== deviceFilter && p.device_id !== deviceFilter) return false;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        const matchName = p.employee_name?.toLowerCase().includes(term);
-        const matchDni = p.employee_dni?.toLowerCase().includes(term);
-        const matchCode = p.employee_code?.toLowerCase().includes(term);
-        const matchSn = p.device_sn?.toLowerCase().includes(term);
-        if (!matchName && !matchDni && !matchCode && !matchSn) return false;
+        const official = resolveOfficialWorker(p.employee_id, p.employee_dni);
+        const searchable = [
+          p.employee_name,
+          p.employee_dni,
+          p.employee_code,
+          p.employee_codigo_drac,
+          p.device_sn,
+          p.clock_name_origin,
+          official?.fullName,
+          official?.dni,
+          official?.codigoDrac,
+          official?.dependencia,
+          official?.direccion,
+          official?.area,
+          official?.cargo,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!searchable.includes(term)) return false;
       }
       return true;
     });
@@ -1131,12 +1174,12 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
 
   const filteredPunches = useMemo(
     () => applyPunchFilters(rawPunches),
-    [rawPunches, searchTerm, dateFilter, deviceFilter]
+    [rawPunches, searchTerm, dateFilter, deviceFilter, employeeLookup]
   );
 
   const filteredPendingPunches = useMemo(
     () => applyPunchFilters(pendingPunches),
-    [pendingPunches, searchTerm, dateFilter, deviceFilter]
+    [pendingPunches, searchTerm, dateFilter, deviceFilter, employeeLookup]
   );
 
   // Filter attendance records
@@ -1145,13 +1188,27 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       if (dateFilter && a.fecha !== dateFilter) return false;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        const matchName = a.employee_name?.toLowerCase().includes(term);
-        const matchDni = a.employee_dni?.toLowerCase().includes(term);
-        if (!matchName && !matchDni) return false;
+        const official = resolveOfficialWorker(a.employee_id, a.employee_dni);
+        const searchable = [
+          a.employee_name,
+          a.employee_dni,
+          a.employee_codigo_drac,
+          a.area_name,
+          a.cargo_name,
+          official?.fullName,
+          official?.codigoDrac,
+          official?.dependencia,
+          official?.direccion,
+          official?.cargo,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!searchable.includes(term)) return false;
       }
       return true;
     });
-  }, [attendance, searchTerm, dateFilter]);
+  }, [attendance, searchTerm, dateFilter, employeeLookup]);
 
   const activePunchRows = activeTab === 'pending' ? filteredPendingPunches : filteredPunches;
 
@@ -1167,28 +1224,59 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
 
   const exportPunchesCSV = () => {
     if (rawPunches.length === 0) return;
-    const headers = ['ID', 'Codigo_Reloj', 'DNI', 'Trabajador', 'Fecha_Hora', 'Dispositivo', 'Serial', 'Metodo', 'Origen', 'Estado', 'Sincronizado'];
-    const rows = rawPunches.map((p) => [
-      p.id,
-      p.employee_code || p.employee_dni,
-      p.employee_dni,
-      `"${p.employee_name || 'Pendiente de Identificación'}"`,
-      p.timestamp,
-      `"${p.device_name || ''}"`,
-      p.device_sn || '',
-      p.verify_mode,
-      p.source || 'DIRECT_READ',
-      p.validation_status || 'VALIDA',
-      p.synced_at || p.created_at || '',
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const escapeCsv = (val: unknown) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const headers = [
+      'ID',
+      'PIN_Reloj',
+      'Codigo_DRAC',
+      'DNI',
+      'Trabajador_Oficial',
+      'Nombre_En_Reloj',
+      'Dependencia',
+      'Direccion_Organo',
+      'Area_Oficina',
+      'Cargo',
+      'Fecha_Hora_Reloj',
+      'Dispositivo',
+      'Serial',
+      'Metodo',
+      'Origen',
+      'Estado',
+      'Sincronizado',
+    ];
+    const rows = rawPunches.map((p) => {
+      const official = resolveOfficialWorker(p.employee_id, p.employee_dni);
+      const isPending = p.validation_status === 'PENDIENTE_IDENTIFICACION' || p.employee_name === 'Pendiente de Identificación';
+      return [
+        p.id,
+        p.employee_code || p.employee_dni,
+        official?.codigoDrac || p.employee_codigo_drac || '',
+        official?.dni || p.employee_dni || '',
+        isPending ? 'Pendiente de Identificación' : official?.fullName || p.employee_name || 'Pendiente de Identificación',
+        p.clock_name_origin || '',
+        official?.dependencia || p.dependencia_name || '',
+        official?.direccion || p.direccion_organo_name || '',
+        official?.area || p.area_name || '',
+        official?.cargo || p.cargo_name || '',
+        p.timestamp,
+        p.device_name || '',
+        p.device_sn || '',
+        p.verify_mode,
+        p.source || 'DIRECT_READ',
+        p.validation_status || 'VALIDA',
+        p.synced_at || p.created_at || '',
+      ].map(escapeCsv);
+    });
+    const csvString = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `marcaciones_drac_${new Date().toISOString().substring(0, 10)}.csv`);
+    link.href = url;
+    link.download = `marcaciones_drac_${new Date().toISOString().substring(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -1507,11 +1595,12 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
         ) : (
           <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0F1115]">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] text-left text-xs border-collapse">
+              <table className="w-full min-w-[1060px] text-left text-xs border-collapse">
                 <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                   <tr>
-                    <th className="py-2.5 px-3">Código Reloj / DNI</th>
-                    <th className="py-2.5 px-3">Trabajador</th>
+                    <th className="py-2.5 px-3">PIN Reloj / Cód. DRAC</th>
+                    <th className="py-2.5 px-3">Trabajador Oficial DRAC</th>
+                    <th className="py-2.5 px-3">Dependencia / Área / Cargo</th>
                     <th className="py-2.5 px-3">Fecha y Hora</th>
                     <th className="py-2.5 px-3">Dispositivo</th>
                     <th className="py-2.5 px-3">Tipo / Método</th>
@@ -1525,30 +1614,72 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                     const isPending =
                       p.validation_status === 'PENDIENTE_IDENTIFICACION' ||
                       p.employee_name === 'Pendiente de Identificación';
+                    const official = !isPending ? resolveOfficialWorker(p.employee_id, p.employee_dni) : null;
                     const displayCode = p.employee_code || p.employee_dni || '-';
+                    const displayDrac = official?.codigoDrac || p.employee_codigo_drac || '';
+                    const displayDni = official?.dni || p.employee_dni || '';
+                    const displayName = official?.fullName || p.employee_name || '';
+                    const displayDep = official?.dependencia || p.dependencia_name || '';
+                    const displayDir = official?.direccion || p.direccion_organo_name || '';
+                    const displayArea = official?.area || p.area_name || '';
+                    const displayCargo = official?.cargo || p.cargo_name || '';
                     return (
                       <tr key={p.id} className="hover:bg-slate-900/50 transition-colors">
-                        <td className="py-2.5 px-3 font-mono font-bold text-indigo-300">
-                          <div>{displayCode}</div>
-                          {p.employee_code && p.employee_dni && p.employee_code !== p.employee_dni && (
-                            <div className="text-[10px] text-slate-400 font-normal">DNI: {p.employee_dni}</div>
+                        <td className="py-2.5 px-3 font-mono font-bold text-indigo-300 whitespace-nowrap">
+                          <div>PIN: {displayCode}</div>
+                          {displayDrac && (
+                            <div className="text-[10px] text-cyan-400 font-semibold">{displayDrac}</div>
+                          )}
+                          {displayDni && displayDni !== displayCode && (
+                            <div className="text-[10px] text-slate-400 font-normal">DNI: {displayDni}</div>
                           )}
                         </td>
-                        <td className="py-2.5 px-3">
+                        <td className="py-2.5 px-3 min-w-[190px]">
                           {isPending ? (
-                            <span className="inline-flex items-center gap-1.5 text-amber-300 font-semibold">
-                              <UserX className="w-3.5 h-3.5" />
-                              Pendiente de Identificación
-                            </span>
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1.5 text-amber-300 font-semibold">
+                                <UserX className="w-3.5 h-3.5 shrink-0" />
+                                Pendiente de Identificación
+                              </span>
+                              {p.clock_name_origin && (
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Reloj: {p.clock_name_origin}
+                                </div>
+                              )}
+                            </div>
                           ) : (
-                            <span className="text-white font-medium inline-flex items-center gap-1.5">
-                              <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                              {p.employee_name}
-                            </span>
+                            <div className="space-y-0.5">
+                              <span className="text-white font-medium inline-flex items-center gap-1.5">
+                                <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                {displayName}
+                              </span>
+                              {p.clock_name_origin && (
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  Origen reloj: {p.clock_name_origin}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 min-w-[200px] text-[11px]">
+                          {isPending || (!displayDep && !displayArea && !displayCargo) ? (
+                            <span className="text-slate-500 font-mono">—</span>
+                          ) : (
+                            <div className="space-y-0.5">
+                              {displayDep && <div className="text-slate-200 font-medium">{displayDep}</div>}
+                              {(displayDir || displayArea) && (
+                                <div className="text-slate-400 text-[10px]">
+                                  {[displayDir, displayArea].filter(Boolean).join(' · ')}
+                                </div>
+                              )}
+                              {displayCargo && (
+                                <div className="text-indigo-300 text-[10px] font-semibold">{displayCargo}</div>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="py-2.5 px-3 font-mono text-amber-300 whitespace-nowrap">{p.timestamp}</td>
-                        <td className="py-2.5 px-3 text-[11px]">
+                        <td className="py-2.5 px-3 text-[11px] min-w-[140px]">
                           <div className="text-slate-200">{p.device_name || 'ZKTeco G3'}</div>
                           <div className="font-mono text-slate-500 text-[10px]">{p.device_sn || p.device_id}</div>
                         </td>
@@ -1564,22 +1695,22 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                           </span>
                           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">{p.verify_mode}</span>
                         </td>
-                        <td className="py-2.5 px-3 font-mono text-[10px] text-slate-400">
+                        <td className="py-2.5 px-3 font-mono text-[10px] text-slate-400 whitespace-nowrap">
                           <div>{p.source || 'DIRECT_READ'}</div>
                           <div className="text-slate-500">{formatSyncTimestamp(p.synced_at || p.created_at)}</div>
                         </td>
-                        <td className="py-2.5 px-3 font-mono text-[10px]">
+                        <td className="py-2.5 px-3 font-mono text-[10px] whitespace-nowrap">
                           {isPending ? (
                             <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700">
                               PENDIENTE
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
-                              {p.validation_status || 'SINCRONIZADA'}
+                              {p.validation_status || 'VALIDA'}
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right">
+                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
                           {isPending && canLinkWorkers ? (
                             <button
                               onClick={() => openLinkModal(p)}
@@ -1620,12 +1751,13 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
       ) : (
         <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0F1115]">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-xs border-collapse">
+            <table className="w-full min-w-[1040px] text-left text-xs border-collapse">
               <thead className="bg-[#090A0D] text-slate-400 font-bold border-b border-slate-800 uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="py-2.5 px-3">Fecha</th>
-                  <th className="py-2.5 px-3">DNI</th>
-                  <th className="py-2.5 px-3">Trabajador</th>
+                  <th className="py-2.5 px-3">DNI / Cód. DRAC</th>
+                  <th className="py-2.5 px-3">Trabajador Oficial</th>
+                  <th className="py-2.5 px-3">Dependencia / Área / Cargo</th>
                   <th className="py-2.5 px-3">Turno 1 (Ent/Sal)</th>
                   <th className="py-2.5 px-3">Turno 2 (Ent/Sal)</th>
                   <th className="py-2.5 px-3">Tardanza</th>
@@ -1634,38 +1766,59 @@ export const AttendanceModule: React.FC<AttendanceModuleProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {paginatedAttendance.map((a) => (
-                  <tr key={a.id} className="hover:bg-slate-900/50 transition-colors">
-                    <td className="py-2.5 px-3 font-mono text-slate-300">{a.fecha}</td>
-                    <td className="py-2.5 px-3 font-mono text-indigo-300 font-bold">{a.employee_dni}</td>
-                    <td className="py-2.5 px-3 text-white">{a.employee_name}</td>
-                    <td className="py-2.5 px-3 font-mono text-[11px]">
-                      {a.t1_real_in || '--:--'} / {a.t1_real_out || '--:--'}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-[11px]">
-                      {a.t2_real_in || '--:--'} / {a.t2_real_out || '--:--'}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-amber-300">
-                      {a.net_tardiness_minutes > 0 ? `${a.net_tardiness_minutes} min` : '0 min'}
-                    </td>
-                    <td className="py-2.5 px-3 font-mono text-emerald-400 font-bold">
-                      {(a.total_effective_hours ?? 0).toFixed(1)} h
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          a.status === 'PUNCTUAL'
-                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                            : a.status === 'LATE'
-                            ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                            : 'bg-rose-950 text-rose-400 border border-rose-800'
-                        }`}
-                      >
-                        {a.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {paginatedAttendance.map((a) => {
+                  const official = resolveOfficialWorker(a.employee_id, a.employee_dni);
+                  const displayDrac = official?.codigoDrac || a.employee_codigo_drac || '';
+                  const displayName = official?.fullName || a.employee_name;
+                  const displayDep = official?.dependencia || a.dependencia_name || '';
+                  const displayDir = official?.direccion || a.direccion_organo_name || '';
+                  const displayArea = official?.area || a.area_name || '';
+                  const displayCargo = official?.cargo || a.cargo_name || '';
+                  return (
+                    <tr key={a.id} className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-slate-300 whitespace-nowrap">{a.fecha}</td>
+                      <td className="py-2.5 px-3 font-mono whitespace-nowrap">
+                        <div className="text-indigo-300 font-bold">{a.employee_dni}</div>
+                        {displayDrac && <div className="text-[10px] text-cyan-400">{displayDrac}</div>}
+                      </td>
+                      <td className="py-2.5 px-3 text-white font-medium min-w-[170px]">{displayName}</td>
+                      <td className="py-2.5 px-3 text-[11px] min-w-[200px]">
+                        {displayDep && <div className="text-slate-200">{displayDep}</div>}
+                        {(displayDir || displayArea) && (
+                          <div className="text-slate-400 text-[10px]">
+                            {[displayDir, displayArea].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
+                        {displayCargo && <div className="text-indigo-300 text-[10px] font-semibold">{displayCargo}</div>}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] whitespace-nowrap">
+                        {a.t1_real_in || '--:--'} / {a.t1_real_out || '--:--'}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] whitespace-nowrap">
+                        {a.t2_real_in || '--:--'} / {a.t2_real_out || '--:--'}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-amber-300 whitespace-nowrap">
+                        {a.net_tardiness_minutes > 0 ? `${a.net_tardiness_minutes} min` : '0 min'}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-emerald-400 font-bold whitespace-nowrap">
+                        {(a.total_effective_hours ?? 0).toFixed(1)} h
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            a.status === 'PUNCTUAL'
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                              : a.status === 'LATE'
+                              ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                              : 'bg-rose-950 text-rose-400 border border-rose-800'
+                          }`}
+                        >
+                          {a.status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

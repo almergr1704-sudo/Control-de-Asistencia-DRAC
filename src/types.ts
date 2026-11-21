@@ -667,8 +667,15 @@ export interface MarcacionRaw {
   rejection_reason?: string;
   authorization_id?: string;
   
-  // Compatibilidad y auditoría de sincronización
+  // Compatibilidad y auditoría de sincronización + enriquecimiento oficial DRAC
   employee_id?: string | null;
+  employee_codigo_drac?: string | null;
+  dependencia_name?: string | null;
+  direccion_organo_name?: string | null;
+  area_name?: string | null;
+  cargo_name?: string | null;
+  clock_name_origin?: string | null;
+  record_version?: number;
   original_punch_id?: string;
   fecha?: string;
   hora?: string;
@@ -952,8 +959,12 @@ export interface AsistenciaProcesada {
   employee_id: string;
   employee_dni: string;
   employee_name: string;
+  employee_codigo_drac?: string | null;
   dependencia_name?: string;
+  direccion_organo_name?: string;
   area_name: string;
+  cargo_name?: string | null;
+  record_version?: number;
   fecha: string; // YYYY-MM-DD
   horario_name: string;
   // Turn 1
@@ -1548,4 +1559,113 @@ declare global {
 export type UserRole = RoleType;
 export type AttendanceRecord = AsistenciaProcesada;
 
+export interface ConsolidatedEmployeeProfile {
+  personal: {
+    id: string;
+    dni: string;
+    codigo_drac: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
+    email: string;
+    phone?: string;
+    active: boolean;
+    hire_date?: string | null;
+  };
+  institucional: {
+    sede_dependencia: string;
+    dependencia_tipo: string;
+    agencia_agraria?: string | null;
+    direccion_organo: string;
+    area_oficina: string;
+    subarea?: string | null;
+    cargo: string;
+    regimen_laboral: string;
+    condicion_laboral: string;
+    supervisor_name?: string | null;
+    horario_asignado: {
+      id: string;
+      code?: string;
+      name: string;
+      turno1?: string | null;
+      turno2?: string | null;
+      working_days?: string[];
+      tipo_asignacion?: string;
+    };
+  };
+  biometrico: {
+    pin_principal: string;
+    estado_vinculacion: string;
+    fecha_vinculacion?: string | null;
+    dispositivos_vinculados: Array<{
+      id: string;
+      device_id: string;
+      device_sn: string;
+      device_name: string;
+      pin: string;
+      clock_name_origin?: string | null;
+      link_status: string;
+      link_type?: string | null;
+      linked_at?: string | null;
+      linked_by?: string | null;
+      present_on_device?: boolean;
+    }>;
+  };
+  asistencia: {
+    resumen: {
+      total_marcaciones: number;
+      entradas: number;
+      salidas: number;
+      dias_asistencia: number;
+      tardanzas_dias: number;
+      tardanzas_minutos_netos: number;
+      inasistencias: number;
+      horas_trabajadas: number;
+      papeletas_total: number;
+      vacaciones_total: number;
+    };
+    marcaciones_recientes: MarcacionRaw[];
+    asistencia_reciente: AsistenciaProcesada[];
+    papeletas: PapeletaSalida[];
+    vacaciones: Vacacion[];
+  };
+}
+
+export interface SystemStorageStatus {
+  appVersion: string;
+  previousAppVersion: string | null;
+  buildDate: string;
+  schemaVersion: string;
+  migrationStatus: 'UP_TO_DATE' | 'MIGRATED_OK' | 'HALTED_BACKUP_ERROR' | 'HALTED_MIGRATION_ERROR';
+  migrationError: string | null;
+  baseDir: string;
+  paths: {
+    database: string;
+    data: string;
+    backups: string;
+    sync: string;
+    config: string;
+    logs: string;
+  };
+  lastBackup: {
+    id: string;
+    filename: string;
+    created_at: string;
+    reason: string;
+    checksum_sha256: string;
+    size_bytes: number;
+    verified: boolean;
+  } | null;
+  backupsCount: number;
+  migrationsCount: number;
+  appliedMigrations: Array<{
+    id: string;
+    version: string;
+    description: string;
+    applied_at: string;
+    status: string;
+  }>;
+  recordCounts: Record<string, number>;
+  lastStartupAt: string;
+}
 

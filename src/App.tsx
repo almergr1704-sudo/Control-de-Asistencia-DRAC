@@ -66,6 +66,7 @@ import { attendanceService } from './services/attendanceService';
 import { VIEW_TO_HASH, HASH_TO_VIEW } from './utils/router';
 import { getApiUrl } from './utils/apiConfig';
 import { normalizePersonName, normalizeInstitutionalName, normalizeText } from './utils/nameUtils';
+import { subscribeToDracRealtime } from './lib/supabaseClient';
 
 export const App: React.FC = () => {
   // Navigation & View Routing State
@@ -555,7 +556,18 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadServerData();
     const interval = setInterval(loadServerData, 25000);
-    return () => clearInterval(interval);
+    let rtTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribeRealtime = subscribeToDracRealtime(() => {
+      if (rtTimer) clearTimeout(rtTimer);
+      rtTimer = setTimeout(() => {
+        loadServerData();
+      }, 800);
+    });
+    return () => {
+      clearInterval(interval);
+      if (rtTimer) clearTimeout(rtTimer);
+      unsubscribeRealtime();
+    };
   }, [loadServerData]);
 
   // Escuchar cambios globales y centralizados en la configuración del marcador biométrico
@@ -729,6 +741,9 @@ export const App: React.FC = () => {
                 encargaturas={encargaturas}
                 papeletas={papeletas}
                 devices={devices}
+                rawPunches={rawPunches}
+                attendance={attendance}
+                vacaciones={vacaciones}
                 onAddDependencia={async (dep) => {
                   const newDep: Dependencia = {
                     ...dep,

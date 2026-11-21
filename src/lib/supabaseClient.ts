@@ -191,6 +191,7 @@ export async function checkSupabaseConnection(): Promise<{
  */
 interface OfflineOperation {
   id: string;
+  idempotency_key: string;
   table: string;
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   payload: any;
@@ -200,6 +201,13 @@ interface OfflineOperation {
 }
 
 const OFFLINE_QUEUE_KEY = 'drac_supabase_offline_queue';
+
+function generateOutboxUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `op-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+}
 
 export function getOfflineQueue(): OfflineOperation[] {
   if (typeof window === 'undefined') return [];
@@ -211,24 +219,52 @@ export function getOfflineQueue(): OfflineOperation[] {
   }
 }
 
-export function addToOfflineQueue(operation: Omit<OfflineOperation, 'id' | 'timestamp' | 'retryCount'>): void {
+export function addToOfflineQueue(operation: Omit<OfflineOperation, 'id' | 'idempotency_key' | 'timestamp' | 'retryCount'>): void {
   if (typeof window === 'undefined') return;
   const queue = getOfflineQueue();
+  const id = generateOutboxUuid();
   const newOp: OfflineOperation = {
     ...operation,
-    id: `op-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id,
+    idempotency_key: `${operation.table}:${operation.payload?.id || id}:${operation.action}:${id}`,
     timestamp: new Date().toISOString(),
     retryCount: 0,
   };
   queue.push(newOp);
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+
+  // Replicar también en la cola Outbox persistente en disco del servidor cuando esté accesible
+  fetch(getApiUrl('/api/sync/outbox'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      entity_type: operation.table,
+      entity_id: String(operation.payload?.id || id),
+      operation: operation.action === 'DELETE' ? 'DELETE' : 'UPSERT',
+      payload: operation.payload || {},
+      origin: operation.origin,
+    }),
+  }).catch(() => {});
 }
 
 export async function flushOfflineQueue(
   onProgress?: (processed: number, total: number) => void
 ): Promise<{ success: boolean; processed: number; failed: number }> {
+  let serverSynced = 0;
+  let serverFailed = 0;
+  try {
+    const serverRes = await fetch(getApiUrl('/api/sync/outbox/flush'), { method: 'POST' });
+    if (serverRes.ok) {
+      const json = await serverRes.json();
+      serverSynced = Number(json.synced || 0);
+      serverFailed = Number(json.failed || 0);
+    }
+  } catch {}
+
   const queue = getOfflineQueue();
-  if (queue.length === 0) return { success: true, processed: 0, failed: 0 };
+  if (queue.length === 0) {
+    return { success: serverFailed === 0, processed: serverSynced, failed: serverFailed };
+  }
 
   let processed = 0;
   let failed = 0;
@@ -242,6 +278,7 @@ export async function flushOfflineQueue(
         headers: {
           'Content-Type': 'application/json',
           'X-App-Origin': op.origin,
+          'X-Idempotency-Key': op.idempotency_key || op.id,
         },
         body: JSON.stringify(op.payload),
       });
@@ -265,5 +302,64 @@ export async function flushOfflineQueue(
   }
 
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
-  return { success: failed === 0, processed, failed };
+  return {
+    success: failed === 0 && serverFailed === 0,
+    processed: processed + serverSynced,
+    failed: failed + serverFailed,
+  };
+}
+
+export async function pullIncrementalFromCloud(): Promise<{
+  success: boolean;
+  cloudConfigured?: boolean;
+  pullSummary?: Record<string, { inserted: number; updated: number; preservedLocal: number }>;
+  message?: string;
+}> {
+  try {
+    const res = await fetch(getApiUrl('/api/sync/pull'), { method: 'POST' });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Error ejecutando sincronización incremental.' };
+  }
+}
+
+/**
+ * Suscripción Realtime bidireccional Web <-> Escritorio usando Supabase Postgres Changes.
+ * Si no hay instancia Supabase válida configurada, retorna limpiamente una función no-op.
+ */
+export function subscribeToDracRealtime(
+  onTableChange: (table: string, payload: any) => void
+): () => void {
+  const cfg = getSavedSupabaseConfig();
+  if (isPlaceholderSupabaseUrl(cfg.url)) {
+    return () => {};
+  }
+  try {
+    const client = getSupabaseClient();
+    const tables = [
+      'trabajadores',
+      'usuarios_reloj',
+      'marcaciones_raw',
+      'asistencias',
+      'papeletas_salida',
+      'vacaciones',
+      'dispositivos_zkteco',
+    ];
+    let channel = client.channel('drac-unified-realtime');
+    for (const tbl of tables) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tbl },
+        (payload) => onTableChange(tbl, payload)
+      );
+    }
+    channel.subscribe();
+    return () => {
+      try {
+        client.removeChannel(channel);
+      } catch {}
+    };
+  } catch {
+    return () => {};
+  }
 }

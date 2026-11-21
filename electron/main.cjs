@@ -52,6 +52,33 @@ function log(msg) {
  * En modo empaquetado (producción con app.asar), NUNCA se escribe dentro de app.asar (causaría ENOENT).
  * En su lugar se utiliza app.getPath('userData')/data/, sembrando los datos iniciales si no existen.
  */
+function getBasePersistentDir() {
+  if (!app.isPackaged) {
+    return path.join(__dirname, '..');
+  }
+  return app.getPath('userData');
+}
+
+function getStructuredConfigFilePath(filename) {
+  const baseDir = getBasePersistentDir();
+  const configDir = path.join(baseDir, 'config');
+  const legacyDataPath = getStorageFilePath(filename);
+  try {
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    const configPath = path.join(configDir, filename);
+    if (!fs.existsSync(configPath) && fs.existsSync(legacyDataPath)) {
+      fs.copyFileSync(legacyDataPath, configPath);
+      log(`Configuración ${filename} migrada sin pérdida a config/ (${configPath}).`);
+    }
+    return configPath;
+  } catch (err) {
+    log(`Aviso resolviendo config/${filename}: ${err.message}`);
+    return legacyDataPath;
+  }
+}
+
 function getStorageFilePath(filename) {
   try {
     if (!app.isPackaged) {
@@ -64,17 +91,17 @@ function getStorageFilePath(filename) {
     }
   } catch (_) {}
 
-  // En aplicación empaquetada: app.getPath('userData') (ej. %APPDATA%/drac-control-asistencia/data)
+  // En aplicación empaquetada: %APPDATA%/DRAC Control de Asistencia/data (conservado entre actualizaciones)
   try {
-    const userDataDir = path.join(app.getPath('userData'), 'data');
-    if (!fs.existsSync(userDataDir)) {
-      try {
-        fs.mkdirSync(userDataDir, { recursive: true });
-      } catch (err) {
-        log(`Aviso al crear directorio userData: ${err.message}`);
+    const userDataRoot = app.getPath('userData');
+    for (const sub of ['data', 'database', 'backups', 'sync', 'config', 'logs']) {
+      const targetSub = path.join(userDataRoot, sub);
+      if (!fs.existsSync(targetSub)) {
+        try { fs.mkdirSync(targetSub, { recursive: true }); } catch (_) {}
       }
     }
 
+    const userDataDir = path.join(userDataRoot, 'data');
     const userFilePath = path.join(userDataDir, filename);
     if (!fs.existsSync(userFilePath)) {
       try {
@@ -171,7 +198,9 @@ function decryptSecretValue(stored) {
 
 function loadStoredBioTimeConfig() {
   try {
-    const cfgPath = getStorageFilePath('biotime-config.json');
+    const structuredCfgPath = getStructuredConfigFilePath('biotime-config.json');
+    const legacyCfgPath = getStorageFilePath('biotime-config.json');
+    const cfgPath = fs.existsSync(structuredCfgPath) ? structuredCfgPath : legacyCfgPath;
     if (fs.existsSync(cfgPath)) {
       const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
       if (raw && typeof raw === 'object') {
@@ -252,8 +281,13 @@ function saveStoredBioTimeConfig(payload = {}) {
     updatedAt: new Date().toISOString(),
   };
 
-  const cfgPath = getStorageFilePath('biotime-config.json');
-  fs.writeFileSync(cfgPath, JSON.stringify(stored, null, 2), 'utf8');
+  const structuredCfgPath = getStructuredConfigFilePath('biotime-config.json');
+  const legacyCfgPath = getStorageFilePath('biotime-config.json');
+  const serialized = JSON.stringify(stored, null, 2);
+  fs.writeFileSync(structuredCfgPath, serialized, 'utf8');
+  if (legacyCfgPath !== structuredCfgPath) {
+    try { fs.writeFileSync(legacyCfgPath, serialized, 'utf8'); } catch (_) {}
+  }
   return getPublicBioTimeConfig({
     ...stored,
     authPasswordPlain: decryptSecretValue(stored.authPasswordEnc),
@@ -1693,6 +1727,14 @@ ipcMain.handle('system:get-info', async () => {
     }
   }
 
+  let buildDate = new Date().toISOString().substring(0, 10);
+  try {
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      buildDate = fs.statSync(pkgPath).mtime.toISOString().substring(0, 10);
+    }
+  } catch (_) {}
+
   return {
     platform: process.platform,
     arch: process.arch,
@@ -1700,6 +1742,8 @@ ipcMain.handle('system:get-info', async () => {
     osRelease: os.release(),
     type: os.type(),
     appVersion: app.getVersion(),
+    buildDate,
+    userDataPath: getBasePersistentDir(),
     nodeVersion: process.versions.node,
     electronVersion: process.versions.electron,
     networkAddresses: addresses,

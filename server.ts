@@ -34,7 +34,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.text({ type: ['text/*', 'application/octet-stream'], limit: '10mb' }));
 
-import { normalizeText, normalizeInstitutionalName, normalizePersonName } from './src/utils/nameUtils';
+import {
+  normalizeText,
+  normalizeInstitutionalName,
+  normalizePersonName,
+} from './src/utils/nameUtils';
 import {
   reconcileDeviceUsers,
   classifyDeviceUserBinding,
@@ -43,49 +47,88 @@ import {
   normalizePrivilegeLabel,
   RawClockUserInput,
 } from './src/utils/deviceUserSync';
-import type { BiometricDeviceUser, DeviceUserChangeLog, DeviceUserSyncRun } from './src/types';
+import type {
+  BiometricDeviceUser,
+  DeviceUserChangeLog,
+  DeviceUserSyncRun,
+} from './src/types';
+import {
+  initializePersistentStorage,
+  getStorageStatusReport,
+  createVerifiedBackup,
+  listVerifiedBackups,
+  resolveConfigFilePath,
+  resolveSafeChildPath,
+  safeWriteJsonAtomic,
+} from './server/storageManager';
+import {
+  enqueueOutboxEvent,
+  flushServerOutbox,
+  getOutboxSummary,
+  mergeVersionedRecords,
+  readOutboxQueue,
+  readSyncState,
+  isPlaceholderSupabaseUrlServer,
+} from './server/syncOutbox';
+import {
+  isPeriodClosed,
+  enrichPunchWithOfficialEmployee,
+  enrichAttendanceWithOfficialEmployee,
+  buildConsolidatedEmployeeProfile,
+  type ClosedPeriodEntry,
+} from './server/employeeProfileEnricher';
 
-// Data Directory and Files (supports writable DRAC_DATA_DIR when running inside Electron app.asar)
-const DATA_DIR = process.env.DRAC_DATA_DIR
-  ? path.join(process.env.DRAC_DATA_DIR, 'data')
-  : BUNDLED_DATA_DIR;
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (DATA_DIR !== BUNDLED_DATA_DIR && fs.existsSync(BUNDLED_DATA_DIR)) {
-  try {
-    for (const file of fs.readdirSync(BUNDLED_DATA_DIR)) {
-      if (!file.endsWith('.json')) continue;
-      const dest = path.join(DATA_DIR, file);
-      if (!fs.existsSync(dest)) {
-        fs.copyFileSync(path.join(BUNDLED_DATA_DIR, file), dest);
-      }
-    }
-  } catch (_) {}
-}
+// Leer versión y fecha de compilación del aplicativo
+let APP_VERSION = '1.0.0';
+let BUILD_DATE = new Date().toISOString().substring(0, 10);
+try {
+  const pkgPath = path.join(BASE_PROJECT_DIR, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    const pkgStat = fs.statSync(pkgPath);
+    const pkgJson = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    if (pkgJson?.version) APP_VERSION = String(pkgJson.version);
+    BUILD_DATE = pkgStat.mtime.toISOString().substring(0, 10);
+  }
+} catch (_) {}
 
-const RAW_PUNCHES_FILE = path.join(DATA_DIR, 'raw-punches.json');
-const ATTENDANCE_FILE = path.join(DATA_DIR, 'attendance.json');
-const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
-const EMPLOYEES_FILE = path.join(DATA_DIR, 'employees.json');
-const PUSH_LOGS_FILE = path.join(DATA_DIR, 'push-logs.json');
-const AUDIT_LOGS_FILE = path.join(DATA_DIR, 'audit-logs.json');
-const TURNOS_FILE = path.join(DATA_DIR, 'turnos.json');
-const HORARIOS_FILE = path.join(DATA_DIR, 'horarios.json');
-const ASIGNACIONES_FILE = path.join(DATA_DIR, 'asignacion-horarios.json');
-const DEPENDENCIAS_FILE = path.join(DATA_DIR, 'dependencias.json');
-const DIRECCIONES_FILE = path.join(DATA_DIR, 'direcciones.json');
-const AREAS_FILE = path.join(DATA_DIR, 'areas.json');
-const CARGOS_FILE = path.join(DATA_DIR, 'cargos.json');
-const RESPONSABLES_FILE = path.join(DATA_DIR, 'responsables.json');
-const PAPELETAS_FILE = path.join(DATA_DIR, 'papeletas.json');
-const VACACIONES_FILE = path.join(DATA_DIR, 'vacaciones.json');
-const ENCARGATURAS_FILE = path.join(DATA_DIR, 'encargaturas.json');
-const DEVICE_USERS_FILE = path.join(DATA_DIR, 'device-users.json');
-const DEVICE_USER_HISTORY_FILE = path.join(DATA_DIR, 'device-user-history.json');
-const DEVICE_USER_SYNC_LOGS_FILE = path.join(DATA_DIR, 'device-user-sync-logs.json');
-const SUPABASE_CFG_FILE = path.join(DATA_DIR, 'supabase-config.json');
-const BIOTIME_CONFIG_FILE = path.join(DATA_DIR, 'biotime-config.json');
+// Directorio base persistente (DRAC_DATA_DIR en Electron = %APPDATA%/DRAC Control de Asistencia)
+const PERSISTENT_BASE_DIR = process.env.DRAC_DATA_DIR
+  ? path.resolve(process.env.DRAC_DATA_DIR)
+  : path.resolve(BASE_PROJECT_DIR);
+
+const STORAGE_BOOT = initializePersistentStorage({
+  baseDir: PERSISTENT_BASE_DIR,
+  bundledDataDir: BUNDLED_DATA_DIR,
+  appVersion: APP_VERSION,
+  buildDate: BUILD_DATE,
+});
+
+const STORAGE_DIRS = STORAGE_BOOT.dirs;
+const DATA_DIR = STORAGE_DIRS.dataDir;
+
+const RAW_PUNCHES_FILE = resolveSafeChildPath(DATA_DIR, 'raw-punches.json');
+const ATTENDANCE_FILE = resolveSafeChildPath(DATA_DIR, 'attendance.json');
+const DEVICES_FILE = resolveSafeChildPath(DATA_DIR, 'devices.json');
+const EMPLOYEES_FILE = resolveSafeChildPath(DATA_DIR, 'employees.json');
+const PUSH_LOGS_FILE = resolveSafeChildPath(DATA_DIR, 'push-logs.json');
+const AUDIT_LOGS_FILE = resolveSafeChildPath(DATA_DIR, 'audit-logs.json');
+const TURNOS_FILE = resolveSafeChildPath(DATA_DIR, 'turnos.json');
+const HORARIOS_FILE = resolveSafeChildPath(DATA_DIR, 'horarios.json');
+const ASIGNACIONES_FILE = resolveSafeChildPath(DATA_DIR, 'asignacion-horarios.json');
+const DEPENDENCIAS_FILE = resolveSafeChildPath(DATA_DIR, 'dependencias.json');
+const DIRECCIONES_FILE = resolveSafeChildPath(DATA_DIR, 'direcciones.json');
+const AREAS_FILE = resolveSafeChildPath(DATA_DIR, 'areas.json');
+const CARGOS_FILE = resolveSafeChildPath(DATA_DIR, 'cargos.json');
+const RESPONSABLES_FILE = resolveSafeChildPath(DATA_DIR, 'responsables.json');
+const PAPELETAS_FILE = resolveSafeChildPath(DATA_DIR, 'papeletas.json');
+const VACACIONES_FILE = resolveSafeChildPath(DATA_DIR, 'vacaciones.json');
+const ENCARGATURAS_FILE = resolveSafeChildPath(DATA_DIR, 'encargaturas.json');
+const DEVICE_USERS_FILE = resolveSafeChildPath(DATA_DIR, 'device-users.json');
+const DEVICE_USER_HISTORY_FILE = resolveSafeChildPath(DATA_DIR, 'device-user-history.json');
+const DEVICE_USER_SYNC_LOGS_FILE = resolveSafeChildPath(DATA_DIR, 'device-user-sync-logs.json');
+const CLOSED_PERIODS_FILE = resolveSafeChildPath(DATA_DIR, 'closed-periods.json');
+const SUPABASE_CFG_FILE = resolveConfigFilePath(STORAGE_DIRS, 'supabase-config.json');
+const BIOTIME_CONFIG_FILE = resolveConfigFilePath(STORAGE_DIRS, 'biotime-config.json');
 
 try {
   if (fs.existsSync(SUPABASE_CFG_FILE)) {
@@ -253,7 +296,10 @@ function saveStoredBioTimeConfigServer(payload: any = {}) {
     updatedAt: new Date().toISOString(),
   };
 
-  writeJsonFile(BIOTIME_CONFIG_FILE, stored);
+  const structuredBtPath = resolveSafeChildPath(STORAGE_DIRS.configDir, 'biotime-config.json');
+  const legacyBtPath = resolveSafeChildPath(STORAGE_DIRS.dataDir, 'biotime-config.json');
+  writeJsonFile(structuredBtPath, stored);
+  writeJsonFile(legacyBtPath, stored);
   return getPublicBioTimeConfigServer({
     ...stored,
     authPasswordPlain: decryptBioTimeSecretServer(stored.authPasswordEnc),
@@ -376,28 +422,9 @@ const getPunchesHandler = (req: express.Request, res: express.Response) => {
   }
 
   // Enrich strictly by (device_sn, pin) binding FIRST, then unambiguous biometric ID (never by name)
-  const enriched = filtered.map((p) => {
-    const rawCode = String(p.employee_code || p.employee_dni || '').trim();
-    const deviceSn = String(p.device_sn || '').trim().toUpperCase();
-    const linkedById = p.employee_id ? employees.find((e) => e.id === p.employee_id) : undefined;
-    const resolved = linkedById
-      ? { employee: linkedById, ambiguous: false }
-      : resolveEmployeeForDevicePin(employees, deviceUsers, deviceSn, rawCode);
-    const emp = resolved.employee;
-    const dev = devices.find((d) => d.serial_number === p.device_sn || d.id === p.device_id);
-    const isIdentified = !!emp;
-    return {
-      ...p,
-      employee_id: emp ? emp.id : null,
-      employee_dni: emp ? emp.dni : rawCode,
-      employee_code: rawCode,
-      employee_name: emp ? normalizePersonName(`${emp.first_name} ${emp.last_name}`) : 'Pendiente de Identificación',
-      device_name: dev ? dev.name : (p.device_name || 'ZKTeco G3 Sede Central'),
-      validation_status: isIdentified ? (p.validation_status === 'PENDIENTE_IDENTIFICACION' ? 'VALIDA' : (p.validation_status || 'VALIDA')) : 'PENDIENTE_IDENTIFICACION',
-      synced_at: p.synced_at || p.created_at || null,
-      source: p.source || 'DIRECT_READ',
-    };
-  });
+  const enriched = filtered.map((p) =>
+    enrichPunchWithOfficialEmployee(p, employees, devices, deviceUsers)
+  );
 
   const finalRows = status
     ? enriched.filter((p) => p.validation_status === String(status))
@@ -426,9 +453,10 @@ app.get('/api/punches', getPunchesHandler);
 // GET /api/attendance
 app.get('/api/attendance', (req, res) => {
   const attendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
   const { fecha, dni } = req.query;
 
-  let filtered = [...attendance];
+  let filtered = attendance.map((a) => enrichAttendanceWithOfficialEmployee(a, employees));
   if (fecha) {
     filtered = filtered.filter((a) => a.fecha === fecha);
   }
@@ -443,6 +471,31 @@ app.get('/api/attendance', (req, res) => {
     count: filtered.length,
     data: filtered,
   });
+});
+
+// GET/POST /api/attendance/closed-periods - Protección de períodos históricos cerrados
+app.get('/api/attendance/closed-periods', (_req, res) => {
+  const periods = readJsonFile<ClosedPeriodEntry[]>(CLOSED_PERIODS_FILE, []);
+  return res.json({ success: true, count: periods.length, data: periods });
+});
+
+app.post('/api/attendance/closed-periods', (req, res) => {
+  const { period, closed_by = 'RRHH DRAC', reason = 'Cierre mensual oficial' } = req.body || {};
+  const cleanPeriod = String(period || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(cleanPeriod)) {
+    return res.status(400).json({ success: false, message: 'Formato de período inválido. Use YYYY-MM.' });
+  }
+  const periods = readJsonFile<ClosedPeriodEntry[]>(CLOSED_PERIODS_FILE, []);
+  if (!periods.some((p) => p.period === cleanPeriod)) {
+    periods.push({
+      period: cleanPeriod,
+      closed_at: new Date().toISOString(),
+      closed_by: String(closed_by),
+      reason: String(reason),
+    });
+    writeJsonFile(CLOSED_PERIODS_FILE, periods);
+  }
+  return res.status(201).json({ success: true, count: periods.length, data: periods });
 });
 
 // ---------------------------------------------------------------------------
@@ -595,7 +648,7 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
   }
 
   const nowIso = new Date().toISOString();
-  const nextVersion = (Number(existing.config_version) || 1) + 1;
+  const nextVersion = (Number(existing.config_version) || Number(existing.record_version) || 1) + 1;
 
   // 3. Assemble Updated Device Object
   const updated = {
@@ -618,11 +671,40 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
     last_modified_at: nowIso,
     updated_at: nowIso,
     config_version: nextVersion,
+    record_version: nextVersion,
   };
 
   // 4. Persist to data/devices.json
   devices[index] = updated;
   writeJsonFile(DEVICES_FILE, devices);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'dispositivos_zkteco',
+    entity_id: updated.id,
+    operation: 'UPSERT',
+    payload: {
+      id: updated.id,
+      serial_number: updated.serial_number,
+      name: updated.name,
+      ip_address: updated.ip_address,
+      port: updated.port,
+      netmask: updated.netmask,
+      gateway: updated.gateway,
+      dns: updated.dns,
+      mac_address: updated.mac_address,
+      comm_key: String(updated.comm_key),
+      device_id_num: updated.device_id_num,
+      model: updated.model,
+      protocol: updated.protocol,
+      status: updated.status,
+      location_detail: updated.location_detail,
+      last_modified_by: updated.last_modified_by,
+      last_modified_at: updated.last_modified_at,
+      updated_at: updated.updated_at,
+      record_version: nextVersion,
+    },
+    record_version: nextVersion,
+  });
 
   // 5. Append Audit Log to data/audit-logs.json
   const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
@@ -807,10 +889,39 @@ app.post('/api/zkteco/devices', (req, res) => {
     last_modified_at: nowIso,
     updated_at: nowIso,
     config_version: 1,
+    record_version: 1,
   };
 
   devices.push(newDevice);
   writeJsonFile(DEVICES_FILE, devices);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'dispositivos_zkteco',
+    entity_id: newDevice.id,
+    operation: 'UPSERT',
+    payload: {
+      id: newDevice.id,
+      serial_number: newDevice.serial_number,
+      name: newDevice.name,
+      ip_address: newDevice.ip_address,
+      port: newDevice.port,
+      netmask: newDevice.netmask,
+      gateway: newDevice.gateway,
+      dns: newDevice.dns,
+      mac_address: newDevice.mac_address,
+      comm_key: String(newDevice.comm_key),
+      device_id_num: newDevice.device_id_num,
+      model: newDevice.model,
+      protocol: newDevice.protocol,
+      status: newDevice.status,
+      location_detail: newDevice.location_detail,
+      last_modified_by: newDevice.last_modified_by,
+      last_modified_at: newDevice.last_modified_at,
+      updated_at: newDevice.updated_at,
+      record_version: 1,
+    },
+    record_version: 1,
+  });
 
   // Auditoría
   const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
@@ -1006,7 +1117,8 @@ const handleSaveEmployee = (req: express.Request, res: express.Response) => {
 
   const existingIdx = employees.findIndex((e) => e.id === body.id || (cleanDni && e.dni === cleanDni));
   const existing = existingIdx >= 0 ? employees[existingIdx] : undefined;
-  const normalized = normalizeEmployeePayload(body, existing);
+  const normalized: any = normalizeEmployeePayload(body, existing);
+  normalized.record_version = (Number(existing?.record_version) || 0) + 1;
 
   if (existingIdx >= 0) {
     employees[existingIdx] = { ...employees[existingIdx], ...normalized };
@@ -1016,32 +1128,19 @@ const handleSaveEmployee = (req: express.Request, res: express.Response) => {
 
   writeJsonFile(EMPLOYEES_FILE, employees);
 
-  // Replicar en Supabase PostgreSQL de manera asíncrona
-  try {
-    Promise.resolve(
-      supabaseServer
-        .from('trabajadores')
-        .upsert({
-          id: normalized.id,
-          codigo_drac: normalized.codigo_trabajador,
-          dni: normalized.dni,
-          nombres: normalized.first_name,
-          apellido_paterno: normalized.apellido_paterno,
-          apellido_materno: normalized.apellido_materno,
-          email: normalized.email,
-          telefono: normalized.phone,
-          direccion: normalized.address,
-          dependencia_id: normalized.dependencia_id,
-          area_id: normalized.area_id,
-          cargo_id: normalized.cargo_id || 'crg-05',
-          regimen_id: normalized.regimen_laboral,
-          es_jefe: normalized.is_jefe_director,
-          estado: normalized.active ? 'ACTIVO' : 'INACTIVO',
-          fecha_ingreso: normalized.hire_date,
-          updated_at: normalized.updated_at,
-        })
-    );
-  } catch (_) {}
+  const originHdr = String(req.headers['x-app-origin'] || (process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB')).toUpperCase();
+  const origin: 'DESKTOP' | 'WEB' = originHdr === 'DESKTOP' ? 'DESKTOP' : 'WEB';
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'trabajadores',
+    entity_id: normalized.id,
+    operation: 'UPSERT',
+    payload: normalized,
+    record_version: normalized.record_version,
+    origin,
+  });
+
+  // Replicar en Supabase PostgreSQL de manera asíncrona y marcar si tuvo éxito
+  flushServerOutbox({ dirs: STORAGE_DIRS, supabaseServer, supabaseUrl: SUPABASE_URL, timeoutMs: 2500 }).catch(() => {});
 
   return res.status(201).json({
     success: true,
@@ -1059,36 +1158,22 @@ const handleUpdateEmployee = (req: express.Request, res: express.Response) => {
     return res.status(404).json({ success: false, message: 'Trabajador no encontrado.' });
   }
 
-  const normalized = normalizeEmployeePayload(req.body, employees[idx]);
+  const normalized: any = normalizeEmployeePayload(req.body, employees[idx]);
+  normalized.record_version = (Number(employees[idx]?.record_version) || 1) + 1;
   employees[idx] = { ...employees[idx], ...normalized };
   writeJsonFile(EMPLOYEES_FILE, employees);
 
-  // Replicar en Supabase PostgreSQL
-  try {
-    Promise.resolve(
-      supabaseServer
-        .from('trabajadores')
-        .upsert({
-          id: employees[idx].id,
-          codigo_drac: employees[idx].codigo_trabajador,
-          dni: employees[idx].dni,
-          nombres: employees[idx].first_name,
-          apellido_paterno: employees[idx].apellido_paterno,
-          apellido_materno: employees[idx].apellido_materno,
-          email: employees[idx].email,
-          telefono: employees[idx].phone,
-          direccion: employees[idx].address,
-          dependencia_id: employees[idx].dependencia_id,
-          area_id: employees[idx].area_id,
-          cargo_id: employees[idx].cargo_id,
-          regimen_id: employees[idx].regimen_laboral,
-          es_jefe: employees[idx].is_jefe_director,
-          estado: employees[idx].active ? 'ACTIVO' : 'INACTIVO',
-          fecha_ingreso: employees[idx].hire_date,
-          updated_at: new Date().toISOString(),
-        })
-    );
-  } catch (_) {}
+  const originHdr = String(req.headers['x-app-origin'] || (process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB')).toUpperCase();
+  const origin: 'DESKTOP' | 'WEB' = originHdr === 'DESKTOP' ? 'DESKTOP' : 'WEB';
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'trabajadores',
+    entity_id: employees[idx].id,
+    operation: 'UPSERT',
+    payload: employees[idx],
+    record_version: normalized.record_version,
+    origin,
+  });
+  flushServerOutbox({ dirs: STORAGE_DIRS, supabaseServer, supabaseUrl: SUPABASE_URL, timeoutMs: 2500 }).catch(() => {});
 
   return res.json({ success: true, message: 'Trabajador actualizado exitosamente.', data: employees[idx] });
 };
@@ -1105,15 +1190,53 @@ const handleDeleteEmployee = (req: express.Request, res: express.Response) => {
   const removed = employees.splice(idx, 1)[0];
   writeJsonFile(EMPLOYEES_FILE, employees);
 
-  try {
-    Promise.resolve(supabaseServer.from('trabajadores').delete().eq('id', id));
-  } catch (_) {}
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'trabajadores',
+    entity_id: removed.id || id,
+    operation: 'DELETE',
+    payload: { id: removed.id || id },
+    record_version: (Number(removed.record_version) || 1) + 1,
+    origin: process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB',
+  });
+  flushServerOutbox({ dirs: STORAGE_DIRS, supabaseServer, supabaseUrl: SUPABASE_URL, timeoutMs: 2500 }).catch(() => {});
 
   return res.json({ success: true, message: 'Trabajador dado de baja correctamente.', data: removed });
 };
 
+const handleGetEmployeeProfile = (req: express.Request, res: express.Response) => {
+  const { id } = req.params;
+  const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+  const emp = employees.find((e) => e.id === id || e.dni === id || e.codigo_trabajador === id);
+  if (!emp) {
+    return res.status(404).json({ success: false, message: 'Trabajador no encontrado en el Directorio Institucional.' });
+  }
+
+  const viewerRole = String(req.headers['x-user-role'] || req.query.viewerRole || req.query.role || 'ADMIN_GENERAL');
+  const profile = buildConsolidatedEmployeeProfile({
+    employee: emp,
+    dependencias: readJsonFile<any[]>(DEPENDENCIAS_FILE, []),
+    direcciones: readJsonFile<any[]>(DIRECCIONES_FILE, []),
+    areas: readJsonFile<any[]>(AREAS_FILE, []),
+    cargos: readJsonFile<any[]>(CARGOS_FILE, []),
+    horarios: readJsonFile<any[]>(HORARIOS_FILE, []),
+    turnos: readJsonFile<any[]>(TURNOS_FILE, []),
+    asignacionesHorario: readJsonFile<any[]>(ASIGNACIONES_FILE, []),
+    devices: readJsonFile<any[]>(DEVICES_FILE, []),
+    deviceUsers: readJsonFile<BiometricDeviceUser[]>(DEVICE_USERS_FILE, []),
+    rawPunches: readJsonFile<any[]>(RAW_PUNCHES_FILE, []),
+    attendance: readJsonFile<any[]>(ATTENDANCE_FILE, []),
+    papeletas: readJsonFile<any[]>(PAPELETAS_FILE, []),
+    vacaciones: readJsonFile<any[]>(VACACIONES_FILE, []),
+    viewerRole,
+  });
+
+  return res.json({ success: true, data: profile });
+};
+
 app.get('/api/employees', handleGetEmployees);
 app.get('/api/trabajadores', handleGetEmployees);
+app.get('/api/employees/:id/profile', handleGetEmployeeProfile);
+app.get('/api/trabajadores/:id/profile', handleGetEmployeeProfile);
 app.post('/api/employees', handleSaveEmployee);
 app.post('/api/trabajadores', handleSaveEmployee);
 app.put('/api/employees/:id', handleUpdateEmployee);
@@ -1442,15 +1565,36 @@ app.post('/api/turnos', (req, res) => {
     is_overnight: Boolean(req.body.is_overnight),
     active: req.body.active !== undefined ? Boolean(req.body.active) : true,
     created_at: req.body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    record_version: Number(req.body.record_version) || 1,
   };
 
   const existingIdx = turnos.findIndex((t) => t.id === newTurno.id || t.code === newTurno.code);
   if (existingIdx >= 0) {
-    turnos[existingIdx] = { ...turnos[existingIdx], ...newTurno };
+    const nextVer = (Number(turnos[existingIdx].record_version) || 1) + 1;
+    turnos[existingIdx] = { ...turnos[existingIdx], ...newTurno, record_version: nextVer };
+    newTurno.record_version = nextVer;
   } else {
     turnos.push(newTurno);
   }
   writeJsonFile(TURNOS_FILE, turnos);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'turnos',
+    entity_id: newTurno.id,
+    operation: 'UPSERT',
+    payload: {
+      id: newTurno.id,
+      codigo: newTurno.code,
+      nombre: newTurno.name,
+      hora_inicio: newTurno.start_time,
+      hora_fin: newTurno.end_time,
+      tolerancia_minutos: newTurno.tolerance_minutes,
+      record_version: newTurno.record_version,
+      updated_at: newTurno.updated_at,
+    },
+    record_version: newTurno.record_version,
+  });
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1477,14 +1621,33 @@ app.put('/api/turnos/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Turno no encontrado.' });
   }
 
+  const nextVer = (Number(turnos[idx].record_version) || 1) + 1;
   turnos[idx] = {
     ...turnos[idx],
     ...req.body,
     tolerance_minutes: req.body.tolerance_minutes !== undefined ? Number(req.body.tolerance_minutes) : turnos[idx].tolerance_minutes,
     active: req.body.active !== undefined ? Boolean(req.body.active) : turnos[idx].active,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(TURNOS_FILE, turnos);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'turnos',
+    entity_id: turnos[idx].id,
+    operation: 'UPSERT',
+    payload: {
+      id: turnos[idx].id,
+      codigo: turnos[idx].code,
+      nombre: turnos[idx].name,
+      hora_inicio: turnos[idx].start_time,
+      hora_fin: turnos[idx].end_time,
+      tolerancia_minutos: turnos[idx].tolerance_minutes,
+      record_version: nextVer,
+      updated_at: turnos[idx].updated_at,
+    },
+    record_version: nextVer,
+  });
 
   try {
     Promise.resolve(
@@ -1511,6 +1674,14 @@ app.delete('/api/turnos/:id', (req, res) => {
   }
   const removed = turnos.splice(idx, 1)[0];
   writeJsonFile(TURNOS_FILE, turnos);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'turnos',
+    entity_id: id,
+    operation: 'DELETE',
+    payload: { id },
+    record_version: (Number(removed?.record_version) || 1) + 1,
+  });
 
   try {
     Promise.resolve(supabaseServer.from('turnos').delete().eq('id', id)).catch(() => {});
@@ -1551,15 +1722,37 @@ app.post('/api/horarios', (req, res) => {
     total_hours: Number(req.body.total_hours || (req.body.turn_count === 2 ? 8 : 8)),
     total_duration_text: req.body.total_duration_text || (req.body.turn_count === 2 ? '8 horas diarias (2 turnos)' : '8 horas continuas'),
     created_at: req.body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    record_version: Number(req.body.record_version) || 1,
   };
 
   const existingIdx = horarios.findIndex((h) => h.id === newHorario.id || h.code === newHorario.code);
   if (existingIdx >= 0) {
-    horarios[existingIdx] = { ...horarios[existingIdx], ...newHorario };
+    const nextVer = (Number(horarios[existingIdx].record_version) || 1) + 1;
+    horarios[existingIdx] = { ...horarios[existingIdx], ...newHorario, record_version: nextVer };
+    newHorario.record_version = nextVer;
   } else {
     horarios.push(newHorario);
   }
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'horarios',
+    entity_id: newHorario.id,
+    operation: 'UPSERT',
+    payload: {
+      id: newHorario.id,
+      codigo: newHorario.code,
+      nombre: newHorario.name,
+      total_turnos: newHorario.turn_count,
+      turno1_id: newHorario.turno1_id,
+      turno2_id: newHorario.turn_count === 2 && newHorario.turno2_id ? newHorario.turno2_id : null,
+      activo: newHorario.active,
+      record_version: newHorario.record_version,
+      updated_at: newHorario.updated_at,
+    },
+    record_version: newHorario.record_version,
+  });
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1587,12 +1780,32 @@ app.put('/api/horarios/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Horario no encontrado.' });
   }
 
+  const nextVer = (Number(horarios[idx].record_version) || 1) + 1;
   horarios[idx] = {
     ...horarios[idx],
     ...req.body,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'horarios',
+    entity_id: horarios[idx].id,
+    operation: 'UPSERT',
+    payload: {
+      id: horarios[idx].id,
+      codigo: horarios[idx].code,
+      nombre: horarios[idx].name,
+      total_turnos: horarios[idx].turn_count,
+      turno1_id: horarios[idx].turno1_id,
+      turno2_id: horarios[idx].turn_count === 2 && horarios[idx].turno2_id ? horarios[idx].turno2_id : null,
+      activo: horarios[idx].active,
+      record_version: nextVer,
+      updated_at: horarios[idx].updated_at,
+    },
+    record_version: nextVer,
+  });
 
   try {
     Promise.resolve(
@@ -1620,6 +1833,14 @@ app.delete('/api/horarios/:id', (req, res) => {
   }
   const removed = horarios.splice(idx, 1)[0];
   writeJsonFile(HORARIOS_FILE, horarios);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'horarios',
+    entity_id: id,
+    operation: 'DELETE',
+    payload: { id },
+    record_version: (Number(removed?.record_version) || 1) + 1,
+  });
 
   try {
     Promise.resolve(supabaseServer.from('horarios').delete().eq('id', id)).catch(() => {});
@@ -1690,12 +1911,34 @@ app.post('/api/asignacion-horarios', (req, res) => {
   }
 
   const existingIdx = asignaciones.findIndex((a) => a.id === newAsignacion.id);
+  const nextVer = existingIdx >= 0 ? (Number(asignaciones[existingIdx].record_version) || 1) + 1 : 1;
+  (newAsignacion as any).record_version = nextVer;
   if (existingIdx >= 0) {
     asignaciones[existingIdx] = { ...asignaciones[existingIdx], ...newAsignacion };
   } else {
     asignaciones.unshift(newAsignacion);
   }
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'asignacion_horarios',
+    entity_id: newAsignacion.id,
+    operation: 'UPSERT',
+    payload: {
+      id: newAsignacion.id,
+      trabajador_id: newAsignacion.employee_id,
+      horario_id: newAsignacion.horario_id,
+      fecha_inicio: newAsignacion.fecha_inicio,
+      fecha_fin: newAsignacion.fecha_fin || null,
+      tipo_asignacion: newAsignacion.tipo_asignacion,
+      motivo: newAsignacion.motivo,
+      documento_sustento: newAsignacion.documento_sustento,
+      activo: newAsignacion.activo,
+      record_version: nextVer,
+      updated_at: newAsignacion.updated_at,
+    },
+    record_version: nextVer,
+  });
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1729,14 +1972,36 @@ app.put('/api/asignacion-horarios/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Asignación no encontrada.' });
   }
 
+  const nextVer = (Number(asignaciones[idx].record_version) || 1) + 1;
   asignaciones[idx] = {
     ...asignaciones[idx],
     ...req.body,
     employee_name: req.body.employee_name ? normalizePersonName(req.body.employee_name) : asignaciones[idx].employee_name,
     horario_name: req.body.horario_name ? normalizeInstitutionalName(req.body.horario_name) : asignaciones[idx].horario_name,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'asignacion_horarios',
+    entity_id: asignaciones[idx].id,
+    operation: 'UPSERT',
+    payload: {
+      id: asignaciones[idx].id,
+      trabajador_id: asignaciones[idx].employee_id,
+      horario_id: asignaciones[idx].horario_id,
+      fecha_inicio: asignaciones[idx].fecha_inicio,
+      fecha_fin: asignaciones[idx].fecha_fin || null,
+      tipo_asignacion: asignaciones[idx].tipo_asignacion,
+      motivo: asignaciones[idx].motivo,
+      documento_sustento: asignaciones[idx].documento_sustento,
+      activo: asignaciones[idx].activo,
+      record_version: nextVer,
+      updated_at: asignaciones[idx].updated_at,
+    },
+    record_version: nextVer,
+  });
 
   try {
     Promise.resolve(
@@ -1766,6 +2031,14 @@ app.delete('/api/asignacion-horarios/:id', (req, res) => {
   }
   const removed = asignaciones.splice(idx, 1)[0];
   writeJsonFile(ASIGNACIONES_FILE, asignaciones);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'asignacion_horarios',
+    entity_id: id,
+    operation: 'DELETE',
+    payload: { id },
+    record_version: (Number(removed?.record_version) || 1) + 1,
+  });
 
   try {
     Promise.resolve(supabaseServer.from('asignacion_horarios').delete().eq('id', id)).catch(() => {});
@@ -1856,12 +2129,38 @@ app.post('/api/papeletas', (req, res) => {
   };
 
   const idx = paps.findIndex((p) => p.id === newPap.id);
+  const nextVer = idx >= 0 ? (Number(paps[idx].record_version) || 1) + 1 : Number(body.record_version) || 1;
+  (newPap as any).record_version = nextVer;
   if (idx >= 0) {
     paps[idx] = { ...paps[idx], ...newPap };
   } else {
     paps.unshift(newPap);
   }
   writeJsonFile(PAPELETAS_FILE, paps);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'papeletas_salida',
+    entity_id: newPap.id,
+    operation: 'UPSERT',
+    payload: {
+      id: newPap.id,
+      codigo: newPap.code,
+      trabajador_id: newPap.employee_id,
+      dni: newPap.employee_dni,
+      motivo: newPap.motivo,
+      destino: newPap.destino,
+      fecha: newPap.fecha,
+      hora_salida_estimada: newPap.hora_estimada_salida,
+      hora_retorno_estimada: newPap.hora_estimada_retorno,
+      hora_salida_real: newPap.hora_real_salida,
+      hora_retorno_real: newPap.hora_real_retorno,
+      estado: newPap.status,
+      record_version: nextVer,
+      created_at: newPap.created_at,
+      updated_at: newPap.updated_at,
+    },
+    record_version: nextVer,
+  });
 
   // Replicar en Supabase
   try {
@@ -1896,12 +2195,35 @@ app.put('/api/papeletas/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Papeleta no encontrada.' });
   }
 
+  const nextVer = (Number(paps[idx].record_version) || 1) + 1;
   paps[idx] = {
     ...paps[idx],
     ...req.body,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(PAPELETAS_FILE, paps);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'papeletas_salida',
+    entity_id: paps[idx].id,
+    operation: 'UPSERT',
+    payload: {
+      id: paps[idx].id,
+      codigo: paps[idx].code,
+      trabajador_id: paps[idx].employee_id,
+      dni: paps[idx].employee_dni,
+      motivo: paps[idx].motivo,
+      destino: paps[idx].destino,
+      fecha: paps[idx].fecha,
+      estado: paps[idx].status,
+      hora_salida_real: paps[idx].hora_real_salida,
+      hora_retorno_real: paps[idx].hora_real_retorno,
+      record_version: nextVer,
+      updated_at: paps[idx].updated_at,
+    },
+    record_version: nextVer,
+  });
 
   try {
     Promise.resolve(supabaseServer.from('papeletas_salida').upsert({
@@ -1925,6 +2247,15 @@ app.delete('/api/papeletas/:id', (req, res) => {
   }
   const removed = paps.splice(idx, 1)[0];
   writeJsonFile(PAPELETAS_FILE, paps);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'papeletas_salida',
+    entity_id: id,
+    operation: 'DELETE',
+    payload: { id },
+    record_version: (Number(removed?.record_version) || 1) + 1,
+  });
+
   return res.json({ success: true, message: 'Papeleta eliminada.', data: removed });
 });
 
@@ -1955,12 +2286,22 @@ app.post('/api/vacaciones', (req, res) => {
   };
 
   const idx = vacs.findIndex((v) => v.id === newVac.id);
+  const nextVer = idx >= 0 ? (Number(vacs[idx].record_version) || 1) + 1 : Number(body.record_version) || 1;
+  (newVac as any).record_version = nextVer;
   if (idx >= 0) {
     vacs[idx] = { ...vacs[idx], ...newVac };
   } else {
     vacs.unshift(newVac);
   }
   writeJsonFile(VACACIONES_FILE, vacs);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'vacaciones',
+    entity_id: newVac.id,
+    operation: 'UPSERT',
+    payload: newVac,
+    record_version: nextVer,
+  });
 
   return res.status(201).json({ success: true, message: 'Solicitud de vacación guardada correctamente.', data: newVac });
 });
@@ -1973,12 +2314,23 @@ app.put('/api/vacaciones/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Registro de vacación no encontrado.' });
   }
 
+  const nextVer = (Number(vacs[idx].record_version) || 1) + 1;
   vacs[idx] = {
     ...vacs[idx],
     ...req.body,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(VACACIONES_FILE, vacs);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'vacaciones',
+    entity_id: vacs[idx].id,
+    operation: 'UPSERT',
+    payload: vacs[idx],
+    record_version: nextVer,
+  });
+
   return res.json({ success: true, message: 'Registro de vacación actualizado.', data: vacs[idx] });
 });
 
@@ -1991,6 +2343,15 @@ app.delete('/api/vacaciones/:id', (req, res) => {
   }
   const removed = vacs.splice(idx, 1)[0];
   writeJsonFile(VACACIONES_FILE, vacs);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'vacaciones',
+    entity_id: id,
+    operation: 'DELETE',
+    payload: { id },
+    record_version: (Number(removed?.record_version) || 1) + 1,
+  });
+
   return res.json({ success: true, message: 'Registro de vacación eliminado.', data: removed });
 });
 
@@ -2374,9 +2735,14 @@ function upsertAttendanceFromIdentifiedPunch(
       id: `att-${emp.id || empDni}-${fechaPart}`,
       employee_id: emp.id,
       employee_dni: empDni,
+      employee_codigo_drac: emp.codigo_trabajador || null,
       employee_name: workerName,
       dependencia_id: emp.dependencia_id || 'dep-01',
-      dependencia_name: emp.dependencia_name || 'Sede Central - DRAC Cajamarca',
+      dependencia_name: normalizeInstitutionalName(emp.dependencia_name || 'Sede Central - DRAC Cajamarca'),
+      direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name || ''),
+      area_id: emp.area_id || '',
+      area_name: normalizeInstitutionalName(emp.area_name || ''),
+      cargo_name: normalizeInstitutionalName(emp.position || emp.cargo || emp.cargo_name || ''),
       fecha: fechaPart,
       t1_scheduled_in: '08:00',
       t1_scheduled_out: '13:00',
@@ -2391,11 +2757,20 @@ function upsertAttendanceFromIdentifiedPunch(
       net_tardiness_minutes: isLate ? 5 : 0,
       total_effective_hours: 4.5,
       raw_punch_id: punchRecord.id,
+      record_version: 1,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
   } else {
     const att = existingAttendance[attIndex];
+    att.employee_id = emp.id;
+    att.employee_dni = empDni;
+    att.employee_codigo_drac = emp.codigo_trabajador || att.employee_codigo_drac || null;
+    att.employee_name = workerName;
+    att.dependencia_name = normalizeInstitutionalName(emp.dependencia_name || att.dependencia_name || '');
+    att.direccion_organo_name = normalizeInstitutionalName(emp.direccion_organo_name || att.direccion_organo_name || '');
+    att.area_name = normalizeInstitutionalName(emp.area_name || att.area_name || '');
+    att.cargo_name = normalizeInstitutionalName(emp.position || emp.cargo || emp.cargo_name || att.cargo_name || '');
     if (!att.t1_real_in) att.t1_real_in = punchHour;
     else if (!att.t1_real_out && punchHour <= '13:30') att.t1_real_out = punchHour;
     else if (!att.t2_real_in && punchHour >= '13:45') att.t2_real_in = punchHour;
@@ -2403,6 +2778,7 @@ function upsertAttendanceFromIdentifiedPunch(
       att.t2_real_out = punchHour;
       att.total_effective_hours = 8.0;
     }
+    att.record_version = (Number(att.record_version) || 1) + 1;
     att.updated_at = new Date().toISOString();
     existingAttendance[attIndex] = att;
   }
@@ -2565,8 +2941,13 @@ async function integrateRealPunchesIntoSystem(
       device_ip: deviceInfo?.ip || p.device_ip || '',
       employee_id: emp ? emp.id : null,
       employee_dni: emp ? emp.dni : rawPin,
+      employee_codigo_drac: emp ? (emp.codigo_trabajador || null) : null,
       employee_code: rawPin,
       employee_name: workerName,
+      dependencia_name: emp ? normalizeInstitutionalName(emp.dependencia_name || '') : null,
+      direccion_organo_name: emp ? normalizeInstitutionalName(emp.direccion_organo_name || '') : null,
+      area_name: emp ? normalizeInstitutionalName(emp.area_name || '') : null,
+      cargo_name: emp ? normalizeInstitutionalName(emp.position || emp.cargo || emp.cargo_name || '') : null,
       fecha: fechaPart,
       hora: horaPart,
       timestamp: rawTime,
@@ -2578,7 +2959,9 @@ async function integrateRealPunchesIntoSystem(
       validation_status: isIdentified ? 'VALIDA' : 'PENDIENTE_IDENTIFICACION',
       processed: isIdentified,
       raw_payload: p.raw_payload || p.raw_record || undefined,
+      record_version: 1,
       created_at: syncedAt,
+      updated_at: syncedAt,
     };
 
     storedPunches.unshift(cleanRecord);
@@ -4602,6 +4985,7 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
   const employees = readJsonFile<any[]>(EMPLOYEES_FILE, []);
   const rawPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
   const existingAttendance = readJsonFile<any[]>(ATTENDANCE_FILE, []);
+  const closedPeriods = readJsonFile<ClosedPeriodEntry[]>(CLOSED_PERIODS_FILE, []);
 
   const emp = employees.find((e) => e.id === employee_id || e.dni === employee_id);
   if (!emp) {
@@ -4620,6 +5004,7 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
   const targetSn = targetPunch?.device_sn || '';
   const updatedPunches: any[] = [];
   const empFullName = normalizePersonName(`${emp.first_name} ${emp.last_name}`);
+  let closedPeriodPreservedCount = 0;
 
   for (let i = 0; i < rawPunches.length; i++) {
     const p = rawPunches[i];
@@ -4633,15 +5018,34 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
         ...p,
         employee_id: emp.id,
         employee_dni: emp.dni,
+        employee_codigo_drac: emp.codigo_trabajador || null,
         employee_code: pCode || codeToLink,
         employee_name: empFullName,
+        dependencia_name: normalizeInstitutionalName(emp.dependencia_name || ''),
+        direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name || ''),
+        area_name: normalizeInstitutionalName(emp.area_name || ''),
+        cargo_name: normalizeInstitutionalName(emp.position || emp.cargo || emp.cargo_name || ''),
         validation_status: 'VALIDA',
         processed: true,
         linked_at: new Date().toISOString(),
         linked_by: String(req.headers['x-user-name'] || req.body?.user_name || 'Operador Autorizado'),
+        record_version: (Number(p.record_version) || 1) + 1,
+        updated_at: new Date().toISOString(),
       };
       updatedPunches.push(rawPunches[i]);
-      upsertAttendanceFromIdentifiedPunch(existingAttendance, emp, rawPunches[i]);
+      enqueueOutboxEvent(STORAGE_DIRS, {
+        entity_type: 'marcaciones_raw',
+        entity_id: rawPunches[i].id,
+        operation: 'UPSERT',
+        payload: rawPunches[i],
+        record_version: rawPunches[i].record_version,
+        origin: process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB',
+      });
+      if (!isPeriodClosed(p.fecha, closedPeriods)) {
+        upsertAttendanceFromIdentifiedPunch(existingAttendance, emp, rawPunches[i]);
+      } else {
+        closedPeriodPreservedCount++;
+      }
     }
   }
 
@@ -4652,8 +5056,18 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
         ...employees[empIdx],
         zkteco_pin: codeToLink,
         biometric_user_id: codeToLink,
+        record_version: (Number(employees[empIdx].record_version) || 1) + 1,
+        updated_at: new Date().toISOString(),
       };
       writeJsonFile(EMPLOYEES_FILE, employees);
+      enqueueOutboxEvent(STORAGE_DIRS, {
+        entity_type: 'trabajadores',
+        entity_id: employees[empIdx].id,
+        operation: 'UPSERT',
+        payload: employees[empIdx],
+        record_version: employees[empIdx].record_version,
+        origin: process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB',
+      });
     }
   }
 
@@ -5683,9 +6097,12 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
       }
     }
 
-    // Aplicación retroactiva automática sobre marcaciones históricas de MISMO (device_sn, pin)
+    // Aplicación retroactiva automática sobre marcaciones históricas del MISMO (device_sn, pin)
     // Conserva intactos timestamp, device_sn, punch_type, verify_mode y raw_payload originales.
+    // Respeta períodos cerrados oficiales (closed-periods.json).
     if (apply_to_historical_punches) {
+      const closedPeriods = readJsonFile<ClosedPeriodEntry[]>(CLOSED_PERIODS_FILE, []);
+      let closedPreserved = 0;
       for (let i = 0; i < rawPunches.length; i++) {
         const p = rawPunches[i];
         const pSn = String(p.device_sn || '').trim().toUpperCase();
@@ -5696,16 +6113,36 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
               ...p,
               employee_id: emp.id,
               employee_dni: emp.dni,
+              employee_codigo_drac: emp.codigo_trabajador || null,
               employee_code: pCode,
               employee_name: empFullName,
+              dependencia_name: normalizeInstitutionalName(emp.dependencia_name || ''),
+              direccion_organo_name: normalizeInstitutionalName(emp.direccion_organo_name || ''),
+              area_name: normalizeInstitutionalName(emp.area_name || ''),
+              cargo_name: normalizeInstitutionalName(emp.position || emp.cargo || emp.cargo_name || ''),
+              clock_name_origin: p.clock_name_origin || target.clock_name || null,
               validation_status: 'VALIDA',
               processed: true,
               linked_at: nowIso,
               linked_by: operatorName,
+              record_version: (Number(p.record_version) || 1) + 1,
+              updated_at: nowIso,
             };
             updatedPunchesCount++;
             touchedPunches.push(rawPunches[i]);
-            upsertAttendanceFromIdentifiedPunch(attendance, emp, rawPunches[i]);
+            enqueueOutboxEvent(STORAGE_DIRS, {
+              entity_type: 'marcaciones_raw',
+              entity_id: rawPunches[i].id,
+              operation: 'UPSERT',
+              payload: rawPunches[i],
+              record_version: rawPunches[i].record_version,
+              origin: process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB',
+            });
+            if (!isPeriodClosed(p.fecha, closedPeriods)) {
+              upsertAttendanceFromIdentifiedPunch(attendance, emp, rawPunches[i]);
+            } else {
+              closedPreserved++;
+            }
           }
         }
       }
@@ -5720,13 +6157,39 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
           pin: target.pin,
           event_type: 'RETROACTIVE_PUNCHES_APPLIED',
           new_employee_id: emp.id,
-          observation: `${updatedPunchesCount} marcación(es) histórica(s) del reloj ${target.device_sn} (PIN ${target.pin}) asociadas a ${empFullName}.`,
+          observation: `${updatedPunchesCount} marcación(es) histórica(s) del reloj ${target.device_sn} (PIN ${target.pin}) asociadas a ${empFullName}.${closedPreserved > 0 ? ` (${closedPreserved} en período cerrado preservadas intactas).` : ''}`,
           operator_name: operatorName,
           operator_role: operatorRole,
           created_at: nowIso,
         });
       }
     }
+
+    // Encolar vinculación biométrica en Outbox persistente para sincronización Web <-> Desktop
+    enqueueOutboxEvent(STORAGE_DIRS, {
+      entity_type: 'vinculaciones_usuario_reloj',
+      entity_id: `vinc_${deviceUsers[idx].id}`,
+      operation: 'UPSERT',
+      payload: {
+        id: `vinc_${deviceUsers[idx].id}`,
+        device_user_id: deviceUsers[idx].id,
+        device_sn: deviceUsers[idx].device_sn,
+        pin: deviceUsers[idx].pin,
+        trabajador_id: deviceUsers[idx].employee_id,
+        codigo_drac: deviceUsers[idx].employee_codigo_drac,
+        dni: deviceUsers[idx].employee_dni,
+        nombre_institucional: deviceUsers[idx].employee_full_name,
+        dependencia_name: deviceUsers[idx].employee_dependencia_name,
+        area_name: deviceUsers[idx].employee_area_name,
+        cargo_name: deviceUsers[idx].employee_cargo_name,
+        estado_vinculacion: deviceUsers[idx].link_status,
+        vinculado_por: deviceUsers[idx].linked_by,
+        vinculado_en: deviceUsers[idx].linked_at,
+        updated_at: nowIso,
+      },
+      record_version: (Number((deviceUsers[idx] as any).record_version) || 1) + 1,
+      origin: process.env.DRAC_DATA_DIR ? 'DESKTOP' : 'WEB',
+    });
   }
 
   const nextHistory = [...logsToAdd, ...history].slice(0, 1500);
@@ -6750,13 +7213,207 @@ app.post('/api/supabase/config', (req, res) => {
   SUPABASE_URL = cleanUrl;
   SUPABASE_ANON_KEY = cleanKey;
   supabaseServer = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  writeJsonFile(SUPABASE_CFG_FILE, { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, updatedAt: new Date().toISOString() });
+  const cfgPayload = { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, updatedAt: new Date().toISOString() };
+  writeJsonFile(resolveSafeChildPath(STORAGE_DIRS.configDir, 'supabase-config.json'), cfgPayload);
+  writeJsonFile(resolveSafeChildPath(STORAGE_DIRS.dataDir, 'supabase-config.json'), cfgPayload);
   return res.json({ success: true, supabaseUrl: SUPABASE_URL });
+});
+
+// =========================================================================
+// SISTEMA DE ALMACENAMIENTO SEGURO, VERSIONADO, RESPALDOS Y COLA OUTBOX
+// =========================================================================
+
+app.get('/api/system/storage-status', (_req, res) => {
+  const report = getStorageStatusReport(STORAGE_DIRS, APP_VERSION, BUILD_DATE);
+  const outbox = getOutboxSummary(STORAGE_DIRS);
+  return res.json({
+    success: true,
+    ...report,
+    outbox: {
+      total: outbox.total,
+      pending: outbox.pending,
+      synced: outbox.synced,
+      conflicts: outbox.conflicts,
+      last_push_at: outbox.cursor.last_push_at,
+      last_pull_at: outbox.cursor.last_pull_at,
+      desktop_node_id: outbox.cursor.desktop_node_id,
+    },
+  });
+});
+
+app.get('/api/system/backups', (_req, res) => {
+  const backups = listVerifiedBackups(STORAGE_DIRS);
+  return res.json({ success: true, count: backups.length, data: backups });
+});
+
+app.post('/api/system/backup', (req, res) => {
+  const reason = (req.body?.reason || 'MANUAL') as 'MANUAL' | 'PRE_UPDATE' | 'PRE_MIGRATION' | 'STARTUP_CHECK';
+  const bkp = createVerifiedBackup(STORAGE_DIRS, {
+    reason,
+    appVersion: APP_VERSION,
+    previousAppVersion: null,
+    schemaVersion: STORAGE_BOOT.versionState.schema_version,
+  });
+  if (!bkp.success) {
+    return res.status(500).json({ success: false, message: bkp.error || 'No se pudo generar el respaldo.' });
+  }
+  return res.status(201).json({
+    success: true,
+    message: `Respaldo verificado SHA-256 creado: ${bkp.backup?.filename}`,
+    backup: bkp.backup,
+  });
+});
+
+app.get('/api/sync/outbox', (_req, res) => {
+  return res.json({
+    success: true,
+    cloudConfigured: !isPlaceholderSupabaseUrlServer(SUPABASE_URL),
+    ...getOutboxSummary(STORAGE_DIRS),
+  });
+});
+
+app.post('/api/sync/outbox', (req, res) => {
+  const { entity_type, entity_id, operation = 'UPSERT', payload = {}, record_version, origin } = req.body || {};
+  if (!entity_type || !entity_id) {
+    return res.status(400).json({ success: false, message: 'entity_type y entity_id son obligatorios.' });
+  }
+  const item = enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type,
+    entity_id,
+    operation,
+    payload,
+    record_version,
+    origin,
+  });
+  return res.status(201).json({ success: true, item });
+});
+
+app.post('/api/sync/outbox/flush', async (_req, res) => {
+  const result = await flushServerOutbox({
+    dirs: STORAGE_DIRS,
+    supabaseServer,
+    supabaseUrl: SUPABASE_URL,
+  });
+  return res.json(result);
+});
+
+app.post('/api/sync/pull', async (_req, res) => {
+  if (isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
+    return res.json({
+      success: false,
+      cloudConfigured: false,
+      message: 'Instancia Supabase central no configurada. Operando con base local persistente.',
+      cursor: readSyncState(STORAGE_DIRS),
+    });
+  }
+
+  try {
+    const outbox = readOutboxQueue(STORAGE_DIRS);
+    const pendingIds = new Set(outbox.filter((x) => x.status === 'PENDIENTE').map((x) => x.entity_id));
+    const cursor = readSyncState(STORAGE_DIRS);
+    const pullSummary: Record<string, { inserted: number; updated: number; preservedLocal: number }> = {};
+
+    // Pull trabajadores con control de versiones
+    const empRes: any = await withServerTimeout(
+      Promise.resolve(supabaseServer.from('trabajadores').select('*').limit(1000)),
+      3500,
+      'Timeout pull trabajadores'
+    );
+    if (!empRes?.error && Array.isArray(empRes.data) && empRes.data.length > 0) {
+      const mappedRemote = empRes.data.map((t: any) => ({
+        id: t.id,
+        codigo_trabajador: t.codigo_drac || t.codigo_trabajador,
+        dni: t.dni,
+        first_name: normalizePersonName(t.nombres || t.first_name || ''),
+        last_name: `${normalizePersonName(t.apellido_paterno || '')} ${normalizePersonName(t.apellido_materno || '')}`.trim() || normalizePersonName(t.last_name || ''),
+        apellido_paterno: normalizePersonName(t.apellido_paterno || ''),
+        apellido_materno: normalizePersonName(t.apellido_materno || ''),
+        email: t.email || '',
+        phone: t.telefono || t.phone || '',
+        dependencia_id: t.dependencia_id || 'dep-01',
+        area_id: t.area_id || '',
+        cargo_id: t.cargo_id || '',
+        regimen_laboral: t.regimen_id || 'D.L. 276',
+        is_jefe_director: Boolean(t.es_jefe),
+        active: t.estado ? t.estado === 'ACTIVO' : true,
+        hire_date: t.fecha_ingreso || '2026-01-01',
+        zkteco_pin: t.zkteco_pin || t.dni,
+        record_version: Number(t.record_version) || 1,
+        updated_at: t.updated_at || new Date().toISOString(),
+      }));
+      const localEmps = readJsonFile<any[]>(EMPLOYEES_FILE, []);
+      const mergeEmp = mergeVersionedRecords({
+        localRecords: localEmps,
+        remoteRecords: mappedRemote,
+        pendingEntityIds: pendingIds,
+      });
+      if (mergeEmp.insertedCount > 0 || mergeEmp.updatedCount > 0) {
+        writeJsonFile(EMPLOYEES_FILE, mergeEmp.merged);
+      }
+      pullSummary.trabajadores = {
+        inserted: mergeEmp.insertedCount,
+        updated: mergeEmp.updatedCount,
+        preservedLocal: mergeEmp.skippedDueToNewerLocalCount,
+      };
+    }
+
+    // Pull marcaciones_raw de manera idempotente (sin sobreescribir vinculaciones pendientes locales)
+    const punchRes: any = await withServerTimeout(
+      Promise.resolve(supabaseServer.from('marcaciones_raw').select('*').order('timestamp', { ascending: false }).limit(2000)),
+      4000,
+      'Timeout pull marcaciones_raw'
+    );
+    if (!punchRes?.error && Array.isArray(punchRes.data) && punchRes.data.length > 0) {
+      const localPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
+      const mergePunches = mergeVersionedRecords({
+        localRecords: localPunches,
+        remoteRecords: punchRes.data,
+        pendingEntityIds: pendingIds,
+      });
+      if (mergePunches.insertedCount > 0 || mergePunches.updatedCount > 0) {
+        writeJsonFile(RAW_PUNCHES_FILE, mergePunches.merged);
+      }
+      pullSummary.marcaciones_raw = {
+        inserted: mergePunches.insertedCount,
+        updated: mergePunches.updatedCount,
+        preservedLocal: mergePunches.skippedDueToNewerLocalCount,
+      };
+    }
+
+    const nextCursor = {
+      ...cursor,
+      last_pull_at: new Date().toISOString(),
+      last_pull_counts: Object.fromEntries(
+        Object.entries(pullSummary).map(([k, v]) => [k, v.inserted + v.updated])
+      ),
+      last_sync_error: null,
+    };
+    safeWriteJsonAtomic(resolveSafeChildPath(STORAGE_DIRS.syncDir, 'sync-state.json'), nextCursor);
+
+    return res.json({
+      success: true,
+      cloudConfigured: true,
+      pullSummary,
+      cursor: nextCursor,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      cloudConfigured: true,
+      message: err?.message || 'Error en sincronización incremental desde Supabase.',
+    });
+  }
 });
 
 // GET /api/health
 app.get('/api/health', (req, res) => {
-  return res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  return res.json({
+    status: 'OK',
+    appVersion: APP_VERSION,
+    schemaVersion: STORAGE_BOOT.versionState.schema_version,
+    migrationStatus: STORAGE_BOOT.versionState.last_migration_status,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -6785,6 +7442,17 @@ async function startServer() {
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[DRAC ZKTECO SERVER] Servidor institucional escuchando en http://0.0.0.0:${PORT}`);
+    // Intento automático de drenado de Outbox persistente cada 60s cuando exista nube configurada
+    const outboxTimer = setInterval(() => {
+      if (!isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
+        flushServerOutbox({
+          dirs: STORAGE_DIRS,
+          supabaseServer,
+          supabaseUrl: SUPABASE_URL,
+        }).catch(() => {});
+      }
+    }, 60000);
+    if (typeof outboxTimer.unref === 'function') outboxTimer.unref();
   });
   server.on('error', (err: any) => {
     console.error(`[DRAC ZKTECO SERVER] Aviso en puerto ${PORT}:`, err?.code || err?.message);
