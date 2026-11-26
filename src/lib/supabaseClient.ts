@@ -120,6 +120,64 @@ export async function updateSupabaseConfig(url: string, anonKey: string): Promis
       body: JSON.stringify({ url: activeCfg.url, anonKey: activeCfg.anonKey }),
     });
   } catch (_) {}
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('drac:supabase-config-changed', { detail: activeCfg }));
+  }
+}
+
+let bootstrapPromise: Promise<{ configured: boolean; url: string }> | null = null;
+
+/**
+ * Reconcilia credenciales Supabase entre el navegador (localStorage / env) y el servidor local (supabase-config.json)
+ */
+export async function bootstrapSupabaseConfig(): Promise<{ configured: boolean; url: string }> {
+  if (bootstrapPromise) return bootstrapPromise;
+  bootstrapPromise = (async () => {
+    const localCfg = getSavedSupabaseConfig();
+    const localIsReal = Boolean(localCfg.anonKey) && !isPlaceholderSupabaseUrl(localCfg.url);
+    try {
+      const res = await fetch(getApiUrl('/api/supabase/config'));
+      if (res.ok) {
+        const srv = await res.json();
+        const srvUrl = cleanSupabaseUrl(srv?.url);
+        const srvKey = String(srv?.anonKey || '').trim();
+        const srvIsReal = Boolean(srv?.configured && srvKey && !isPlaceholderSupabaseUrl(srvUrl));
+
+        if (localIsReal && (!srvIsReal || srvUrl !== localCfg.url || srvKey !== localCfg.anonKey)) {
+          await fetch(getApiUrl('/api/supabase/config'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: localCfg.url, anonKey: localCfg.anonKey }),
+          }).catch(() => {});
+          return { configured: true, url: localCfg.url };
+        }
+
+        if (!localIsReal && srvIsReal) {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ url: srvUrl, anonKey: srvKey }));
+          }
+          activeCfg = { url: srvUrl, anonKey: srvKey, isCustom: true };
+          supabaseInstance = createConfiguredClient(srvUrl, srvKey);
+          supabase = supabaseInstance;
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('drac:supabase-config-changed', { detail: activeCfg }));
+          }
+          return { configured: true, url: srvUrl };
+        }
+
+        return { configured: localIsReal || srvIsReal, url: localIsReal ? localCfg.url : srvUrl };
+      }
+    } catch (_) {}
+    return { configured: localIsReal, url: localCfg.url };
+  })();
+  try {
+    return await bootstrapPromise;
+  } finally {
+    setTimeout(() => {
+      bootstrapPromise = null;
+    }, 5000);
+  }
 }
 
 /**
@@ -313,6 +371,7 @@ export async function pullIncrementalFromCloud(): Promise<{
   success: boolean;
   cloudConfigured?: boolean;
   pullSummary?: Record<string, { inserted: number; updated: number; preservedLocal: number }>;
+  totalChanges?: number;
   message?: string;
 }> {
   try {
@@ -320,6 +379,26 @@ export async function pullIncrementalFromCloud(): Promise<{
     return await res.json();
   } catch (err: any) {
     return { success: false, message: err?.message || 'Error ejecutando sincronización incremental.' };
+  }
+}
+
+export async function triggerFullCloudSync(): Promise<{
+  success: boolean;
+  cloudConfigured?: boolean;
+  message?: string;
+  enqueued?: Record<string, number>;
+  push?: { synced: number; failed: number };
+  pull?: { totalChanges: number };
+}> {
+  try {
+    const res = await fetch(getApiUrl('/api/sync/full-sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forceAll: true }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Error ejecutando sincronización completa.' };
   }
 }
 
@@ -337,6 +416,7 @@ export function subscribeToDracRealtime(
   try {
     const client = getSupabaseClient();
     const tables = [
+      'drac_sync_records',
       'trabajadores',
       'usuarios_reloj',
       'marcaciones_raw',
@@ -344,6 +424,10 @@ export function subscribeToDracRealtime(
       'papeletas_salida',
       'vacaciones',
       'dispositivos_zkteco',
+      'encargaturas',
+      'horarios',
+      'turnos',
+      'asignacion_horarios',
     ];
     let channel = client.channel('drac-unified-realtime');
     for (const tbl of tables) {

@@ -1055,6 +1055,10 @@ export interface SupabaseConfigStatus {
   rlsPoliciesActive: boolean;
   centralDracSequenceActive: boolean;
   lastSyncTimestamp?: string;
+  schemaReady?: boolean;
+  cloudSyncCount?: number;
+  isPlaceholder?: boolean;
+  error?: string | null;
 }
 
 export type DeviceUserLinkStatus =

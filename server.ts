@@ -63,9 +63,11 @@ import {
 } from './server/storageManager';
 import {
   enqueueOutboxEvent,
+  enqueueAllLocalEntitiesToOutbox,
   flushServerOutbox,
   getOutboxSummary,
   mergeVersionedRecords,
+  pullAllEntitiesFromSupabase,
   readOutboxQueue,
   readSyncState,
   isPlaceholderSupabaseUrlServer,
@@ -140,6 +142,21 @@ try {
     }
   }
 } catch (_) {}
+
+let flushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+function triggerImmediateOutboxFlush(delayMs = 250) {
+  if (isPlaceholderSupabaseUrlServer(SUPABASE_URL)) return;
+  if (flushDebounceTimer) clearTimeout(flushDebounceTimer);
+  flushDebounceTimer = setTimeout(() => {
+    flushDebounceTimer = null;
+    flushServerOutbox({
+      dirs: STORAGE_DIRS,
+      supabaseServer,
+      supabaseUrl: SUPABASE_URL,
+      timeoutMs: 4500,
+    }).catch(() => {});
+  }, delayMs);
+}
 
 // Helper to read JSON files safely
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -487,13 +504,22 @@ app.post('/api/attendance/closed-periods', (req, res) => {
   }
   const periods = readJsonFile<ClosedPeriodEntry[]>(CLOSED_PERIODS_FILE, []);
   if (!periods.some((p) => p.period === cleanPeriod)) {
-    periods.push({
+    const entry: ClosedPeriodEntry = {
       period: cleanPeriod,
       closed_at: new Date().toISOString(),
       closed_by: String(closed_by),
       reason: String(reason),
-    });
+    };
+    periods.push(entry);
     writeJsonFile(CLOSED_PERIODS_FILE, periods);
+    enqueueOutboxEvent(STORAGE_DIRS, {
+      entity_type: 'closed_periods',
+      entity_id: cleanPeriod,
+      operation: 'UPSERT',
+      payload: entry,
+      record_version: 1,
+    });
+    triggerImmediateOutboxFlush();
   }
   return res.status(201).json({ success: true, count: periods.length, data: periods });
 });
@@ -682,29 +708,10 @@ app.put('/api/zkteco/devices/:id', (req, res) => {
     entity_type: 'dispositivos_zkteco',
     entity_id: updated.id,
     operation: 'UPSERT',
-    payload: {
-      id: updated.id,
-      serial_number: updated.serial_number,
-      name: updated.name,
-      ip_address: updated.ip_address,
-      port: updated.port,
-      netmask: updated.netmask,
-      gateway: updated.gateway,
-      dns: updated.dns,
-      mac_address: updated.mac_address,
-      comm_key: String(updated.comm_key),
-      device_id_num: updated.device_id_num,
-      model: updated.model,
-      protocol: updated.protocol,
-      status: updated.status,
-      location_detail: updated.location_detail,
-      last_modified_by: updated.last_modified_by,
-      last_modified_at: updated.last_modified_at,
-      updated_at: updated.updated_at,
-      record_version: nextVersion,
-    },
+    payload: updated,
     record_version: nextVersion,
   });
+  triggerImmediateOutboxFlush();
 
   // 5. Append Audit Log to data/audit-logs.json
   const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
@@ -899,29 +906,10 @@ app.post('/api/zkteco/devices', (req, res) => {
     entity_type: 'dispositivos_zkteco',
     entity_id: newDevice.id,
     operation: 'UPSERT',
-    payload: {
-      id: newDevice.id,
-      serial_number: newDevice.serial_number,
-      name: newDevice.name,
-      ip_address: newDevice.ip_address,
-      port: newDevice.port,
-      netmask: newDevice.netmask,
-      gateway: newDevice.gateway,
-      dns: newDevice.dns,
-      mac_address: newDevice.mac_address,
-      comm_key: String(newDevice.comm_key),
-      device_id_num: newDevice.device_id_num,
-      model: newDevice.model,
-      protocol: newDevice.protocol,
-      status: newDevice.status,
-      location_detail: newDevice.location_detail,
-      last_modified_by: newDevice.last_modified_by,
-      last_modified_at: newDevice.last_modified_at,
-      updated_at: newDevice.updated_at,
-      record_version: 1,
-    },
+    payload: newDevice,
     record_version: 1,
   });
+  triggerImmediateOutboxFlush();
 
   // Auditoría
   const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
@@ -988,6 +976,15 @@ app.delete('/api/zkteco/devices/:id', (req, res) => {
 
   const removed = devices.splice(index, 1)[0];
   writeJsonFile(DEVICES_FILE, devices);
+
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'dispositivos_zkteco',
+    entity_id: removed.id,
+    operation: 'DELETE',
+    payload: { id: removed.id },
+    record_version: (Number(removed.record_version) || 1) + 1,
+  });
+  triggerImmediateOutboxFlush();
 
   const auditLogs = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
   auditLogs.unshift({
@@ -1265,14 +1262,21 @@ app.post('/api/dependencias', (req, res) => {
     created_at: req.body.created_at || new Date().toISOString(),
   };
 
+  const nowIso = new Date().toISOString();
   const idx = dependencias.findIndex((d) => d.id === newDep.id || d.code === newDep.code);
+  const nextVer = idx >= 0 ? (Number(dependencias[idx].record_version) || 1) + 1 : Number(req.body.record_version) || 1;
+  (newDep as any).updated_at = nowIso;
+  (newDep as any).record_version = nextVer;
   if (idx >= 0) {
     dependencias[idx] = { ...dependencias[idx], ...newDep };
   } else {
     dependencias.push(newDep);
   }
   writeJsonFile(DEPENDENCIAS_FILE, dependencias);
-  return res.status(201).json({ success: true, message: 'Dependencia guardada correctamente.', data: newDep });
+  const savedDep = idx >= 0 ? dependencias[idx] : newDep;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'dependencias', entity_id: savedDep.id, operation: 'UPSERT', payload: savedDep, record_version: nextVer });
+  triggerImmediateOutboxFlush();
+  return res.status(201).json({ success: true, message: 'Dependencia guardada correctamente.', data: savedDep });
 });
 
 app.put('/api/dependencias/:id', (req, res) => {
@@ -1282,14 +1286,18 @@ app.put('/api/dependencias/:id', (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ success: false, message: 'Dependencia no encontrada.' });
   }
+  const nextVer = (Number(dependencias[idx].record_version) || 1) + 1;
   dependencias[idx] = {
     ...dependencias[idx],
     ...req.body,
     name: req.body.name ? normalizeInstitutionalName(req.body.name) : dependencias[idx].name,
     address: req.body.address !== undefined ? normalizeText(req.body.address) : dependencias[idx].address,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(DEPENDENCIAS_FILE, dependencias);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'dependencias', entity_id: dependencias[idx].id, operation: 'UPSERT', payload: dependencias[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Dependencia actualizada correctamente.', data: dependencias[idx] });
 });
 
@@ -1302,6 +1310,8 @@ app.delete('/api/dependencias/:id', (req, res) => {
   }
   const removed = dependencias.splice(idx, 1)[0];
   writeJsonFile(DEPENDENCIAS_FILE, dependencias);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'dependencias', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Dependencia eliminada.', data: removed });
 });
 
@@ -1327,13 +1337,19 @@ app.post('/api/direcciones', (req, res) => {
   };
 
   const idx = direcciones.findIndex((d) => d.id === newDir.id || d.code === newDir.code);
+  const nextVer = idx >= 0 ? (Number(direcciones[idx].record_version) || 1) + 1 : Number(req.body.record_version) || 1;
+  (newDir as any).updated_at = new Date().toISOString();
+  (newDir as any).record_version = nextVer;
   if (idx >= 0) {
     direcciones[idx] = { ...direcciones[idx], ...newDir };
   } else {
     direcciones.push(newDir);
   }
   writeJsonFile(DIRECCIONES_FILE, direcciones);
-  return res.status(201).json({ success: true, message: 'Dirección u órgano guardado correctamente.', data: newDir });
+  const savedDir = idx >= 0 ? direcciones[idx] : newDir;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'direcciones', entity_id: savedDir.id, operation: 'UPSERT', payload: savedDir, record_version: nextVer });
+  triggerImmediateOutboxFlush();
+  return res.status(201).json({ success: true, message: 'Dirección u órgano guardado correctamente.', data: savedDir });
 });
 
 app.put('/api/direcciones/:id', (req, res) => {
@@ -1343,14 +1359,18 @@ app.put('/api/direcciones/:id', (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ success: false, message: 'Dirección u órgano no encontrado.' });
   }
+  const nextVer = (Number(direcciones[idx].record_version) || 1) + 1;
   direcciones[idx] = {
     ...direcciones[idx],
     ...req.body,
     name: req.body.name ? normalizeInstitutionalName(req.body.name) : direcciones[idx].name,
     dependencia_name: req.body.dependencia_name ? normalizeInstitutionalName(req.body.dependencia_name) : direcciones[idx].dependencia_name,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(DIRECCIONES_FILE, direcciones);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'direcciones', entity_id: direcciones[idx].id, operation: 'UPSERT', payload: direcciones[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Dirección u órgano actualizado.', data: direcciones[idx] });
 });
 
@@ -1363,6 +1383,8 @@ app.delete('/api/direcciones/:id', (req, res) => {
   }
   const removed = direcciones.splice(idx, 1)[0];
   writeJsonFile(DIRECCIONES_FILE, direcciones);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'direcciones', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Dirección u órgano eliminado.', data: removed });
 });
 
@@ -1390,13 +1412,19 @@ app.post('/api/areas', (req, res) => {
   };
 
   const idx = areas.findIndex((a) => a.id === newArea.id || a.code === newArea.code);
+  const nextVer = idx >= 0 ? (Number(areas[idx].record_version) || 1) + 1 : Number(req.body.record_version) || 1;
+  (newArea as any).updated_at = new Date().toISOString();
+  (newArea as any).record_version = nextVer;
   if (idx >= 0) {
     areas[idx] = { ...areas[idx], ...newArea };
   } else {
     areas.push(newArea);
   }
   writeJsonFile(AREAS_FILE, areas);
-  return res.status(201).json({ success: true, message: 'Área guardada correctamente.', data: newArea });
+  const savedArea = idx >= 0 ? areas[idx] : newArea;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'areas', entity_id: savedArea.id, operation: 'UPSERT', payload: savedArea, record_version: nextVer });
+  triggerImmediateOutboxFlush();
+  return res.status(201).json({ success: true, message: 'Área guardada correctamente.', data: savedArea });
 });
 
 app.put('/api/areas/:id', (req, res) => {
@@ -1406,6 +1434,7 @@ app.put('/api/areas/:id', (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ success: false, message: 'Área no encontrada.' });
   }
+  const nextVer = (Number(areas[idx].record_version) || 1) + 1;
   areas[idx] = {
     ...areas[idx],
     ...req.body,
@@ -1413,8 +1442,11 @@ app.put('/api/areas/:id', (req, res) => {
     direccion_organo_name: req.body.direccion_organo_name ? normalizeInstitutionalName(req.body.direccion_organo_name) : areas[idx].direccion_organo_name,
     dependencia_name: req.body.dependencia_name ? normalizeInstitutionalName(req.body.dependencia_name) : areas[idx].dependencia_name,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(AREAS_FILE, areas);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'areas', entity_id: areas[idx].id, operation: 'UPSERT', payload: areas[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Área institucional actualizada.', data: areas[idx] });
 });
 
@@ -1427,6 +1459,8 @@ app.delete('/api/areas/:id', (req, res) => {
   }
   const removed = areas.splice(idx, 1)[0];
   writeJsonFile(AREAS_FILE, areas);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'areas', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Área eliminada.', data: removed });
 });
 
@@ -1450,13 +1484,19 @@ app.post('/api/cargos', (req, res) => {
   };
 
   const idx = cargos.findIndex((c) => c.id === newCargo.id || c.code === newCargo.code);
+  const nextVer = idx >= 0 ? (Number(cargos[idx].record_version) || 1) + 1 : Number(req.body.record_version) || 1;
+  (newCargo as any).updated_at = new Date().toISOString();
+  (newCargo as any).record_version = nextVer;
   if (idx >= 0) {
     cargos[idx] = { ...cargos[idx], ...newCargo };
   } else {
     cargos.push(newCargo);
   }
   writeJsonFile(CARGOS_FILE, cargos);
-  return res.status(201).json({ success: true, message: 'Cargo guardado correctamente.', data: newCargo });
+  const savedCargo = idx >= 0 ? cargos[idx] : newCargo;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'cargos', entity_id: savedCargo.id, operation: 'UPSERT', payload: savedCargo, record_version: nextVer });
+  triggerImmediateOutboxFlush();
+  return res.status(201).json({ success: true, message: 'Cargo guardado correctamente.', data: savedCargo });
 });
 
 app.put('/api/cargos/:id', (req, res) => {
@@ -1466,13 +1506,17 @@ app.put('/api/cargos/:id', (req, res) => {
   if (idx === -1) {
     return res.status(404).json({ success: false, message: 'Cargo no encontrado.' });
   }
+  const nextVer = (Number(cargos[idx].record_version) || 1) + 1;
   cargos[idx] = {
     ...cargos[idx],
     ...req.body,
     name: req.body.name ? normalizeInstitutionalName(req.body.name) : cargos[idx].name,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(CARGOS_FILE, cargos);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'cargos', entity_id: cargos[idx].id, operation: 'UPSERT', payload: cargos[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Cargo institucional actualizado.', data: cargos[idx] });
 });
 
@@ -1485,6 +1529,8 @@ app.delete('/api/cargos/:id', (req, res) => {
   }
   const removed = cargos.splice(idx, 1)[0];
   writeJsonFile(CARGOS_FILE, cargos);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'cargos', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Cargo institucional eliminado.', data: removed });
 });
 
@@ -1503,13 +1549,19 @@ app.post('/api/responsables', (req, res) => {
     id: req.body.id || `resp-${Date.now()}`,
     titular_name: req.body.titular_name ? normalizePersonName(req.body.titular_name) : undefined,
     encargado_name: req.body.encargado_name ? normalizePersonName(req.body.encargado_name) : undefined,
-    created_at: new Date().toISOString(),
+    created_at: req.body.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
   const idx = resp.findIndex((r) => r.id === newResp.id);
+  const nextVer = idx >= 0 ? (Number(resp[idx].record_version) || 1) + 1 : Number(req.body.record_version) || 1;
+  (newResp as any).record_version = nextVer;
   if (idx >= 0) resp[idx] = { ...resp[idx], ...newResp };
   else resp.push(newResp);
   writeJsonFile(RESPONSABLES_FILE, resp);
-  return res.status(201).json({ success: true, message: 'Responsable asignado correctamente.', data: newResp });
+  const savedResp = idx >= 0 ? resp[idx] : newResp;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'responsables', entity_id: savedResp.id, operation: 'UPSERT', payload: savedResp, record_version: nextVer });
+  triggerImmediateOutboxFlush();
+  return res.status(201).json({ success: true, message: 'Responsable asignado correctamente.', data: savedResp });
 });
 
 app.put('/api/responsables/:id', (req, res) => {
@@ -1520,6 +1572,7 @@ app.put('/api/responsables/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Responsable no encontrado.' });
   }
 
+  const nextVer = (Number(resp[idx].record_version) || 1) + 1;
   resp[idx] = {
     ...resp[idx],
     ...req.body,
@@ -1528,16 +1581,22 @@ app.put('/api/responsables/:id', (req, res) => {
     title: req.body.title ? normalizeInstitutionalName(req.body.title) : resp[idx].title,
     unit_name: req.body.unit_name ? normalizeInstitutionalName(req.body.unit_name) : resp[idx].unit_name,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(RESPONSABLES_FILE, resp);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'responsables', entity_id: resp[idx].id, operation: 'UPSERT', payload: resp[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Responsable actualizado.', data: resp[idx] });
 });
 
 app.delete('/api/responsables/:id', (req, res) => {
   const { id } = req.params;
   const resp = readJsonFile<any[]>(RESPONSABLES_FILE, []);
+  const removed = resp.find((r) => r.id === id);
   const filtered = resp.filter((r) => r.id !== id);
   writeJsonFile(RESPONSABLES_FILE, filtered);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'responsables', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Designación eliminada.' });
 });
 
@@ -1583,18 +1642,10 @@ app.post('/api/turnos', (req, res) => {
     entity_type: 'turnos',
     entity_id: newTurno.id,
     operation: 'UPSERT',
-    payload: {
-      id: newTurno.id,
-      codigo: newTurno.code,
-      nombre: newTurno.name,
-      hora_inicio: newTurno.start_time,
-      hora_fin: newTurno.end_time,
-      tolerancia_minutos: newTurno.tolerance_minutes,
-      record_version: newTurno.record_version,
-      updated_at: newTurno.updated_at,
-    },
+    payload: newTurno,
     record_version: newTurno.record_version,
   });
+  triggerImmediateOutboxFlush();
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1636,18 +1687,10 @@ app.put('/api/turnos/:id', (req, res) => {
     entity_type: 'turnos',
     entity_id: turnos[idx].id,
     operation: 'UPSERT',
-    payload: {
-      id: turnos[idx].id,
-      codigo: turnos[idx].code,
-      nombre: turnos[idx].name,
-      hora_inicio: turnos[idx].start_time,
-      hora_fin: turnos[idx].end_time,
-      tolerancia_minutos: turnos[idx].tolerance_minutes,
-      record_version: nextVer,
-      updated_at: turnos[idx].updated_at,
-    },
+    payload: turnos[idx],
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(
@@ -1682,6 +1725,7 @@ app.delete('/api/turnos/:id', (req, res) => {
     payload: { id },
     record_version: (Number(removed?.record_version) || 1) + 1,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(supabaseServer.from('turnos').delete().eq('id', id)).catch(() => {});
@@ -1740,19 +1784,10 @@ app.post('/api/horarios', (req, res) => {
     entity_type: 'horarios',
     entity_id: newHorario.id,
     operation: 'UPSERT',
-    payload: {
-      id: newHorario.id,
-      codigo: newHorario.code,
-      nombre: newHorario.name,
-      total_turnos: newHorario.turn_count,
-      turno1_id: newHorario.turno1_id,
-      turno2_id: newHorario.turn_count === 2 && newHorario.turno2_id ? newHorario.turno2_id : null,
-      activo: newHorario.active,
-      record_version: newHorario.record_version,
-      updated_at: newHorario.updated_at,
-    },
+    payload: newHorario,
     record_version: newHorario.record_version,
   });
+  triggerImmediateOutboxFlush();
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1793,19 +1828,10 @@ app.put('/api/horarios/:id', (req, res) => {
     entity_type: 'horarios',
     entity_id: horarios[idx].id,
     operation: 'UPSERT',
-    payload: {
-      id: horarios[idx].id,
-      codigo: horarios[idx].code,
-      nombre: horarios[idx].name,
-      total_turnos: horarios[idx].turn_count,
-      turno1_id: horarios[idx].turno1_id,
-      turno2_id: horarios[idx].turn_count === 2 && horarios[idx].turno2_id ? horarios[idx].turno2_id : null,
-      activo: horarios[idx].active,
-      record_version: nextVer,
-      updated_at: horarios[idx].updated_at,
-    },
+    payload: horarios[idx],
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(
@@ -1841,6 +1867,7 @@ app.delete('/api/horarios/:id', (req, res) => {
     payload: { id },
     record_version: (Number(removed?.record_version) || 1) + 1,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(supabaseServer.from('horarios').delete().eq('id', id)).catch(() => {});
@@ -1924,21 +1951,10 @@ app.post('/api/asignacion-horarios', (req, res) => {
     entity_type: 'asignacion_horarios',
     entity_id: newAsignacion.id,
     operation: 'UPSERT',
-    payload: {
-      id: newAsignacion.id,
-      trabajador_id: newAsignacion.employee_id,
-      horario_id: newAsignacion.horario_id,
-      fecha_inicio: newAsignacion.fecha_inicio,
-      fecha_fin: newAsignacion.fecha_fin || null,
-      tipo_asignacion: newAsignacion.tipo_asignacion,
-      motivo: newAsignacion.motivo,
-      documento_sustento: newAsignacion.documento_sustento,
-      activo: newAsignacion.activo,
-      record_version: nextVer,
-      updated_at: newAsignacion.updated_at,
-    },
+    payload: newAsignacion,
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   // Replicar en Supabase PostgreSQL de manera asíncrona
   try {
@@ -1987,21 +2003,10 @@ app.put('/api/asignacion-horarios/:id', (req, res) => {
     entity_type: 'asignacion_horarios',
     entity_id: asignaciones[idx].id,
     operation: 'UPSERT',
-    payload: {
-      id: asignaciones[idx].id,
-      trabajador_id: asignaciones[idx].employee_id,
-      horario_id: asignaciones[idx].horario_id,
-      fecha_inicio: asignaciones[idx].fecha_inicio,
-      fecha_fin: asignaciones[idx].fecha_fin || null,
-      tipo_asignacion: asignaciones[idx].tipo_asignacion,
-      motivo: asignaciones[idx].motivo,
-      documento_sustento: asignaciones[idx].documento_sustento,
-      activo: asignaciones[idx].activo,
-      record_version: nextVer,
-      updated_at: asignaciones[idx].updated_at,
-    },
+    payload: asignaciones[idx],
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(
@@ -2039,6 +2044,7 @@ app.delete('/api/asignacion-horarios/:id', (req, res) => {
     payload: { id },
     record_version: (Number(removed?.record_version) || 1) + 1,
   });
+  triggerImmediateOutboxFlush();
 
   try {
     Promise.resolve(supabaseServer.from('asignacion_horarios').delete().eq('id', id)).catch(() => {});
@@ -2142,41 +2148,25 @@ app.post('/api/papeletas', (req, res) => {
     entity_type: 'papeletas_salida',
     entity_id: newPap.id,
     operation: 'UPSERT',
-    payload: {
-      id: newPap.id,
-      codigo: newPap.code,
-      trabajador_id: newPap.employee_id,
-      dni: newPap.employee_dni,
-      motivo: newPap.motivo,
-      destino: newPap.destino,
-      fecha: newPap.fecha,
-      hora_salida_estimada: newPap.hora_estimada_salida,
-      hora_retorno_estimada: newPap.hora_estimada_retorno,
-      hora_salida_real: newPap.hora_real_salida,
-      hora_retorno_real: newPap.hora_real_retorno,
-      estado: newPap.status,
-      record_version: nextVer,
-      created_at: newPap.created_at,
-      updated_at: newPap.updated_at,
-    },
+    payload: newPap,
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   // Replicar en Supabase
   try {
     Promise.resolve(
-      supabaseServer.from('papeletas_salida').upsert({
+      supabaseServer.from('papeletas').upsert({
         id: newPap.id,
         codigo: newPap.code,
         trabajador_id: newPap.employee_id,
-        dni: newPap.employee_dni,
         motivo: newPap.motivo,
-        destino: newPap.destino,
+        fundamentacion: newPap.destino || newPap.fundamentacion || '',
         fecha: newPap.fecha,
         hora_salida_estimada: newPap.hora_estimada_salida,
         hora_retorno_estimada: newPap.hora_estimada_retorno,
-        hora_salida_real: newPap.hora_real_salida,
-        hora_retorno_real: newPap.hora_real_retorno,
+        hora_real_salida: newPap.hora_real_salida,
+        hora_real_retorno: newPap.hora_real_retorno,
         estado: newPap.status,
         created_at: newPap.created_at,
         updated_at: newPap.updated_at,
@@ -2208,29 +2198,17 @@ app.put('/api/papeletas/:id', (req, res) => {
     entity_type: 'papeletas_salida',
     entity_id: paps[idx].id,
     operation: 'UPSERT',
-    payload: {
-      id: paps[idx].id,
-      codigo: paps[idx].code,
-      trabajador_id: paps[idx].employee_id,
-      dni: paps[idx].employee_dni,
-      motivo: paps[idx].motivo,
-      destino: paps[idx].destino,
-      fecha: paps[idx].fecha,
-      estado: paps[idx].status,
-      hora_salida_real: paps[idx].hora_real_salida,
-      hora_retorno_real: paps[idx].hora_real_retorno,
-      record_version: nextVer,
-      updated_at: paps[idx].updated_at,
-    },
+    payload: paps[idx],
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   try {
-    Promise.resolve(supabaseServer.from('papeletas_salida').upsert({
+    Promise.resolve(supabaseServer.from('papeletas').upsert({
       id: paps[idx].id,
       estado: paps[idx].status,
-      hora_salida_real: paps[idx].hora_real_salida,
-      hora_retorno_real: paps[idx].hora_real_retorno,
+      hora_real_salida: paps[idx].hora_real_salida,
+      hora_real_retorno: paps[idx].hora_real_retorno,
       updated_at: paps[idx].updated_at,
     }));
   } catch (_) {}
@@ -2255,6 +2233,7 @@ app.delete('/api/papeletas/:id', (req, res) => {
     payload: { id },
     record_version: (Number(removed?.record_version) || 1) + 1,
   });
+  triggerImmediateOutboxFlush();
 
   return res.json({ success: true, message: 'Papeleta eliminada.', data: removed });
 });
@@ -2302,6 +2281,7 @@ app.post('/api/vacaciones', (req, res) => {
     payload: newVac,
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   return res.status(201).json({ success: true, message: 'Solicitud de vacación guardada correctamente.', data: newVac });
 });
@@ -2330,6 +2310,7 @@ app.put('/api/vacaciones/:id', (req, res) => {
     payload: vacs[idx],
     record_version: nextVer,
   });
+  triggerImmediateOutboxFlush();
 
   return res.json({ success: true, message: 'Registro de vacación actualizado.', data: vacs[idx] });
 });
@@ -2351,6 +2332,7 @@ app.delete('/api/vacaciones/:id', (req, res) => {
     payload: { id },
     record_version: (Number(removed?.record_version) || 1) + 1,
   });
+  triggerImmediateOutboxFlush();
 
   return res.json({ success: true, message: 'Registro de vacación eliminado.', data: removed });
 });
@@ -2380,14 +2362,19 @@ app.post('/api/encargaturas', (req, res) => {
   };
 
   const idx = encs.findIndex((e) => e.id === newEnc.id);
+  const nextVer = idx >= 0 ? (Number(encs[idx].record_version) || 1) + 1 : Number(body.record_version) || 1;
+  (newEnc as any).record_version = nextVer;
   if (idx >= 0) {
     encs[idx] = { ...encs[idx], ...newEnc };
   } else {
     encs.unshift(newEnc);
   }
   writeJsonFile(ENCARGATURAS_FILE, encs);
+  const savedEnc = idx >= 0 ? encs[idx] : newEnc;
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'encargaturas', entity_id: savedEnc.id, operation: 'UPSERT', payload: savedEnc, record_version: nextVer });
+  triggerImmediateOutboxFlush();
 
-  return res.status(201).json({ success: true, message: 'Encargatura guardada correctamente.', data: newEnc });
+  return res.status(201).json({ success: true, message: 'Encargatura guardada correctamente.', data: savedEnc });
 });
 
 app.put('/api/encargaturas/:id', (req, res) => {
@@ -2398,12 +2385,16 @@ app.put('/api/encargaturas/:id', (req, res) => {
     return res.status(404).json({ success: false, message: 'Encargatura no encontrada.' });
   }
 
+  const nextVer = (Number(encs[idx].record_version) || 1) + 1;
   encs[idx] = {
     ...encs[idx],
     ...req.body,
     updated_at: new Date().toISOString(),
+    record_version: nextVer,
   };
   writeJsonFile(ENCARGATURAS_FILE, encs);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'encargaturas', entity_id: encs[idx].id, operation: 'UPSERT', payload: encs[idx], record_version: nextVer });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Encargatura actualizada.', data: encs[idx] });
 });
 
@@ -2416,6 +2407,8 @@ app.delete('/api/encargaturas/:id', (req, res) => {
   }
   const removed = encs.splice(idx, 1)[0];
   writeJsonFile(ENCARGATURAS_FILE, encs);
+  enqueueOutboxEvent(STORAGE_DIRS, { entity_type: 'encargaturas', entity_id: id, operation: 'DELETE', payload: { id }, record_version: (Number(removed?.record_version) || 1) + 1 });
+  triggerImmediateOutboxFlush();
   return res.json({ success: true, message: 'Encargatura eliminada.', data: removed });
 });
 
@@ -2978,6 +2971,33 @@ async function integrateRealPunchesIntoSystem(
   writeJsonFile(RAW_PUNCHES_FILE, storedPunches);
   if (enrichedPunches.some((p) => p.processed)) {
     writeJsonFile(ATTENDANCE_FILE, existingAttendance);
+  }
+
+  for (const punchRec of enrichedPunches) {
+    enqueueOutboxEvent(STORAGE_DIRS, {
+      entity_type: 'marcaciones_raw',
+      entity_id: punchRec.id,
+      operation: 'UPSERT',
+      payload: punchRec,
+      record_version: Number(punchRec.record_version) || 1,
+    });
+    if (punchRec.processed && punchRec.employee_id) {
+      const attRec = existingAttendance.find(
+        (a) => a.employee_id === punchRec.employee_id && a.fecha === punchRec.fecha
+      );
+      if (attRec) {
+        enqueueOutboxEvent(STORAGE_DIRS, {
+          entity_type: 'asistencias',
+          entity_id: attRec.id,
+          operation: 'UPSERT',
+          payload: attRec,
+          record_version: Number(attRec.record_version) || 1,
+        });
+      }
+    }
+  }
+  if (enrichedPunches.length > 0) {
+    triggerImmediateOutboxFlush();
   }
 
   const dbRes = await persistRawPunchesToSupabase(enrichedPunches);
@@ -5150,8 +5170,19 @@ const handleAssignEmployeeToPunch = async (req: express.Request, res: express.Re
       }
       writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
       writeJsonFile(DEVICE_USER_HISTORY_FILE, history.slice(0, 1500));
+      const updatedDu = deviceUsers.find((u) => u.id === duId || (u.device_sn === snResolved && u.pin === codeToLink));
+      if (updatedDu) {
+        enqueueOutboxEvent(STORAGE_DIRS, {
+          entity_type: 'usuarios_reloj',
+          entity_id: updatedDu.id,
+          operation: 'UPSERT',
+          payload: updatedDu,
+          record_version: (Number((updatedDu as any).record_version) || 1) + 1,
+        });
+      }
     } catch (_) {}
   }
+  triggerImmediateOutboxFlush();
 
   return res.json({
     success: true,
@@ -5670,7 +5701,21 @@ app.get('/api/zkteco/device-users', (_req, res) => {
 // POST /api/zkteco/device-users/sync-store - Persiste resultados obtenidos directamente desde Electron Desktop
 app.post('/api/zkteco/device-users/sync-store', async (req, res) => {
   const { users, history, syncLogs } = req.body || {};
-  if (Array.isArray(users)) writeJsonFile(DEVICE_USERS_FILE, users);
+  if (Array.isArray(users)) {
+    writeJsonFile(DEVICE_USERS_FILE, users);
+    for (const u of users) {
+      if (u?.id) {
+        enqueueOutboxEvent(STORAGE_DIRS, {
+          entity_type: 'usuarios_reloj',
+          entity_id: u.id,
+          operation: 'UPSERT',
+          payload: u,
+          record_version: Number(u.record_version) || 1,
+        });
+      }
+    }
+    triggerImmediateOutboxFlush();
+  }
   if (Array.isArray(history)) writeJsonFile(DEVICE_USER_HISTORY_FILE, history.slice(0, 1500));
   if (Array.isArray(syncLogs)) writeJsonFile(DEVICE_USER_SYNC_LOGS_FILE, syncLogs.slice(0, 300));
   const dbRes = await persistDeviceUsersToSupabase(
@@ -5851,6 +5896,21 @@ app.post('/api/zkteco/device-users/query', async (req, res) => {
   writeJsonFile(DEVICE_USERS_FILE, currentUsers);
   writeJsonFile(DEVICE_USER_HISTORY_FILE, currentHistory);
   writeJsonFile(DEVICE_USER_SYNC_LOGS_FILE, currentSyncLogs);
+
+  if (anySuccess) {
+    for (const u of currentUsers) {
+      if (u?.id) {
+        enqueueOutboxEvent(STORAGE_DIRS, {
+          entity_type: 'usuarios_reloj',
+          entity_id: u.id,
+          operation: 'UPSERT',
+          payload: u,
+          record_version: Number((u as any).record_version) || 1,
+        });
+      }
+    }
+    triggerImmediateOutboxFlush();
+  }
 
   const dbRes = await persistDeviceUsersToSupabase(currentUsers, currentHistory.slice(0, 40), perDeviceResults);
 
@@ -6196,6 +6256,15 @@ app.post('/api/zkteco/device-users/link', async (req, res) => {
   writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
   writeJsonFile(DEVICE_USER_HISTORY_FILE, nextHistory);
 
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'usuarios_reloj',
+    entity_id: deviceUsers[idx].id,
+    operation: 'UPSERT',
+    payload: deviceUsers[idx],
+    record_version: (Number((deviceUsers[idx] as any).record_version) || 1) + 1,
+  });
+  triggerImmediateOutboxFlush();
+
   // Auditoría global institucional
   try {
     const audits = readJsonFile<any[]>(AUDIT_LOGS_FILE, []);
@@ -6322,6 +6391,14 @@ app.post('/api/zkteco/device-users/:id/clock-name', async (req, res) => {
   };
   writeJsonFile(DEVICE_USERS_FILE, deviceUsers);
   writeJsonFile(DEVICE_USER_HISTORY_FILE, [logEntry, ...history].slice(0, 1500));
+  enqueueOutboxEvent(STORAGE_DIRS, {
+    entity_type: 'usuarios_reloj',
+    entity_id: deviceUsers[idx].id,
+    operation: 'UPSERT',
+    payload: deviceUsers[idx],
+    record_version: (Number((deviceUsers[idx] as any).record_version) || 1) + 1,
+  });
+  triggerImmediateOutboxFlush();
   await persistDeviceUsersToSupabase([deviceUsers[idx]], [logEntry], []);
 
   return res.json({
@@ -7145,12 +7222,20 @@ app.post('/api/zkteco/diagnose-pipeline', async (req, res) => {
   });
 });
 
-// GET /api/supabase/status & POST /api/supabase/config
+// GET /api/supabase/config, GET /api/supabase/status & POST /api/supabase/config
+app.get('/api/supabase/config', (_req, res) => {
+  const isPlaceholder = isPlaceholderSupabaseUrlServer(SUPABASE_URL);
+  return res.json({
+    success: true,
+    configured: !isPlaceholder,
+    isPlaceholder,
+    url: SUPABASE_URL,
+    anonKey: isPlaceholder ? '' : SUPABASE_ANON_KEY,
+  });
+});
+
 app.get('/api/supabase/status', async (_req, res) => {
-  const isPlaceholder =
-    !SUPABASE_URL ||
-    SUPABASE_URL.includes('rfqgmoremevypexrrsyf.supabase.co') ||
-    SUPABASE_URL.includes('your-project-ref.supabase.co');
+  const isPlaceholder = isPlaceholderSupabaseUrlServer(SUPABASE_URL);
 
   const localCounts = {
     trabajadores: readJsonFile<any[]>(EMPLOYEES_FILE, []).length,
@@ -7173,6 +7258,8 @@ app.get('/api/supabase/status', async (_req, res) => {
     return res.json({
       connected: false,
       isPlaceholder: true,
+      schemaReady: false,
+      cloudSyncCount: 0,
       supabaseUrl: SUPABASE_URL,
       tablesCount: localCounts,
       message: 'Instancia Supabase no configurada (usando almacenamiento local en servidor/escritorio).',
@@ -7180,22 +7267,37 @@ app.get('/api/supabase/status', async (_req, res) => {
   }
 
   try {
-    const sbCheck: any = await withServerTimeout(
-      Promise.resolve(supabaseServer.from('marcaciones_raw').select('id', { count: 'exact', head: true })),
-      2500,
-      'Timeout verificando Supabase'
-    );
+    const [sbCheck, syncTableCheck] = await Promise.all([
+      withServerTimeout(
+        Promise.resolve(supabaseServer.from('marcaciones_raw').select('id', { count: 'exact', head: true })),
+        2500,
+        'Timeout verificando Supabase'
+      ).catch((e: any) => ({ error: e })),
+      withServerTimeout(
+        Promise.resolve(supabaseServer.from('drac_sync_records').select('entity_id', { count: 'exact', head: true })),
+        2500,
+        'Timeout verificando drac_sync_records'
+      ).catch((e: any) => ({ error: e })),
+    ]);
+    const syncTableOk = !(syncTableCheck as any)?.error;
+    const baseOk = !(sbCheck as any)?.error;
     return res.json({
-      connected: !sbCheck?.error,
+      connected: baseOk || syncTableOk,
       isPlaceholder: false,
+      schemaReady: syncTableOk,
+      cloudSyncCount: Number((syncTableCheck as any)?.count || 0),
       supabaseUrl: SUPABASE_URL,
       tablesCount: localCounts,
-      error: sbCheck?.error?.message || null,
+      error: !syncTableOk
+        ? (syncTableCheck as any)?.error?.message || 'Tabla drac_sync_records no encontrada en Supabase. Ejecute el script SQL actualizado.'
+        : (sbCheck as any)?.error?.message || null,
     });
   } catch (err: any) {
     return res.json({
       connected: false,
       isPlaceholder: false,
+      schemaReady: false,
+      cloudSyncCount: 0,
       supabaseUrl: SUPABASE_URL,
       tablesCount: localCounts,
       error: err?.message || 'Error conectando a Supabase',
@@ -7216,6 +7318,15 @@ app.post('/api/supabase/config', (req, res) => {
   const cfgPayload = { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, updatedAt: new Date().toISOString() };
   writeJsonFile(resolveSafeChildPath(STORAGE_DIRS.configDir, 'supabase-config.json'), cfgPayload);
   writeJsonFile(resolveSafeChildPath(STORAGE_DIRS.dataDir, 'supabase-config.json'), cfgPayload);
+
+  if (!isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
+    enqueueAllLocalEntitiesToOutbox(STORAGE_DIRS, { forceAll: false });
+    (async () => {
+      await flushServerOutbox({ dirs: STORAGE_DIRS, supabaseServer, supabaseUrl: SUPABASE_URL, timeoutMs: 5000 }).catch(() => {});
+      await pullAllEntitiesFromSupabase({ dirs: STORAGE_DIRS, supabaseServer, supabaseUrl: SUPABASE_URL, forceFull: true }).catch(() => {});
+    })();
+  }
+
   return res.json({ success: true, supabaseUrl: SUPABASE_URL });
 });
 
@@ -7285,6 +7396,7 @@ app.post('/api/sync/outbox', (req, res) => {
     record_version,
     origin,
   });
+  triggerImmediateOutboxFlush();
   return res.status(201).json({ success: true, item });
 });
 
@@ -7297,112 +7409,67 @@ app.post('/api/sync/outbox/flush', async (_req, res) => {
   return res.json(result);
 });
 
-app.post('/api/sync/pull', async (_req, res) => {
-  if (isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
+app.post('/api/sync/pull', async (req, res) => {
+  const pullRes = await pullAllEntitiesFromSupabase({
+    dirs: STORAGE_DIRS,
+    supabaseServer,
+    supabaseUrl: SUPABASE_URL,
+    forceFull: Boolean(req.body?.forceFull),
+  });
+  if (!pullRes.cloudConfigured) {
     return res.json({
       success: false,
       cloudConfigured: false,
       message: 'Instancia Supabase central no configurada. Operando con base local persistente.',
-      cursor: readSyncState(STORAGE_DIRS),
+      cursor: pullRes.cursor,
     });
   }
+  return res.status(pullRes.success ? 200 : 207).json({
+    success: pullRes.success,
+    cloudConfigured: true,
+    pullSummary: pullRes.pullSummary,
+    totalChanges: pullRes.totalChanges,
+    cursor: pullRes.cursor,
+    message: pullRes.error || `Sincronización incremental completada (${pullRes.totalChanges} cambios aplicados).`,
+  });
+});
 
-  try {
-    const outbox = readOutboxQueue(STORAGE_DIRS);
-    const pendingIds = new Set(outbox.filter((x) => x.status === 'PENDIENTE').map((x) => x.entity_id));
-    const cursor = readSyncState(STORAGE_DIRS);
-    const pullSummary: Record<string, { inserted: number; updated: number; preservedLocal: number }> = {};
-
-    // Pull trabajadores con control de versiones
-    const empRes: any = await withServerTimeout(
-      Promise.resolve(supabaseServer.from('trabajadores').select('*').limit(1000)),
-      3500,
-      'Timeout pull trabajadores'
-    );
-    if (!empRes?.error && Array.isArray(empRes.data) && empRes.data.length > 0) {
-      const mappedRemote = empRes.data.map((t: any) => ({
-        id: t.id,
-        codigo_trabajador: t.codigo_drac || t.codigo_trabajador,
-        dni: t.dni,
-        first_name: normalizePersonName(t.nombres || t.first_name || ''),
-        last_name: `${normalizePersonName(t.apellido_paterno || '')} ${normalizePersonName(t.apellido_materno || '')}`.trim() || normalizePersonName(t.last_name || ''),
-        apellido_paterno: normalizePersonName(t.apellido_paterno || ''),
-        apellido_materno: normalizePersonName(t.apellido_materno || ''),
-        email: t.email || '',
-        phone: t.telefono || t.phone || '',
-        dependencia_id: t.dependencia_id || 'dep-01',
-        area_id: t.area_id || '',
-        cargo_id: t.cargo_id || '',
-        regimen_laboral: t.regimen_id || 'D.L. 276',
-        is_jefe_director: Boolean(t.es_jefe),
-        active: t.estado ? t.estado === 'ACTIVO' : true,
-        hire_date: t.fecha_ingreso || '2026-01-01',
-        zkteco_pin: t.zkteco_pin || t.dni,
-        record_version: Number(t.record_version) || 1,
-        updated_at: t.updated_at || new Date().toISOString(),
-      }));
-      const localEmps = readJsonFile<any[]>(EMPLOYEES_FILE, []);
-      const mergeEmp = mergeVersionedRecords({
-        localRecords: localEmps,
-        remoteRecords: mappedRemote,
-        pendingEntityIds: pendingIds,
-      });
-      if (mergeEmp.insertedCount > 0 || mergeEmp.updatedCount > 0) {
-        writeJsonFile(EMPLOYEES_FILE, mergeEmp.merged);
-      }
-      pullSummary.trabajadores = {
-        inserted: mergeEmp.insertedCount,
-        updated: mergeEmp.updatedCount,
-        preservedLocal: mergeEmp.skippedDueToNewerLocalCount,
-      };
-    }
-
-    // Pull marcaciones_raw de manera idempotente (sin sobreescribir vinculaciones pendientes locales)
-    const punchRes: any = await withServerTimeout(
-      Promise.resolve(supabaseServer.from('marcaciones_raw').select('*').order('timestamp', { ascending: false }).limit(2000)),
-      4000,
-      'Timeout pull marcaciones_raw'
-    );
-    if (!punchRes?.error && Array.isArray(punchRes.data) && punchRes.data.length > 0) {
-      const localPunches = readJsonFile<any[]>(RAW_PUNCHES_FILE, []);
-      const mergePunches = mergeVersionedRecords({
-        localRecords: localPunches,
-        remoteRecords: punchRes.data,
-        pendingEntityIds: pendingIds,
-      });
-      if (mergePunches.insertedCount > 0 || mergePunches.updatedCount > 0) {
-        writeJsonFile(RAW_PUNCHES_FILE, mergePunches.merged);
-      }
-      pullSummary.marcaciones_raw = {
-        inserted: mergePunches.insertedCount,
-        updated: mergePunches.updatedCount,
-        preservedLocal: mergePunches.skippedDueToNewerLocalCount,
-      };
-    }
-
-    const nextCursor = {
-      ...cursor,
-      last_pull_at: new Date().toISOString(),
-      last_pull_counts: Object.fromEntries(
-        Object.entries(pullSummary).map(([k, v]) => [k, v.inserted + v.updated])
-      ),
-      last_sync_error: null,
-    };
-    safeWriteJsonAtomic(resolveSafeChildPath(STORAGE_DIRS.syncDir, 'sync-state.json'), nextCursor);
-
+app.post('/api/sync/full-sync', async (req, res) => {
+  if (isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
     return res.json({
-      success: true,
-      cloudConfigured: true,
-      pullSummary,
-      cursor: nextCursor,
-    });
-  } catch (err: any) {
-    return res.status(500).json({
       success: false,
-      cloudConfigured: true,
-      message: err?.message || 'Error en sincronización incremental desde Supabase.',
+      cloudConfigured: false,
+      message: 'Configure una URL y Anon Key válidas de Supabase antes de ejecutar la sincronización completa.',
     });
   }
+
+  const enqueued = enqueueAllLocalEntitiesToOutbox(STORAGE_DIRS, {
+    forceAll: req.body?.forceAll !== false,
+  });
+  const pushRes = await flushServerOutbox({
+    dirs: STORAGE_DIRS,
+    supabaseServer,
+    supabaseUrl: SUPABASE_URL,
+    timeoutMs: 6000,
+  });
+  const pullRes = await pullAllEntitiesFromSupabase({
+    dirs: STORAGE_DIRS,
+    supabaseServer,
+    supabaseUrl: SUPABASE_URL,
+    forceFull: true,
+  });
+
+  return res.json({
+    success: pushRes.success && pullRes.success,
+    cloudConfigured: true,
+    enqueued,
+    push: pushRes,
+    pull: pullRes,
+    message:
+      pushRes.success && pullRes.success
+        ? `Sincronización bidireccional completa: ${pushRes.synced} enviados a la nube y ${pullRes.totalChanges} actualizados desde Supabase.`
+        : pushRes.errors[0] || pullRes.error || 'Sincronización parcial con avisos pendientes en Outbox.',
+  });
 });
 
 // GET /api/health
@@ -7442,16 +7509,34 @@ async function startServer() {
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[DRAC ZKTECO SERVER] Servidor institucional escuchando en http://0.0.0.0:${PORT}`);
-    // Intento automático de drenado de Outbox persistente cada 60s cuando exista nube configurada
-    const outboxTimer = setInterval(() => {
-      if (!isPlaceholderSupabaseUrlServer(SUPABASE_URL)) {
-        flushServerOutbox({
-          dirs: STORAGE_DIRS,
-          supabaseServer,
-          supabaseUrl: SUPABASE_URL,
-        }).catch(() => {});
+
+    const runBidirectionalSync = async (isBoot = false) => {
+      if (isPlaceholderSupabaseUrlServer(SUPABASE_URL)) return;
+      if (isBoot) {
+        enqueueAllLocalEntitiesToOutbox(STORAGE_DIRS, { forceAll: false });
       }
-    }, 60000);
+      await flushServerOutbox({
+        dirs: STORAGE_DIRS,
+        supabaseServer,
+        supabaseUrl: SUPABASE_URL,
+      }).catch(() => {});
+      await pullAllEntitiesFromSupabase({
+        dirs: STORAGE_DIRS,
+        supabaseServer,
+        supabaseUrl: SUPABASE_URL,
+        forceFull: isBoot,
+      }).catch(() => {});
+    };
+
+    const bootTimer = setTimeout(() => {
+      runBidirectionalSync(true).catch(() => {});
+    }, 2500);
+    if (typeof bootTimer.unref === 'function') bootTimer.unref();
+
+    // Ciclo automático bidireccional (Push + Pull) cada 15s cuando Supabase está configurado
+    const outboxTimer = setInterval(() => {
+      runBidirectionalSync(false).catch(() => {});
+    }, 15000);
     if (typeof outboxTimer.unref === 'function') outboxTimer.unref();
   });
   server.on('error', (err: any) => {

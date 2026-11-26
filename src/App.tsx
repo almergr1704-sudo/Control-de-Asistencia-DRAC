@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   RoleType,
   Employee,
@@ -66,7 +66,12 @@ import { attendanceService } from './services/attendanceService';
 import { VIEW_TO_HASH, HASH_TO_VIEW } from './utils/router';
 import { getApiUrl } from './utils/apiConfig';
 import { normalizePersonName, normalizeInstitutionalName, normalizeText } from './utils/nameUtils';
-import { subscribeToDracRealtime } from './lib/supabaseClient';
+import {
+  subscribeToDracRealtime,
+  bootstrapSupabaseConfig,
+  getSavedSupabaseConfig,
+  isPlaceholderSupabaseUrl,
+} from './lib/supabaseClient';
 
 export const App: React.FC = () => {
   // Navigation & View Routing State
@@ -327,9 +332,21 @@ export const App: React.FC = () => {
     }
   };
 
+  const lastCloudSyncAtRef = useRef<number>(0);
+
   // Sync data from server
-  const loadServerData = useCallback(async () => {
+  const loadServerData = useCallback(async (forceCloudPull = false) => {
     try {
+      const sbCfg = getSavedSupabaseConfig();
+      const now = Date.now();
+      if (!isPlaceholderSupabaseUrl(sbCfg.url) && (forceCloudPull || now - lastCloudSyncAtRef.current > 8000)) {
+        lastCloudSyncAtRef.current = now;
+        await Promise.allSettled([
+          fetch(getApiUrl('/api/sync/outbox/flush'), { method: 'POST' }),
+          fetch(getApiUrl('/api/sync/pull'), { method: 'POST' }),
+        ]);
+      }
+
       // 1. Punches & Attendance
       const [punches, atts] = await Promise.all([
         attendanceService.getRawPunches().catch(() => []),
@@ -554,18 +571,36 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadServerData();
-    const interval = setInterval(loadServerData, 25000);
     let rtTimer: ReturnType<typeof setTimeout> | null = null;
-    const unsubscribeRealtime = subscribeToDracRealtime(() => {
-      if (rtTimer) clearTimeout(rtTimer);
-      rtTimer = setTimeout(() => {
-        loadServerData();
-      }, 800);
-    });
+    let unsubscribeRealtime = () => {};
+
+    const attachRealtime = () => {
+      unsubscribeRealtime();
+      unsubscribeRealtime = subscribeToDracRealtime(() => {
+        if (rtTimer) clearTimeout(rtTimer);
+        rtTimer = setTimeout(() => {
+          loadServerData(true);
+        }, 600);
+      });
+    };
+
+    (async () => {
+      await bootstrapSupabaseConfig();
+      attachRealtime();
+      await loadServerData(true);
+    })();
+
+    const onSbCfgChanged = () => {
+      attachRealtime();
+      loadServerData(true);
+    };
+    window.addEventListener('drac:supabase-config-changed', onSbCfgChanged);
+
+    const interval = setInterval(() => loadServerData(false), 20000);
     return () => {
       clearInterval(interval);
       if (rtTimer) clearTimeout(rtTimer);
+      window.removeEventListener('drac:supabase-config-changed', onSbCfgChanged);
       unsubscribeRealtime();
     };
   }, [loadServerData]);

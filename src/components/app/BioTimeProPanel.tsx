@@ -498,6 +498,17 @@ export const BioTimeProPanel: React.FC<BioTimeProPanelProps> = ({
       let data: BioTimeDownloadResult;
       if (electronAPI?.isDesktop && typeof electronAPI.downloadBioTimePunches === 'function') {
         data = await electronAPI.downloadBioTimePunches(payload);
+        if (data?.success && Array.isArray(data.punches) && data.punches.length > 0) {
+          fetch(getApiUrl('/api/zkteco/ingest-punches'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              punches: data.punches,
+              source: 'BIOTIME_API',
+              device: selectedSerial ? { serial: selectedSerial.trim().toUpperCase() } : undefined,
+            }),
+          }).catch(() => {});
+        }
       } else {
         const res = await fetch(getApiUrl('/api/zkteco/biotime/download-punches'), {
           method: 'POST',

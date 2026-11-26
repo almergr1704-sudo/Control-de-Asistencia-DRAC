@@ -26,6 +26,7 @@ import {
   getOfflineQueue,
   flushOfflineQueue,
   pullIncrementalFromCloud,
+  triggerFullCloudSync,
   getAppOrigin,
   getSavedSupabaseConfig,
   updateSupabaseConfig,
@@ -67,6 +68,7 @@ export const SupabaseSyncSection: React.FC = () => {
   } | null>(null);
   const [syncingQueue, setSyncingQueue] = useState(false);
   const [pullingCloud, setPullingCloud] = useState(false);
+  const [fullSyncing, setFullSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ processed: number; total: number } | null>(null);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
 
@@ -183,6 +185,14 @@ export const SupabaseSyncSection: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
+    const onCfgSync = () => {
+      const latest = getSavedSupabaseConfig();
+      if (latest.url) setSbUrlInput(latest.url);
+      if (latest.anonKey) setSbKeyInput(latest.anonKey);
+      fetchStatus();
+    };
+    window.addEventListener('drac:supabase-config-changed', onCfgSync);
+    return () => window.removeEventListener('drac:supabase-config-changed', onCfgSync);
   }, []);
 
   const handleCopyDdl = () => {
@@ -231,6 +241,7 @@ export const SupabaseSyncSection: React.FC = () => {
     try {
       const result = await pullIncrementalFromCloud();
       await fetchStatus();
+      window.dispatchEvent(new CustomEvent('drac:supabase-config-changed'));
       if (result.success) {
         setSyncSuccessMsg(result.message || 'Pull incremental desde Supabase completado sin conflictos.');
       } else {
@@ -241,6 +252,27 @@ export const SupabaseSyncSection: React.FC = () => {
     } finally {
       setPullingCloud(false);
       setTimeout(() => setSyncSuccessMsg(null), 5000);
+    }
+  };
+
+  const handleFullSync = async () => {
+    setFullSyncing(true);
+    setSyncSuccessMsg(null);
+    setSbCfgNotice(null);
+    try {
+      const result = await triggerFullCloudSync();
+      await fetchStatus();
+      window.dispatchEvent(new CustomEvent('drac:supabase-config-changed'));
+      const msg = result.message || (result.success ? 'Sincronización bidireccional completa.' : 'Sincronización parcial.');
+      setSyncSuccessMsg(msg);
+      setSbCfgNotice(msg);
+    } catch (err: any) {
+      const errMsg = `Error en sincronización completa: ${err?.message}`;
+      setSyncSuccessMsg(errMsg);
+      setSbCfgNotice(errMsg);
+    } finally {
+      setFullSyncing(false);
+      setTimeout(() => setSyncSuccessMsg(null), 7000);
     }
   };
 
@@ -298,7 +330,16 @@ export const SupabaseSyncSection: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start md:self-center">
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+            <button
+              type="button"
+              onClick={handleFullSync}
+              disabled={fullSyncing || connectionStatus?.isPlaceholder}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-45 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <Zap className={`w-3.5 h-3.5 ${fullSyncing ? 'animate-spin' : ''}`} />
+              <span>{fullSyncing ? 'Sincronizando...' : 'Sincronizar Escritorio ↔ Web Ahora'}</span>
+            </button>
             <button
               onClick={fetchStatus}
               disabled={loading}
@@ -525,10 +566,25 @@ export const SupabaseSyncSection: React.FC = () => {
               </span>
             </div>
 
-            {connectionStatus?.error && (
-              <div className="p-3 bg-amber-950/30 border border-amber-800/60 rounded-lg text-xs text-amber-200 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>{connectionStatus.error}</span>
+            {(connectionStatus?.error || dbStats?.error || (connectionStatus?.connected && dbStats?.schemaReady === false)) && (
+              <div className="p-3 bg-amber-950/30 border border-amber-800/60 rounded-lg text-xs text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    {dbStats?.schemaReady === false && !connectionStatus?.isPlaceholder
+                      ? 'Falta ejecutar el Script DDL actualizado en Supabase (tabla drac_sync_records) para habilitar la sincronización completa Escritorio ↔ Web.'
+                      : connectionStatus?.error || dbStats?.error}
+                  </span>
+                </div>
+                {dbStats?.schemaReady === false && !connectionStatus?.isPlaceholder && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('DDL')}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-md text-[11px] font-bold shrink-0"
+                  >
+                    Ver Script SQL
+                  </button>
+                )}
               </div>
             )}
 
@@ -556,15 +612,26 @@ export const SupabaseSyncSection: React.FC = () => {
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               {sbCfgNotice && <span className="text-xs text-sky-300">{sbCfgNotice}</span>}
-              <button
-                type="button"
-                onClick={handleSaveSupabaseConfig}
-                disabled={savingSbCfg}
-                className="ml-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>{savingSbCfg ? 'Guardando...' : 'Guardar y Probar Supabase'}</span>
-              </button>
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleFullSync}
+                  disabled={fullSyncing || connectionStatus?.isPlaceholder}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-45 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${fullSyncing ? 'animate-spin' : ''}`} />
+                  <span>{fullSyncing ? 'Sincronizando...' : 'Sincronización Completa Ahora'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSupabaseConfig}
+                  disabled={savingSbCfg}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>{savingSbCfg ? 'Guardando...' : 'Guardar y Probar Supabase'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -789,6 +856,15 @@ $$ LANGUAGE plpgsql;`}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleFullSync}
+                disabled={fullSyncing || connectionStatus?.isPlaceholder}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Zap className={`w-3.5 h-3.5 ${fullSyncing ? 'animate-spin' : ''}`} />
+                <span>{fullSyncing ? 'Sincronizando...' : 'Sincronización Completa'}</span>
+              </button>
+
               <button
                 onClick={handlePullFromCloud}
                 disabled={pullingCloud}

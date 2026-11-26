@@ -122,6 +122,99 @@ function getStorageFilePath(filename) {
   }
 }
 
+function appendDirectOutboxFallback(entityType, entityId, operation, payload, recordVersion) {
+  try {
+    const syncDir = path.join(getBasePersistentDir(), 'sync');
+    if (!fs.existsSync(syncDir)) fs.mkdirSync(syncDir, { recursive: true });
+    const outboxPath = path.join(syncDir, 'sync-outbox.json');
+    let list = [];
+    if (fs.existsSync(outboxPath)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(outboxPath, 'utf8'));
+        if (Array.isArray(parsed)) list = parsed;
+      } catch (_) {}
+    }
+    const cleanId = String(entityId);
+    const ver = Number(recordVersion) || Number(payload?.record_version) || 1;
+    const nowIso = new Date().toISOString();
+    const existingIdx = list.findIndex(
+      (ev) => ev.entity_type === entityType && String(ev.entity_id) === cleanId && ev.status !== 'SINCRONIZADO'
+    );
+    const entry = {
+      id: existingIdx >= 0 ? list[existingIdx].id : `out-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`,
+      idempotency_key: `${entityType}:${cleanId}:v${ver}:${operation}`,
+      entity_type: entityType,
+      entity_id: cleanId,
+      operation,
+      payload,
+      origin: 'DESKTOP',
+      record_version: ver,
+      created_at: existingIdx >= 0 ? list[existingIdx].created_at : nowIso,
+      updated_at: nowIso,
+      status: 'PENDIENTE',
+      attempts: 0,
+      last_error: null,
+      synced_at: null,
+    };
+    if (existingIdx >= 0) {
+      list[existingIdx] = entry;
+    } else {
+      list.unshift(entry);
+    }
+    if (list.length > 2500) list = list.slice(0, 2500);
+    fs.writeFileSync(outboxPath, JSON.stringify(list, null, 2), 'utf8');
+  } catch (err) {
+    log(`Aviso en appendDirectOutboxFallback: ${err.message}`);
+  }
+}
+
+function notifyServerOutbox(entityType, entityId, operation = 'UPSERT', payload = {}, recordVersion) {
+  if (!entityType || !entityId) return;
+  const bodyObj = {
+    entity_type: entityType,
+    entity_id: String(entityId),
+    operation,
+    payload,
+    origin: 'DESKTOP',
+    record_version: Number(recordVersion) || Number(payload?.record_version) || 1,
+  };
+  setImmediate(() => {
+    try {
+      const jsonStr = JSON.stringify(bodyObj);
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: Number(DESKTOP_PORT) || 3000,
+          path: '/api/sync/outbox',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(jsonStr),
+          },
+          timeout: 1500,
+        },
+        (res) => {
+          res.resume();
+          if (res.statusCode >= 400) {
+            appendDirectOutboxFallback(entityType, entityId, operation, payload, bodyObj.record_version);
+          }
+        }
+      );
+      req.on('error', () => {
+        appendDirectOutboxFallback(entityType, entityId, operation, payload, bodyObj.record_version);
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        appendDirectOutboxFallback(entityType, entityId, operation, payload, bodyObj.record_version);
+      });
+      req.write(jsonStr);
+      req.end();
+    } catch (_) {
+      appendDirectOutboxFallback(entityType, entityId, operation, payload, bodyObj.record_version);
+    }
+  });
+}
+
 // =========================================================================
 // PERSISTENCIA SEGURA DE CONFIGURACIÓN BIOTIME PRO (biotime-config.json)
 // =========================================================================
@@ -560,6 +653,10 @@ ipcMain.handle(
           if (merged.length > 0) {
             fs.writeFileSync(punchesPath, JSON.stringify(merged, null, 2), 'utf8');
             log(`IPC zk:read-punches: Persistidas ${merged.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
+            for (const p of newlyAdded) {
+              const pId = p.id || `zk_${p.device_sn || cleanSerial}_${p.employee_code || p.employee_dni}_${String(p.timestamp || '').replace(/[^0-9]/g, '')}`;
+              notifyServerOutbox('marcaciones_raw', pId, 'UPSERT', { ...p, id: pId }, p.record_version || 1);
+            }
           }
         } catch (saveErr) {
           log(`Aviso guardando marcaciones descargadas: ${saveErr.message}`);
@@ -904,6 +1001,10 @@ ipcMain.handle('biotime:download-punches', async (_event, params = {}) => {
     const mergedPunches = [...newlyAdded, ...loadedPunches];
     if (newlyAdded.length > 0) {
       fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
+      for (const p of newlyAdded) {
+        const pId = p.id || `bt_${p.device_sn || cleanSerial}_${p.employee_code || p.employee_dni}_${String(p.timestamp || '').replace(/[^0-9]/g, '')}`;
+        notifyServerOutbox('marcaciones_raw', pId, 'UPSERT', { ...p, id: pId }, p.record_version || 1);
+      }
     }
 
     return {
@@ -1134,6 +1235,10 @@ ipcMain.handle('biotime:sync-punches', async (_event, params = {}) => {
       try {
         fs.writeFileSync(punchesPath, JSON.stringify(mergedPunches, null, 2), 'utf8');
         log(`Guardadas ${mergedPunches.length} marcaciones en raw-punches.json (${newlyAdded.length} nuevas)`);
+        for (const p of newlyAdded) {
+          const pId = p.id || `bt_${p.device_sn || serial}_${p.employee_code || p.employee_dni}_${String(p.timestamp || '').replace(/[^0-9]/g, '')}`;
+          notifyServerOutbox('marcaciones_raw', pId, 'UPSERT', { ...p, id: pId }, p.record_version || 1);
+        }
       } catch (writeErr) {
         log(`Aviso al persistir raw-punches.json: ${writeErr.message}`);
       }
@@ -1205,7 +1310,22 @@ ipcMain.handle('zk:get-device-users-store', async () => {
 ipcMain.handle('zk:save-device-users-store', async (_event, payload = {}) => {
   try {
     if (Array.isArray(payload.users)) {
-      fs.writeFileSync(getStorageFilePath('device-users.json'), JSON.stringify(payload.users, null, 2), 'utf8');
+      const usersPath = getStorageFilePath('device-users.json');
+      const prevMap = new Map();
+      try {
+        if (fs.existsSync(usersPath)) {
+          const prev = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
+          if (Array.isArray(prev)) prev.forEach((u) => prevMap.set(String(u.id || `${u.device_sn}_${u.pin}`), JSON.stringify(u)));
+        }
+      } catch (_) {}
+      fs.writeFileSync(usersPath, JSON.stringify(payload.users, null, 2), 'utf8');
+      for (const u of payload.users) {
+        const uId = String(u.id || `${u.device_sn || 'ZK'}_${u.pin}`);
+        const serialized = JSON.stringify(u);
+        if (prevMap.get(uId) !== serialized) {
+          notifyServerOutbox('usuarios_reloj', uId, 'UPSERT', { ...u, id: uId }, u.record_version || 1);
+        }
+      }
     }
     if (Array.isArray(payload.history)) {
       fs.writeFileSync(getStorageFilePath('device-user-history.json'), JSON.stringify(payload.history.slice(0, 1500), null, 2), 'utf8');
@@ -1271,6 +1391,14 @@ ipcMain.handle('punches:save-all', async (_event, punches = []) => {
       String(b.timestamp || '').localeCompare(String(a.timestamp || ''))
     );
     fs.writeFileSync(punchesPath, JSON.stringify(merged, null, 2), 'utf8');
+    const prevSet = new Set((Array.isArray(existing) ? existing : []).map((r) => `${r.device_sn || ''}_${r.employee_code || r.employee_dni}_${r.timestamp}`));
+    for (const r of punches) {
+      const key = `${r.device_sn || ''}_${r.employee_code || r.employee_dni}_${r.timestamp}`;
+      if (!prevSet.has(key) || r.linked_at) {
+        const pId = r.id || `zk_${r.device_sn || 'G3'}_${r.employee_code || r.employee_dni}_${String(r.timestamp || '').replace(/[^0-9]/g, '')}`;
+        notifyServerOutbox('marcaciones_raw', pId, 'UPSERT', { ...r, id: pId }, r.record_version || 1);
+      }
+    }
     return { success: true, count: merged.length };
   } catch (err) {
     return { success: false, count: 0, error: err.message };
@@ -1303,6 +1431,7 @@ ipcMain.handle('turnos:save', async (_event, turno) => {
     if (idx >= 0) list[idx] = { ...list[idx], ...turno };
     else list.push(turno);
     fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    notifyServerOutbox('turnos', turno.id || turno.code, 'UPSERT', turno, turno.record_version || 1);
     return { success: true, data: turno };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1318,6 +1447,7 @@ ipcMain.handle('turnos:delete', async (_event, id) => {
     }
     const filtered = list.filter((t) => t.id !== id);
     fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    notifyServerOutbox('turnos', id, 'DELETE', { id });
     return { success: true };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1346,6 +1476,7 @@ ipcMain.handle('horarios:save', async (_event, horario) => {
     if (idx >= 0) list[idx] = { ...list[idx], ...horario };
     else list.push(horario);
     fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    notifyServerOutbox('horarios', horario.id || horario.code, 'UPSERT', horario, horario.record_version || 1);
     return { success: true, data: horario };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1361,6 +1492,7 @@ ipcMain.handle('horarios:delete', async (_event, id) => {
     }
     const filtered = list.filter((h) => h.id !== id);
     fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    notifyServerOutbox('horarios', id, 'DELETE', { id });
     return { success: true };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1389,6 +1521,7 @@ ipcMain.handle('asignaciones:save', async (_event, asig) => {
     if (idx >= 0) list[idx] = { ...list[idx], ...asig };
     else list.unshift(asig);
     fs.writeFileSync(p, JSON.stringify(list, null, 2), 'utf8');
+    notifyServerOutbox('asignacion_horarios', asig.id, 'UPSERT', asig, asig.record_version || 1);
     return { success: true, data: asig };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1404,6 +1537,7 @@ ipcMain.handle('asignaciones:delete', async (_event, id) => {
     }
     const filtered = list.filter((a) => a.id !== id);
     fs.writeFileSync(p, JSON.stringify(filtered, null, 2), 'utf8');
+    notifyServerOutbox('asignacion_horarios', id, 'DELETE', { id });
     return { success: true };
   } catch (err) {
     return { success: false, message: err.message };
@@ -1480,6 +1614,7 @@ ipcMain.handle('device:update', async (_event, { id, payload }) => {
 
     devices[index] = updated;
     fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+    notifyServerOutbox('dispositivos_zkteco', updated.id, 'UPSERT', updated, nextVersion);
 
     // Registrar en auditoría de forma persistente
     try {
@@ -1601,6 +1736,7 @@ ipcMain.handle('device:create', async (_event, payload = {}) => {
 
     devices.push(newDevice);
     fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+    notifyServerOutbox('dispositivos_zkteco', newDevice.id, 'UPSERT', newDevice, 1);
 
     // Registrar en auditoría
     try {
@@ -1674,6 +1810,7 @@ ipcMain.handle('device:delete', async (_event, id) => {
 
     const removed = devices.splice(index, 1)[0];
     fs.writeFileSync(devicesPath, JSON.stringify(devices, null, 2), 'utf8');
+    notifyServerOutbox('dispositivos_zkteco', removed.id, 'DELETE', { id: removed.id }, (Number(removed.config_version) || 1) + 1);
 
     // Registrar en auditoría
     try {

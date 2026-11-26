@@ -109,15 +109,30 @@ export const attendanceService = {
     } catch (_) {}
 
     try {
-      const { supabase } = await import('../lib/supabaseClient');
+      const { supabase, isPlaceholderSupabaseUrl } = await import('../lib/supabaseClient');
+      if (isPlaceholderSupabaseUrl()) return [];
       const { data: supaAtts } = await supabase
-        .from('asistencia_diaria')
+        .from('asistencias')
         .select('*')
         .order('fecha', { ascending: false })
         .limit(300);
 
-      if (supaAtts && supaAtts.length > 0) {
-        return supaAtts.map((a: any) => ({
+      let rows: any[] = Array.isArray(supaAtts) ? supaAtts : [];
+      if (rows.length === 0) {
+        const { data: syncAtts } = await supabase
+          .from('drac_sync_records')
+          .select('payload')
+          .eq('entity_type', 'asistencias')
+          .eq('deleted', false)
+          .order('updated_at', { ascending: false })
+          .limit(300);
+        if (Array.isArray(syncAtts)) {
+          rows = syncAtts.map((r: any) => r?.payload).filter(Boolean);
+        }
+      }
+
+      if (rows.length > 0) {
+        return rows.map((a: any) => ({
           id: a.id,
           employee_id: a.trabajador_id || a.employee_id,
           employee_dni: a.dni || a.employee_dni,
